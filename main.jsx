@@ -136,7 +136,7 @@ function LoginPage({ onLogin }) {
 
         <div className="login-hint">
           默认账号：admin<br />
-          默认密码：666888
+          默认密码：是你大爷
         </div>
       </form>
     </div>
