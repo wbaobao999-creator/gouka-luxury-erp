@@ -164,58 +164,17 @@ function LoginPage({ onLogin }) {
   );
 }
 
-function exportBackup() {
-  const data = {
-    version: "GOUKA-ERP-V2",
-    exportTime: new Date().toISOString(),
-    items
-  };
+function App() {
+  const [isLoggedIn, setIsLoggedIn] = useState(() => localStorage.getItem(LOGIN_KEY) === "yes");
+  const [tab, setTab] = useState("dashboard");
+  const [items, setItems] = useState(loadItems);
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("全部");
+  const [form, setForm] = useState(emptyForm);
+  const [editingId, setEditingId] = useState(null);
+  const [previewImage, setPreviewImage] = useState(null);
+  const [previewScale, setPreviewScale] = useState(1);
 
-  const blob = new Blob(
-    [JSON.stringify(data, null, 2)],
-    { type: "application/json" }
-  );
-
-  const url = URL.createObjectURL(blob);
-
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `gouka-backup-${new Date().toISOString().slice(0,10)}.json`;
-  a.click();
-
-  URL.revokeObjectURL(url);
-}
-
-function importBackup(event) {
-  const file = event.target.files[0];
-  if (!file) return;
-
-  const reader = new FileReader();
-
-  reader.onload = (e) => {
-    try {
-      const backup = JSON.parse(e.target.result);
-
-      if (!backup.items) {
-        alert("备份文件格式错误");
-        return;
-      }
-
-      setItems(backup.items);
-
-      localStorage.setItem(
-        STORAGE_KEY,
-        JSON.stringify(backup.items)
-      );
-
-      alert(`恢复成功，共导入 ${backup.items.length} 条记录`);
-    } catch {
-      alert("无法读取备份文件");
-    }
-  };
-
-  reader.readAsText(file);
-}
   React.useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
   }, [items]);
@@ -404,7 +363,7 @@ function importBackup(event) {
             <h1>二手奢侈品管理系统 V2</h1>
             <p>编辑・删除・自动保存・图片上传・状态筛选・古物台账・EMS报关・利润计算・消费税参考</p>
           </div>
-<span className="pill">Auto Save</span>
+          <span className="pill">Auto Save</span>
         </header>
 
         {tab === "dashboard" && <Dashboard totals={totals} items={items} />}
@@ -636,108 +595,12 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
 }
 
 function Ledger({ items, downloadCSV }) {
-  const [ledgerQuery, setLedgerQuery] = useState("");
-  const [ledgerDate, setLedgerDate] = useState("");
-
-  const filteredItems = items.filter((x) => {
-    const q = ledgerQuery.toLowerCase();
-    const text = [
-      x.id,
-      x.purchaseDate,
-      x.category,
-      x.brand,
-      x.item,
-      x.material,
-      x.color,
-      x.origin,
-      x.source,
-      x.address,
-      x.idCheck,
-      x.memo
-    ].join(" ").toLowerCase();
-
-    const matchText = !q || text.includes(q);
-    const matchDate = !ledgerDate || x.purchaseDate === ledgerDate;
-
-    return matchText && matchDate;
-  });
-
-  const headers = [
-    "No",
-    "取引日",
-    "商品番号",
-    "区分",
-    "ブランド",
-    "商品名",
-    "特徴",
-    "数量",
-    "取引区分",
-    "金額",
-    "通貨",
-    "相手方",
-    "住所",
-    "本人確認",
-    "売却先",
-    "備考"
-  ];
-
-  const rows = filteredItems.map((x, i) => [
-    i + 1,
-    x.purchaseDate,
-    x.id,
-    x.category,
-    x.brand,
-    x.item,
-    `${x.material} / ${x.color} / ${x.origin}`,
-    x.qty,
-    "仕入",
-    x.purchaseCny,
-    "CNY",
-    x.source,
-    x.address,
-    x.idCheck,
-    "",
-    x.memo
-  ]);
+  const headers = ["No", "取引日", "商品番号", "区分", "ブランド", "商品名", "特徴", "数量", "取引区分", "金額", "通貨", "相手方", "住所", "本人確認", "売却先", "備考"];
+  const rows = items.map((x, i) => [i + 1, x.purchaseDate, x.id, x.category, x.brand, x.item, `${x.material} / ${x.color} / ${x.origin}`, x.qty, "仕入", x.purchaseCny, "CNY", x.source, x.address, x.idCheck, "", x.memo]);
 
   return (
     <div className="panel">
-      <div className="toolbar">
-        <h2>古物台账</h2>
-
-        <div className="toolbar-right">
-          <div className="search">
-            <Search size={16} />
-            <input
-              placeholder="搜索编号 / 品牌 / 商品 / 供应商"
-              value={ledgerQuery}
-              onChange={(e) => setLedgerQuery(e.target.value)}
-            />
-          </div>
-
-          <input
-            type="date"
-            value={ledgerDate}
-            onChange={(e) => setLedgerDate(e.target.value)}
-          />
-
-          <button onClick={() => {
-            setLedgerQuery("");
-            setLedgerDate("");
-          }}>
-            清除筛选
-          </button>
-
-          <button onClick={() => downloadCSV([headers, ...rows], "gouka_kobutsu_ledger.csv")}>
-            <Download size={16} /> CSV导出
-          </button>
-        </div>
-      </div>
-
-      <p className="note">
-        当前显示 {filteredItems.length} 件 / 全部 {items.length} 件
-      </p>
-
+      <Toolbar title="古物台账" onDownload={() => downloadCSV([headers, ...rows], "gouka_kobutsu_ledger.csv")} />
       <Table headers={headers} rows={rows} />
     </div>
   );
