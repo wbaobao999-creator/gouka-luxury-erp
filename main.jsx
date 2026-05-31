@@ -7,6 +7,7 @@ const STORAGE_KEY = "gouka_erp_v2_items";
 const LOGIN_KEY = "gouka_erp_login";
 const LOGIN_USER = "gouka";
 const LOGIN_PASS = "777888";
+const TAX_RATE = 0.10;
 
 const emptyForm = {
   purchaseDate: "",
@@ -98,6 +99,19 @@ function cny(n) {
   return "CNY " + money(Number(n || 0));
 }
 
+function calcTax(x) {
+  const costJpy = Number(x.purchaseCny || 0) * Number(x.rate || 0);
+  const declaredJpy = Number(x.declaredCny || 0) * Number(x.rate || 0);
+  const inputTax = declaredJpy * TAX_RATE;
+  const saleJpy = Number(x.saleJpy || 0);
+  const outputTax = saleJpy * TAX_RATE / (1 + TAX_RATE);
+  const saleExTax = saleJpy - outputTax;
+  const grossProfit = saleJpy - costJpy;
+  const taxBalance = outputTax - inputTax;
+  const profitExTax = saleExTax - costJpy;
+  return { costJpy, declaredJpy, inputTax, saleJpy, outputTax, saleExTax, grossProfit, taxBalance, profitExTax };
+}
+
 function LoginPage({ onLogin }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -133,7 +147,6 @@ function LoginPage({ onLogin }) {
         {error && <div className="login-error">{error}</div>}
 
         <button className="login-btn" type="submit">登录</button>
-
       </form>
     </div>
   );
@@ -174,15 +187,19 @@ function App() {
   const totals = useMemo(() => {
     return items.reduce(
       (a, x) => {
-        const cost = Number(x.purchaseCny || 0) * Number(x.rate || 0);
+        const t = calcTax(x);
         a.qty += Number(x.qty || 0);
         a.declared += Number(x.declaredCny || 0);
-        a.cost += cost;
-        a.sale += Number(x.saleJpy || 0);
-        a.profit += Number(x.saleJpy || 0) - cost;
+        a.cost += t.costJpy;
+        a.sale += t.saleJpy;
+        a.profit += t.grossProfit;
+        a.inputTax += t.inputTax;
+        a.outputTax += t.outputTax;
+        a.taxBalance += t.taxBalance;
+        a.profitExTax += t.profitExTax;
         return a;
       },
-      { qty: 0, declared: 0, cost: 0, sale: 0, profit: 0 }
+      { qty: 0, declared: 0, cost: 0, sale: 0, profit: 0, inputTax: 0, outputTax: 0, taxBalance: 0, profitExTax: 0 }
     );
   }, [items]);
 
@@ -289,7 +306,8 @@ function App() {
     ["inventory", "库存管理"],
     ["ledger", "古物台账"],
     ["customs", "EMS报关"],
-    ["profit", "利润分析"]
+    ["profit", "利润分析"],
+    ["tax", "消费税参考"]
   ];
 
   return (
@@ -316,7 +334,7 @@ function App() {
         <header>
           <div>
             <h1>二手奢侈品管理系统 V2</h1>
-            <p>编辑・删除・自动保存・图片上传・状态筛选・古物台账・EMS报关・利润计算</p>
+            <p>编辑・删除・自动保存・图片上传・状态筛选・古物台账・EMS报关・利润计算・消费税参考</p>
           </div>
           <span className="pill">Auto Save</span>
         </header>
@@ -349,10 +367,11 @@ function App() {
         {tab === "ledger" && <Ledger items={filtered} downloadCSV={downloadCSV} />}
         {tab === "customs" && <Customs items={filtered} downloadCSV={downloadCSV} />}
         {tab === "profit" && <Profit items={filtered} />}
+        {tab === "tax" && <TaxReport items={filtered} totals={totals} downloadCSV={downloadCSV} />}
 
         {previewImage && (
           <div className="image-modal" onClick={() => setPreviewImage(null)}>
-            <img src={previewImage} alt="商品大图预览" />
+            <img src={previewImage} alt="preview" />
           </div>
         )}
       </main>
@@ -370,11 +389,15 @@ function Dashboard({ totals, items }) {
       <Card icon={<FileText />} title="申报总额" value={cny(totals.declared)} />
       <Card icon={<Calculator />} title="预计销售额" value={jpy(totals.sale)} />
       <Card icon={<ImagePlus />} title="已上传图片商品" value={`${withImages} 件`} />
+      <Card icon={<Calculator />} title="销售消费税(内税参考)" value={jpy(totals.outputTax)} />
+      <Card icon={<Calculator />} title="进项消费税(参考)" value={jpy(totals.inputTax)} />
+      <Card icon={<Calculator />} title="消费税差额参考" value={jpy(totals.taxBalance)} />
+      <Card icon={<Calculator />} title="不含税利润参考" value={jpy(totals.profitExTax)} />
 
       <div className="panel wide">
         <h2>系统说明</h2>
-        <p>V2 已支持：登录、编辑、删除、自动保存、本地图片上传、状态筛选、CSV导出。</p>
-        <p>注意：当前登录为前端简易保护，适合内部临时使用。以后升级 Supabase 后，可支持员工独立账号。</p>
+        <p>V2 已支持：登录、编辑、删除、自动保存、本地图片上传、状态筛选、CSV导出、消费税参考计算。</p>
+        <p>消费税为参考计算：销售金额按含税价格倒算内税10%，进口/采购进项税按申报JPY × 10% 参考计算。最终申告请以税理士口径为准。</p>
         <p>预计利润率：<b>{margin.toFixed(1)}%</b></p>
       </div>
     </section>
@@ -412,9 +435,9 @@ function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, 
         <Input label="采购金额 CNY" type="number" value={form.purchaseCny} onChange={(v) => set("purchaseCny", v)} />
         <Input label="申报金额 CNY" type="number" value={form.declaredCny} onChange={(v) => set("declaredCny", v)} />
         <Input label="汇率 CNY→JPY" type="number" value={form.rate} onChange={(v) => set("rate", v)} />
-        <Input label="预计销售额 JPY" type="number" value={form.saleJpy} onChange={(v) => set("saleJpy", v)} />
+        <Input label="预计销售额 JPY（税込）" type="number" value={form.saleJpy} onChange={(v) => set("saleJpy", v)} />
         <Input label="仕入先 / 来源" value={form.source} onChange={(v) => set("source", v)} placeholder="China Supplier / Auction" />
-        <Input label="相手方住所" value={form.address} onChange={(v) => set("address", v)} placeholder="China / Japan address" />
+        <Input label="供应商地址" value={form.address} onChange={(v) => set("address", v)} placeholder="China / Japan address" />
         <Input label="本人确认方式" value={form.idCheck} onChange={(v) => set("idCheck", v)} placeholder="Invoice / Passport / Residence Card" />
         <Select label="状态" value={form.status} onChange={(v) => set("status", v)} options={["采购中", "运输中", "已入库", "报关准备", "出品中", "已售出", "保留", "退货"]} />
         <Input label="平台" value={form.platform} onChange={(v) => set("platform", v)} placeholder="EMS / EcoRing / JBA" />
@@ -456,38 +479,44 @@ function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, 
 }
 
 function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, downloadCSV, editItem, deleteItem, setPreviewImage }) {
-  const headers = ["图片", "商品编号", "入库日期", "品类", "品牌", "商品名", "材质", "颜色", "产地", "数量", "采购CNY", "申报CNY", "预计销售JPY", "状态", "操作"];
-  const csvHeaders = ["商品编号", "入库日期", "品类", "品牌", "商品名", "材质", "颜色", "产地", "数量", "采购CNY", "申报CNY", "预计销售JPY", "状态"];
+  const headers = ["图片", "商品编号", "入库日期", "品类", "品牌", "商品名", "材质", "颜色", "产地", "数量", "采购CNY", "申报CNY", "采购JPY", "进项税参考", "预计销售JPY（税込）", "状态", "操作"];
+  const csvHeaders = ["商品编号", "入库日期", "品类", "品牌", "商品名", "材质", "颜色", "产地", "数量", "采购CNY", "申报CNY", "采购JPY", "进项消费税参考", "预计销售JPY税込", "状态"];
   const csvRows = [csvHeaders];
 
-  items.forEach((x) =>
-    csvRows.push([x.id, x.purchaseDate, x.category, x.brand, x.item, x.material, x.color, x.origin, x.qty, x.purchaseCny, x.declaredCny, x.saleJpy, x.status])
-  );
+  items.forEach((x) => {
+    const t = calcTax(x);
+    csvRows.push([x.id, x.purchaseDate, x.category, x.brand, x.item, x.material, x.color, x.origin, x.qty, x.purchaseCny, x.declaredCny, Math.round(t.costJpy), Math.round(t.inputTax), x.saleJpy, x.status]);
+  });
 
-  const rows = items.map((x) => [
-    x.images && x.images.length ? <img className="thumb" src={x.images[0]} alt={x.item} onClick={() => setPreviewImage(x.images[0])} title="点击放大" /> : "—",
-    x.id,
-    x.purchaseDate,
-    x.category,
-    x.brand,
-    x.item,
-    x.material,
-    x.color,
-    x.origin,
-    x.qty,
-    x.purchaseCny,
-    x.declaredCny,
-    x.saleJpy,
-    x.status,
-    <div className="table-actions">
-      <button className="edit" onClick={() => editItem(x)}>
-        <Edit3 size={14} /> 编辑
-      </button>
-      <button className="danger" onClick={() => deleteItem(x.id)}>
-        <Trash2 size={14} /> 删除
-      </button>
-    </div>
-  ]);
+  const rows = items.map((x) => {
+    const t = calcTax(x);
+    return [
+      x.images && x.images.length ? <img className="thumb" src={x.images[0]} alt={x.item} onClick={() => setPreviewImage(x.images[0])} /> : "—",
+      x.id,
+      x.purchaseDate,
+      x.category,
+      x.brand,
+      x.item,
+      x.material,
+      x.color,
+      x.origin,
+      x.qty,
+      x.purchaseCny,
+      x.declaredCny,
+      Math.round(t.costJpy),
+      Math.round(t.inputTax),
+      x.saleJpy,
+      x.status,
+      <div className="table-actions">
+        <button className="edit" onClick={() => editItem(x)}>
+          <Edit3 size={14} /> 编辑
+        </button>
+        <button className="danger" onClick={() => deleteItem(x.id)}>
+          <Trash2 size={14} /> 删除
+        </button>
+      </div>
+    ];
+  });
 
   return (
     <div className="panel">
@@ -497,7 +526,7 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
         setQuery={setQuery}
         statusFilter={statusFilter}
         setStatusFilter={setStatusFilter}
-        onDownload={() => downloadCSV(csvRows, "gouka_inventory.csv")}
+        onDownload={() => downloadCSV(csvRows, "gouka_inventory_tax.csv")}
       />
       <Table headers={headers} rows={rows} />
     </div>
@@ -517,14 +546,17 @@ function Ledger({ items, downloadCSV }) {
 }
 
 function Customs({ items, downloadCSV }) {
-  const headers = ["No.", "Brand", "Item", "Material", "Color", "Specification", "Qty", "Country of Origin", "Declared Value (CNY)", "Remarks"];
-  const rows = items.map((x, i) => [i + 1, x.brand, x.item, x.material, x.color, x.category, x.qty, x.origin, x.declaredCny, "Used luxury goods / Non-CITES material"]);
+  const headers = ["No.", "Brand", "Item", "Material", "Color", "Specification", "Qty", "Country of Origin", "Declared Value (CNY)", "Declared Value (JPY)", "Import Tax 10% Ref", "Remarks"];
+  const rows = items.map((x, i) => {
+    const t = calcTax(x);
+    return [i + 1, x.brand, x.item, x.material, x.color, x.category, x.qty, x.origin, x.declaredCny, Math.round(t.declaredJpy), Math.round(t.inputTax), "Used luxury goods / Non-CITES material"];
+  });
   const totalQty = items.reduce((a, x) => a + Number(x.qty || 0), 0);
   const totalValue = items.reduce((a, x) => a + Number(x.declaredCny || 0), 0);
 
   return (
     <div className="panel">
-      <Toolbar title="EMS Commercial Customs Declaration" onDownload={() => downloadCSV([headers, ...rows, [], ["Total Quantity", totalQty], ["Total Declared Value", totalValue]], "gouka_ems_customs.csv")} />
+      <Toolbar title="EMS Commercial Customs Declaration" onDownload={() => downloadCSV([headers, ...rows, [], ["Total Quantity", totalQty], ["Total Declared Value CNY", totalValue]], "gouka_ems_customs_tax.csv")} />
       <p>
         <b>Importer:</b> 豪嘉株式会社 (GOUKA INC.)
       </p>
@@ -535,12 +567,11 @@ function Customs({ items, downloadCSV }) {
 }
 
 function Profit({ items }) {
-  const headers = ["商品编号", "品牌", "商品名", "采购成本JPY", "预计销售JPY", "预计毛利JPY", "利润率"];
+  const headers = ["商品编号", "品牌", "商品名", "采购成本JPY", "销售JPY（税込）", "销售不含税", "销售消费税", "预计毛利", "不含税利润参考", "利润率"];
   const rows = items.map((x) => {
-    const cost = Number(x.purchaseCny || 0) * Number(x.rate || 0);
-    const profit = Number(x.saleJpy || 0) - cost;
-    const margin = x.saleJpy ? ((profit / x.saleJpy) * 100).toFixed(1) + "%" : "";
-    return [x.id, x.brand, x.item, Math.round(cost), x.saleJpy, Math.round(profit), margin];
+    const t = calcTax(x);
+    const margin = t.saleJpy ? ((t.grossProfit / t.saleJpy) * 100).toFixed(1) + "%" : "";
+    return [x.id, x.brand, x.item, Math.round(t.costJpy), x.saleJpy, Math.round(t.saleExTax), Math.round(t.outputTax), Math.round(t.grossProfit), Math.round(t.profitExTax), margin];
   });
 
   return (
@@ -549,6 +580,28 @@ function Profit({ items }) {
         <Calculator size={20} /> 利润分析
       </h2>
       <Table headers={headers} rows={rows} />
+    </div>
+  );
+}
+
+function TaxReport({ items, totals, downloadCSV }) {
+  const headers = ["商品编号", "品牌", "商品名", "申报JPY", "进项消费税参考", "销售JPY（税込）", "销售不含税", "销售消费税", "消费税差额参考"];
+  const rows = items.map((x) => {
+    const t = calcTax(x);
+    return [x.id, x.brand, x.item, Math.round(t.declaredJpy), Math.round(t.inputTax), Math.round(t.saleJpy), Math.round(t.saleExTax), Math.round(t.outputTax), Math.round(t.taxBalance)];
+  });
+
+  const csv = [headers, ...rows, [], ["合计", "", "", "", Math.round(totals.inputTax), Math.round(totals.sale), "", Math.round(totals.outputTax), Math.round(totals.taxBalance)]];
+
+  return (
+    <div className="panel">
+      <Toolbar title="消费税参考表" onDownload={() => downloadCSV(csv, "gouka_consumption_tax_reference.csv")} />
+      <p className="note">课税事业者参考：销售消费税按含税销售额倒算 10/110，进项消费税按申报JPY × 10% 参考。实际申告请交由税理士确认。</p>
+      <Table headers={headers} rows={rows} />
+      <h3>合计</h3>
+      <p>销售消费税参考：{jpy(totals.outputTax)}</p>
+      <p>进项消费税参考：{jpy(totals.inputTax)}</p>
+      <p>消费税差额参考：{jpy(totals.taxBalance)}</p>
     </div>
   );
 }
