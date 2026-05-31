@@ -404,7 +404,23 @@ function importBackup(event) {
             <h1>二手奢侈品管理系统 V2</h1>
             <p>编辑・删除・自动保存・图片上传・状态筛选・古物台账・EMS报关・利润计算・消费税参考</p>
           </div>
-          <span className="pill">Auto Save</span>
+  <div style={{display:"flex",gap:"10px",alignItems:"center"}}>
+  <button className="primary" onClick={exportBackup}>
+    导出备份
+  </button>
+
+  <label className="primary" style={{cursor:"pointer"}}>
+    导入备份
+    <input
+      type="file"
+      accept=".json"
+      style={{display:"none"}}
+      onChange={importBackup}
+    />
+  </label>
+
+  <span className="pill">Auto Save</span>
+</div>
         </header>
 
         {tab === "dashboard" && <Dashboard totals={totals} items={items} />}
