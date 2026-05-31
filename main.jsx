@@ -259,4 +259,3 @@ function Input({label,value,onChange,type="text",placeholder=""}){return <label>
 function Select({label,value,onChange,options}){return <label>{label}<select value={value} onChange={e=>onChange(e.target.value)}>{options.map(o=><option key={o}>{o}</option>)}</select></label>}
 
 createRoot(document.getElementById("root")).render(<App/>);
-```
