@@ -389,6 +389,7 @@ function App() {
             editItem={editItem}
             deleteItem={deleteItem}
             setPreviewImage={setPreviewImage}
+            setPreviewScale={setPreviewScale}
           />
         )}
         {tab === "ledger" && <Ledger items={filtered} downloadCSV={downloadCSV} />}
@@ -538,7 +539,7 @@ function StatusBadge({ status }) {
   return <span className={`status-badge status-${status}`}>{status}</span>;
 }
 
-function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, downloadCSV, editItem, deleteItem, setPreviewImage }) {
+function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, downloadCSV, editItem, deleteItem, setPreviewImage, setPreviewScale }) {
   const headers = ["图片", "商品编号", "入库日期", "品类", "品牌", "商品名", "材质", "颜色", "产地", "数量", "采购CNY", "申报CNY", "采购JPY", "进项税参考", "预计销售JPY（税込）", "状态", "操作"];
   const csvHeaders = ["商品编号", "入库日期", "品类", "品牌", "商品名", "材质", "颜色", "产地", "数量", "采购CNY", "申报CNY", "采购JPY", "进项消费税参考", "预计销售JPY税込", "状态"];
   const csvRows = [csvHeaders];
