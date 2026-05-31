@@ -28,7 +28,11 @@ const emptyForm = {
   status: "已入库",
   platform: "EMS",
   memo: "",
-  images: []
+  images: [],
+  soldDate: "",
+  soldPlatform: "",
+  soldPriceJpy: "",
+  soldMemo: ""
 };
 
 const seedItems = [
@@ -52,7 +56,11 @@ const seedItems = [
     status: "已入库",
     platform: "EMS",
     memo: "中古ブランドバッグ / Non-CITES material",
-    images: []
+    images: [],
+    soldDate: "",
+    soldPlatform: "",
+    soldPriceJpy: "",
+    soldMemo: ""
   },
   {
     id: "GOUKA-202605-002",
@@ -74,7 +82,11 @@ const seedItems = [
     status: "报关准备",
     platform: "EMS",
     memo: "商业报关准备",
-    images: []
+    images: [],
+    soldDate: "",
+    soldPlatform: "",
+    soldPriceJpy: "",
+    soldMemo: ""
   }
 ];
 
@@ -103,7 +115,7 @@ function calcTax(x) {
   const costJpy = Number(x.purchaseCny || 0) * Number(x.rate || 0);
   const declaredJpy = Number(x.declaredCny || 0) * Number(x.rate || 0);
   const inputTax = declaredJpy * TAX_RATE;
-  const saleJpy = Number(x.saleJpy || 0);
+  const saleJpy = Number(x.soldPriceJpy || x.saleJpy || 0);
   const outputTax = saleJpy * TAX_RATE / (1 + TAX_RATE);
   const saleExTax = saleJpy - outputTax;
   const grossProfit = saleJpy - costJpy;
@@ -197,9 +209,14 @@ function App() {
         a.outputTax += t.outputTax;
         a.taxBalance += t.taxBalance;
         a.profitExTax += t.profitExTax;
+        if (x.status === "已售出") {
+          a.soldCount += Number(x.qty || 0);
+          a.soldAmount += Number(x.soldPriceJpy || x.saleJpy || 0);
+          a.soldProfit += t.grossProfit;
+        }
         return a;
       },
-      { qty: 0, declared: 0, cost: 0, sale: 0, profit: 0, inputTax: 0, outputTax: 0, taxBalance: 0, profitExTax: 0 }
+      { qty: 0, declared: 0, cost: 0, sale: 0, profit: 0, inputTax: 0, outputTax: 0, taxBalance: 0, profitExTax: 0, soldCount: 0, soldAmount: 0, soldProfit: 0 }
     );
   }, [items]);
 
@@ -223,7 +240,11 @@ function App() {
                 declaredCny: Number(form.declaredCny || form.purchaseCny || 0),
                 rate: Number(form.rate || 0),
                 saleJpy: Number(form.saleJpy || 0),
-                images: form.images || []
+                images: form.images || [],
+                soldDate: form.soldDate || "",
+                soldPlatform: form.soldPlatform || "",
+                soldPriceJpy: Number(form.soldPriceJpy || 0),
+                soldMemo: form.soldMemo || ""
               }
             : x
         )
@@ -238,7 +259,11 @@ function App() {
         declaredCny: Number(form.declaredCny || form.purchaseCny || 0),
         rate: Number(form.rate || 0),
         saleJpy: Number(form.saleJpy || 0),
-        images: form.images || []
+        images: form.images || [],
+        soldDate: form.soldDate || "",
+        soldPlatform: form.soldPlatform || "",
+        soldPriceJpy: Number(form.soldPriceJpy || 0),
+        soldMemo: form.soldMemo || ""
       };
       setItems([next, ...items]);
       alert("商品已添加");
@@ -307,7 +332,8 @@ function App() {
     ["ledger", "古物台账"],
     ["customs", "EMS报关"],
     ["profit", "利润分析"],
-    ["tax", "消费税参考"]
+    ["tax", "消费税参考"],
+    ["sales", "销售记录"]
   ];
 
   return (
@@ -368,6 +394,7 @@ function App() {
         {tab === "customs" && <Customs items={filtered} downloadCSV={downloadCSV} />}
         {tab === "profit" && <Profit items={filtered} />}
         {tab === "tax" && <TaxReport items={filtered} totals={totals} downloadCSV={downloadCSV} />}
+        {tab === "sales" && <SalesReport items={items} downloadCSV={downloadCSV} />}
 
         {previewImage && (
           <div className="image-modal" onClick={() => setPreviewImage(null)}>
@@ -393,6 +420,9 @@ function Dashboard({ totals, items }) {
       <Card icon={<Calculator />} title="进项消费税(参考)" value={jpy(totals.inputTax)} />
       <Card icon={<Calculator />} title="消费税差额参考" value={jpy(totals.taxBalance)} />
       <Card icon={<Calculator />} title="不含税利润参考" value={jpy(totals.profitExTax)} />
+      <Card icon={<Calculator />} title="已售数量" value={`${totals.soldCount} 件`} />
+      <Card icon={<Calculator />} title="已售金额" value={jpy(totals.soldAmount)} />
+      <Card icon={<Calculator />} title="已售毛利" value={jpy(totals.soldProfit)} />
 
       <div className="panel wide">
         <h2>系统说明</h2>
@@ -441,6 +471,18 @@ function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, 
         <Input label="本人确认方式" value={form.idCheck} onChange={(v) => set("idCheck", v)} placeholder="Invoice / Passport / Residence Card" />
         <Select label="状态" value={form.status} onChange={(v) => set("status", v)} options={["采购中", "运输中", "已入库", "报关准备", "出品中", "已售出", "保留", "退货"]} />
         <Input label="平台" value={form.platform} onChange={(v) => set("platform", v)} placeholder="EMS / EcoRing / JBA" />
+
+        {form.status === "已售出" && (
+          <>
+            <Input label="销售日期" type="date" value={form.soldDate || ""} onChange={(v) => set("soldDate", v)} />
+            <Input label="销售平台" value={form.soldPlatform || ""} onChange={(v) => set("soldPlatform", v)} placeholder="EcoRing / Mercari / 店铺 / 其他" />
+            <Input label="实际销售额 JPY（税込）" type="number" value={form.soldPriceJpy || ""} onChange={(v) => set("soldPriceJpy", v)} />
+            <label className="full">
+              销售备注
+              <textarea value={form.soldMemo || ""} onChange={(e) => set("soldMemo", e.target.value)} placeholder="拍卖成交 / 线下销售 / 买家备注" />
+            </label>
+          </>
+        )}
 
         <label className="full">
           商品图片（最多3张，本地保存）
@@ -602,6 +644,48 @@ function TaxReport({ items, totals, downloadCSV }) {
       <p>销售消费税参考：{jpy(totals.outputTax)}</p>
       <p>进项消费税参考：{jpy(totals.inputTax)}</p>
       <p>消费税差额参考：{jpy(totals.taxBalance)}</p>
+    </div>
+  );
+}
+
+
+function SalesReport({ items, downloadCSV }) {
+  const soldItems = items.filter((x) => x.status === "已售出");
+  const headers = ["商品编号", "品牌", "商品名", "销售日期", "销售平台", "销售额JPY（税込）", "采购成本JPY", "销售消费税", "预计毛利", "不含税利润参考", "备注"];
+  const rows = soldItems.map((x) => {
+    const t = calcTax(x);
+    return [
+      x.id,
+      x.brand,
+      x.item,
+      x.soldDate || "",
+      x.soldPlatform || "",
+      Math.round(t.saleJpy),
+      Math.round(t.costJpy),
+      Math.round(t.outputTax),
+      Math.round(t.grossProfit),
+      Math.round(t.profitExTax),
+      x.soldMemo || ""
+    ];
+  });
+
+  const totalSale = soldItems.reduce((a, x) => a + Number(x.soldPriceJpy || x.saleJpy || 0), 0);
+  const totalCost = soldItems.reduce((a, x) => a + calcTax(x).costJpy, 0);
+  const totalProfit = soldItems.reduce((a, x) => a + calcTax(x).grossProfit, 0);
+  const totalOutputTax = soldItems.reduce((a, x) => a + calcTax(x).outputTax, 0);
+
+  return (
+    <div className="panel">
+      <Toolbar title="销售记录" onDownload={() => downloadCSV([headers, ...rows], "gouka_sales_report.csv")} />
+      <p className="note">状态改为「已售出」后，会自动进入这里。建议填写销售日期、销售平台、实际销售额。</p>
+      <div className="grid4" style={{marginBottom:"16px"}}>
+        <Card icon={<Calculator />} title="已售件数" value={`${soldItems.length} 件`} />
+        <Card icon={<Calculator />} title="累计销售额" value={jpy(totalSale)} />
+        <Card icon={<Calculator />} title="累计成本" value={jpy(totalCost)} />
+        <Card icon={<Calculator />} title="累计毛利" value={jpy(totalProfit)} />
+      </div>
+      <p>销售消费税参考：{jpy(totalOutputTax)}</p>
+      <Table headers={headers} rows={rows} />
     </div>
   );
 }
