@@ -253,3 +253,76 @@ border-radius:8px;
 margin-top:auto;
 background:#374151!important;
 }
+
+/* V2.7 优化样式：状态颜色、图片放大、销售筛选 */
+.status-badge{
+  display:inline-block;
+  padding:5px 10px;
+  border-radius:999px;
+  font-weight:700;
+  font-size:12px;
+  white-space:nowrap;
+}
+
+.status-采购中{background:#fef3c7;color:#92400e;}
+.status-运输中{background:#dbeafe;color:#1d4ed8;}
+.status-已入库{background:#dcfce7;color:#166534;}
+.status-报关准备{background:#ffedd5;color:#9a3412;}
+.status-出品中{background:#ede9fe;color:#5b21b6;}
+.status-已售出{background:#e0f2fe;color:#075985;}
+.status-保留{background:#f3f4f6;color:#374151;}
+.status-退货{background:#fee2e2;color:#991b1b;}
+
+.filter-row{
+  display:flex;
+  gap:10px;
+  align-items:center;
+  flex-wrap:wrap;
+  margin:0 0 16px;
+}
+
+.filter-row input{
+  padding:10px;
+  border:1px solid #d1d5db;
+  border-radius:8px;
+  min-width:220px;
+}
+
+.filter-row button{
+  border:none;
+  background:#111827;
+  color:white;
+  padding:10px 14px;
+  border-radius:8px;
+}
+
+.image-modal{
+  overflow:hidden;
+}
+
+.image-modal img{
+  transition:transform .15s ease;
+}
+
+.image-modal-tools{
+  position:fixed;
+  top:18px;
+  right:18px;
+  z-index:10000;
+  display:flex;
+  gap:8px;
+  align-items:center;
+  background:rgba(17,24,39,.92);
+  padding:10px;
+  border-radius:12px;
+  color:white;
+}
+
+.image-modal-tools button{
+  border:none;
+  background:white;
+  color:#111827;
+  padding:7px 10px;
+  border-radius:8px;
+  font-weight:700;
+}
