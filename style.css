@@ -1,6 +1,12 @@
+```css
+*{
+  box-sizing:border-box;
+}
+
 body{
   margin:0;
   font-family:Arial,sans-serif;
+  background:#f3f4f6;
 }
 
 .app{
@@ -10,16 +16,159 @@ body{
 
 aside{
   width:240px;
-  background:#1f2937;
+  background:#111827;
   color:white;
   padding:20px;
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+}
+
+aside button{
+  width:100%;
+  border:none;
+  padding:12px;
+  border-radius:8px;
+  background:#1f2937;
+  color:white;
+  text-align:left;
+}
+
+aside button:hover{
+  background:#374151;
+}
+
+aside button.active{
+  background:#2563eb;
+}
+
+.brand{
+  margin-bottom:20px;
+}
+
+.brand b{
+  display:block;
+  font-size:18px;
+}
+
+.brand span{
+  color:#9ca3af;
+  font-size:12px;
 }
 
 main{
   flex:1;
-  padding:20px;
+  padding:24px;
 }
 
-button{
-  cursor:pointer;
+header{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  margin-bottom:20px;
 }
+
+.panel{
+  background:white;
+  border-radius:12px;
+  padding:20px;
+  box-shadow:0 2px 10px rgba(0,0,0,.08);
+}
+
+.card{
+  background:white;
+  border-radius:12px;
+  padding:20px;
+  box-shadow:0 2px 10px rgba(0,0,0,.08);
+}
+
+.grid4{
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  gap:16px;
+}
+
+.tablewrap{
+  overflow:auto;
+}
+
+table{
+  width:100%;
+  border-collapse:collapse;
+}
+
+th{
+  background:#111827;
+  color:white;
+  padding:10px;
+}
+
+td{
+  border:1px solid #e5e7eb;
+  padding:10px;
+}
+
+.toolbar{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  margin-bottom:15px;
+}
+
+.search input{
+  padding:8px;
+  width:240px;
+}
+
+.primary{
+  background:#2563eb;
+  color:white;
+  border:none;
+  padding:12px 20px;
+  border-radius:8px;
+}
+
+.danger{
+  background:#dc2626;
+  color:white;
+  border:none;
+  padding:6px 12px;
+  border-radius:6px;
+}
+
+.formgrid{
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  gap:12px;
+  margin-bottom:20px;
+}
+
+.formgrid input,
+.formgrid select,
+.formgrid textarea{
+  width:100%;
+  padding:8px;
+}
+
+.full{
+  grid-column:1 / -1;
+}
+
+@media(max-width:900px){
+  .app{
+    flex-direction:column;
+  }
+
+  aside{
+    width:100%;
+  }
+
+  .grid4{
+    grid-template-columns:1fr;
+  }
+
+  .formgrid{
+    grid-template-columns:1fr;
+  }
+}
+```
