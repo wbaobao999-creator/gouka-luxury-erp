@@ -595,12 +595,108 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
 }
 
 function Ledger({ items, downloadCSV }) {
-  const headers = ["No", "取引日", "商品番号", "区分", "ブランド", "商品名", "特徴", "数量", "取引区分", "金額", "通貨", "相手方", "住所", "本人確認", "売却先", "備考"];
-  const rows = items.map((x, i) => [i + 1, x.purchaseDate, x.id, x.category, x.brand, x.item, `${x.material} / ${x.color} / ${x.origin}`, x.qty, "仕入", x.purchaseCny, "CNY", x.source, x.address, x.idCheck, "", x.memo]);
+  const [ledgerQuery, setLedgerQuery] = useState("");
+  const [ledgerDate, setLedgerDate] = useState("");
+
+  const filteredItems = items.filter((x) => {
+    const q = ledgerQuery.toLowerCase();
+    const text = [
+      x.id,
+      x.purchaseDate,
+      x.category,
+      x.brand,
+      x.item,
+      x.material,
+      x.color,
+      x.origin,
+      x.source,
+      x.address,
+      x.idCheck,
+      x.memo
+    ].join(" ").toLowerCase();
+
+    const matchText = !q || text.includes(q);
+    const matchDate = !ledgerDate || x.purchaseDate === ledgerDate;
+
+    return matchText && matchDate;
+  });
+
+  const headers = [
+    "No",
+    "取引日",
+    "商品番号",
+    "区分",
+    "ブランド",
+    "商品名",
+    "特徴",
+    "数量",
+    "取引区分",
+    "金額",
+    "通貨",
+    "相手方",
+    "住所",
+    "本人確認",
+    "売却先",
+    "備考"
+  ];
+
+  const rows = filteredItems.map((x, i) => [
+    i + 1,
+    x.purchaseDate,
+    x.id,
+    x.category,
+    x.brand,
+    x.item,
+    `${x.material} / ${x.color} / ${x.origin}`,
+    x.qty,
+    "仕入",
+    x.purchaseCny,
+    "CNY",
+    x.source,
+    x.address,
+    x.idCheck,
+    "",
+    x.memo
+  ]);
 
   return (
     <div className="panel">
-      <Toolbar title="古物台账" onDownload={() => downloadCSV([headers, ...rows], "gouka_kobutsu_ledger.csv")} />
+      <div className="toolbar">
+        <h2>古物台账</h2>
+
+        <div className="toolbar-right">
+          <div className="search">
+            <Search size={16} />
+            <input
+              placeholder="搜索编号 / 品牌 / 商品 / 供应商"
+              value={ledgerQuery}
+              onChange={(e) => setLedgerQuery(e.target.value)}
+            />
+          </div>
+
+          <input
+            type="date"
+            value={ledgerDate}
+            onChange={(e) => setLedgerDate(e.target.value)}
+          />
+
+          <button onClick={() => {
+            setLedgerQuery("");
+            setLedgerDate("");
+          }}>
+            清除筛选
+          </button>
+
+          <button onClick={() => downloadCSV([headers, ...rows], "gouka_kobutsu_ledger.csv")}>
+            <Download size={16} /> CSV导出
+          </button>
+        </div>
+      </div>
+
+      <p className="note">
+        当前显示 {filteredItems.length} 件 / 全部 {items.length} 件
+      </p>
+
       <Table headers={headers} rows={rows} />
     </div>
   );
