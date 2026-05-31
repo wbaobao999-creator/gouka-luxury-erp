@@ -173,6 +173,7 @@ function App() {
   const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState(null);
   const [previewImage, setPreviewImage] = useState(null);
+  const [previewScale, setPreviewScale] = useState(1);
 
   React.useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
@@ -398,7 +399,14 @@ function App() {
 
         {previewImage && (
           <div className="image-modal" onClick={() => setPreviewImage(null)}>
-            <img src={previewImage} alt="preview" />
+            <div className="image-modal-tools" onClick={(e) => e.stopPropagation()}>
+              <button onClick={() => setPreviewScale(Math.max(0.5, previewScale - 0.25))}>－</button>
+              <span>{Math.round(previewScale * 100)}%</span>
+              <button onClick={() => setPreviewScale(Math.min(3, previewScale + 0.25))}>＋</button>
+              <button onClick={() => setPreviewScale(1)}>原图</button>
+              <button onClick={() => setPreviewImage(null)}>关闭</button>
+            </div>
+            <img src={previewImage} alt="preview" style={{transform:`scale(${previewScale})`}} />
           </div>
         )}
       </main>
@@ -409,26 +417,31 @@ function App() {
 function Dashboard({ totals, items }) {
   const margin = totals.sale ? (totals.profit / totals.sale) * 100 : 0;
   const withImages = items.filter((x) => x.images && x.images.length).length;
+  const activeStock = items.filter((x) => x.status !== "已售出" && x.status !== "退货").length;
+  const soldItems = items.filter((x) => x.status === "已售出").length;
 
   return (
-    <section className="grid4">
-      <Card icon={<Package />} title="库存数量" value={`${totals.qty} 件`} />
-      <Card icon={<FileText />} title="申报总额" value={cny(totals.declared)} />
-      <Card icon={<Calculator />} title="预计销售额" value={jpy(totals.sale)} />
-      <Card icon={<ImagePlus />} title="已上传图片商品" value={`${withImages} 件`} />
-      <Card icon={<Calculator />} title="销售消费税(内税参考)" value={jpy(totals.outputTax)} />
-      <Card icon={<Calculator />} title="进项消费税(参考)" value={jpy(totals.inputTax)} />
-      <Card icon={<Calculator />} title="消费税差额参考" value={jpy(totals.taxBalance)} />
-      <Card icon={<Calculator />} title="不含税利润参考" value={jpy(totals.profitExTax)} />
-      <Card icon={<Calculator />} title="已售数量" value={`${totals.soldCount} 件`} />
-      <Card icon={<Calculator />} title="已售金额" value={jpy(totals.soldAmount)} />
-      <Card icon={<Calculator />} title="已售毛利" value={jpy(totals.soldProfit)} />
+    <section>
+      <div className="grid4">
+        <Card icon={<Package />} title="当前库存件数" value={`${activeStock} 件`} />
+        <Card icon={<FileText />} title="库存总采购成本" value={jpy(totals.cost)} />
+        <Card icon={<Calculator />} title="预计销售总额" value={jpy(totals.sale)} />
+        <Card icon={<Calculator />} title="预计毛利" value={jpy(totals.profit)} />
 
-      <div className="panel wide">
-        <h2>系统说明</h2>
-        <p>V2 已支持：登录、编辑、删除、自动保存、本地图片上传、状态筛选、CSV导出、消费税参考计算。</p>
-        <p>消费税为参考计算：销售金额按含税价格倒算内税10%，进口/采购进项税按申报JPY × 10% 参考计算。最终申告请以税理士口径为准。</p>
-        <p>预计利润率：<b>{margin.toFixed(1)}%</b></p>
+        <Card icon={<Calculator />} title="已售数量" value={`${soldItems} 件`} />
+        <Card icon={<Calculator />} title="已售金额" value={jpy(totals.soldAmount)} />
+        <Card icon={<Calculator />} title="已售毛利" value={jpy(totals.soldProfit)} />
+        <Card icon={<ImagePlus />} title="有图片商品" value={`${withImages} 件`} />
+
+        <Card icon={<Calculator />} title="销售消费税参考" value={jpy(totals.outputTax)} />
+        <Card icon={<Calculator />} title="进项消费税参考" value={jpy(totals.inputTax)} />
+        <Card icon={<Calculator />} title="消费税差额参考" value={jpy(totals.taxBalance)} />
+        <Card icon={<Calculator />} title="预计利润率" value={`${margin.toFixed(1)}%`} />
+      </div>
+
+      <div className="panel wide" style={{marginTop:"16px"}}>
+        <h2>经营概览</h2>
+        <p>库存、销售、利润、消费税参考已整合。销售额与消费税为经营参考，正式申告请交由税理士确认。</p>
       </div>
     </section>
   );
@@ -520,6 +533,11 @@ function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, 
   );
 }
 
+
+function StatusBadge({ status }) {
+  return <span className={`status-badge status-${status}`}>{status}</span>;
+}
+
 function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, downloadCSV, editItem, deleteItem, setPreviewImage }) {
   const headers = ["图片", "商品编号", "入库日期", "品类", "品牌", "商品名", "材质", "颜色", "产地", "数量", "采购CNY", "申报CNY", "采购JPY", "进项税参考", "预计销售JPY（税込）", "状态", "操作"];
   const csvHeaders = ["商品编号", "入库日期", "品类", "品牌", "商品名", "材质", "颜色", "产地", "数量", "采购CNY", "申报CNY", "采购JPY", "进项消费税参考", "预计销售JPY税込", "状态"];
@@ -533,7 +551,7 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
   const rows = items.map((x) => {
     const t = calcTax(x);
     return [
-      x.images && x.images.length ? <img className="thumb" src={x.images[0]} alt={x.item} onClick={() => setPreviewImage(x.images[0])} /> : "—",
+      x.images && x.images.length ? <img className="thumb" src={x.images[0]} alt={x.item} onClick={() => { setPreviewScale(1); setPreviewImage(x.images[0]); }} /> : "—",
       x.id,
       x.purchaseDate,
       x.category,
@@ -548,7 +566,7 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
       Math.round(t.costJpy),
       Math.round(t.inputTax),
       x.saleJpy,
-      x.status,
+      <StatusBadge status={x.status} />,
       <div className="table-actions">
         <button className="edit" onClick={() => editItem(x)}>
           <Edit3 size={14} /> 编辑
@@ -650,9 +668,20 @@ function TaxReport({ items, totals, downloadCSV }) {
 
 
 function SalesReport({ items, downloadCSV }) {
+  const [salesQuery, setSalesQuery] = useState("");
+  const [salesMonth, setSalesMonth] = useState("");
+
   const soldItems = items.filter((x) => x.status === "已售出");
+
+  const filteredSold = soldItems.filter((x) => {
+    const q = salesQuery.toLowerCase();
+    const matchText = !q || Object.values(x).join(" ").toLowerCase().includes(q);
+    const matchMonth = !salesMonth || (x.soldDate || "").startsWith(salesMonth);
+    return matchText && matchMonth;
+  });
+
   const headers = ["商品编号", "品牌", "商品名", "销售日期", "销售平台", "销售额JPY（税込）", "采购成本JPY", "销售消费税", "预计毛利", "不含税利润参考", "备注"];
-  const rows = soldItems.map((x) => {
+  const rows = filteredSold.map((x) => {
     const t = calcTax(x);
     return [
       x.id,
@@ -669,21 +698,38 @@ function SalesReport({ items, downloadCSV }) {
     ];
   });
 
-  const totalSale = soldItems.reduce((a, x) => a + Number(x.soldPriceJpy || x.saleJpy || 0), 0);
-  const totalCost = soldItems.reduce((a, x) => a + calcTax(x).costJpy, 0);
-  const totalProfit = soldItems.reduce((a, x) => a + calcTax(x).grossProfit, 0);
-  const totalOutputTax = soldItems.reduce((a, x) => a + calcTax(x).outputTax, 0);
+  const totalSale = filteredSold.reduce((a, x) => a + Number(x.soldPriceJpy || x.saleJpy || 0), 0);
+  const totalCost = filteredSold.reduce((a, x) => a + calcTax(x).costJpy, 0);
+  const totalProfit = filteredSold.reduce((a, x) => a + calcTax(x).grossProfit, 0);
+  const totalOutputTax = filteredSold.reduce((a, x) => a + calcTax(x).outputTax, 0);
 
   return (
     <div className="panel">
       <Toolbar title="销售记录" onDownload={() => downloadCSV([headers, ...rows], "gouka_sales_report.csv")} />
-      <p className="note">状态改为「已售出」后，会自动进入这里。建议填写销售日期、销售平台、实际销售额。</p>
-      <div className="grid4" style={{marginBottom:"16px"}}>
-        <Card icon={<Calculator />} title="已售件数" value={`${soldItems.length} 件`} />
-        <Card icon={<Calculator />} title="累计销售额" value={jpy(totalSale)} />
-        <Card icon={<Calculator />} title="累计成本" value={jpy(totalCost)} />
-        <Card icon={<Calculator />} title="累计毛利" value={jpy(totalProfit)} />
+
+      <div className="filter-row">
+        <input
+          placeholder="搜索品牌 / 商品 / 平台 / 备注"
+          value={salesQuery}
+          onChange={(e) => setSalesQuery(e.target.value)}
+        />
+        <input
+          type="month"
+          value={salesMonth}
+          onChange={(e) => setSalesMonth(e.target.value)}
+        />
+        <button onClick={() => { setSalesQuery(""); setSalesMonth(""); }}>清除筛选</button>
       </div>
+
+      <p className="note">状态改为「已售出」后，会自动进入这里。可按品牌、商品名、销售平台、月份筛选。</p>
+
+      <div className="grid4" style={{marginBottom:"16px"}}>
+        <Card icon={<Calculator />} title="筛选已售件数" value={`${filteredSold.length} 件`} />
+        <Card icon={<Calculator />} title="筛选销售额" value={jpy(totalSale)} />
+        <Card icon={<Calculator />} title="筛选成本" value={jpy(totalCost)} />
+        <Card icon={<Calculator />} title="筛选毛利" value={jpy(totalProfit)} />
+      </div>
+
       <p>销售消费税参考：{jpy(totalOutputTax)}</p>
       <Table headers={headers} rows={rows} />
     </div>
