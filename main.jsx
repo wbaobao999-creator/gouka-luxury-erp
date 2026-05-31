@@ -62,8 +62,16 @@ function cny(n) {
 
 function App() {
   const [tab, setTab] = useState("dashboard");
-  const [items, setItems] = useState(seedItems);
-  const [query, setQuery] = useState("");
+ const [items, setItems] = useState(() => {
+  const saved = localStorage.getItem("gouka_items");
+  return saved ? JSON.parse(saved) : seedItems;
+}); 
+React.useEffect(() => {
+  localStorage.setItem(
+    "gouka_items",
+    JSON.stringify(items)
+  );
+}, [items]);
   const [form, setForm] = useState({
     purchaseDate: "",
     category: "バッグ類",
