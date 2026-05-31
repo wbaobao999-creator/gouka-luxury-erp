@@ -6,7 +6,7 @@ import "./style.css";
 const STORAGE_KEY = "gouka_erp_v2_items";
 const LOGIN_KEY = "gouka_erp_login";
 const LOGIN_USER = "admin";
-const LOGIN_PASS = "GOUKA-ERP-2026!";
+const LOGIN_PASS = "666888";
 
 const emptyForm = {
   purchaseDate: "",
