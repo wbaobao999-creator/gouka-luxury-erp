@@ -5,8 +5,8 @@ import "./style.css";
 
 const STORAGE_KEY = "gouka_erp_v2_items";
 const LOGIN_KEY = "gouka_erp_login";
-const LOGIN_USER = "admin";
-const LOGIN_PASS = "666888";
+const LOGIN_USER = "gouka";
+const LOGIN_PASS = "777888";
 
 const emptyForm = {
   purchaseDate: "",
@@ -134,10 +134,6 @@ function LoginPage({ onLogin }) {
 
         <button className="login-btn" type="submit">登录</button>
 
-        <div className="login-hint">
-          默认账号：admin<br />
-          默认密码：是你大爷
-        </div>
       </form>
     </div>
   );
@@ -151,6 +147,7 @@ function App() {
   const [statusFilter, setStatusFilter] = useState("全部");
   const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState(null);
+  const [previewImage, setPreviewImage] = useState(null);
 
   React.useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
@@ -346,11 +343,18 @@ function App() {
             downloadCSV={downloadCSV}
             editItem={editItem}
             deleteItem={deleteItem}
+            setPreviewImage={setPreviewImage}
           />
         )}
         {tab === "ledger" && <Ledger items={filtered} downloadCSV={downloadCSV} />}
         {tab === "customs" && <Customs items={filtered} downloadCSV={downloadCSV} />}
         {tab === "profit" && <Profit items={filtered} />}
+
+        {previewImage && (
+          <div className="image-modal" onClick={() => setPreviewImage(null)}>
+            <img src={previewImage} alt="商品大图预览" />
+          </div>
+        )}
       </main>
     </div>
   );
@@ -451,7 +455,7 @@ function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, 
   );
 }
 
-function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, downloadCSV, editItem, deleteItem }) {
+function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, downloadCSV, editItem, deleteItem, setPreviewImage }) {
   const headers = ["图片", "商品编号", "入库日期", "品类", "品牌", "商品名", "材质", "颜色", "产地", "数量", "采购CNY", "申报CNY", "预计销售JPY", "状态", "操作"];
   const csvHeaders = ["商品编号", "入库日期", "品类", "品牌", "商品名", "材质", "颜色", "产地", "数量", "采购CNY", "申报CNY", "预计销售JPY", "状态"];
   const csvRows = [csvHeaders];
@@ -461,7 +465,7 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
   );
 
   const rows = items.map((x) => [
-    x.images && x.images.length ? <img className="thumb" src={x.images[0]} alt={x.item} /> : "—",
+    x.images && x.images.length ? <img className="thumb" src={x.images[0]} alt={x.item} onClick={() => setPreviewImage(x.images[0])} title="点击放大" /> : "—",
     x.id,
     x.purchaseDate,
     x.category,
