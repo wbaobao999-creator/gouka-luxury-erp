@@ -164,17 +164,58 @@ function LoginPage({ onLogin }) {
   );
 }
 
-function App() {
-  const [isLoggedIn, setIsLoggedIn] = useState(() => localStorage.getItem(LOGIN_KEY) === "yes");
-  const [tab, setTab] = useState("dashboard");
-  const [items, setItems] = useState(loadItems);
-  const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState("全部");
-  const [form, setForm] = useState(emptyForm);
-  const [editingId, setEditingId] = useState(null);
-  const [previewImage, setPreviewImage] = useState(null);
-  const [previewScale, setPreviewScale] = useState(1);
+function exportBackup() {
+  const data = {
+    version: "GOUKA-ERP-V2",
+    exportTime: new Date().toISOString(),
+    items
+  };
 
+  const blob = new Blob(
+    [JSON.stringify(data, null, 2)],
+    { type: "application/json" }
+  );
+
+  const url = URL.createObjectURL(blob);
+
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `gouka-backup-${new Date().toISOString().slice(0,10)}.json`;
+  a.click();
+
+  URL.revokeObjectURL(url);
+}
+
+function importBackup(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+
+  reader.onload = (e) => {
+    try {
+      const backup = JSON.parse(e.target.result);
+
+      if (!backup.items) {
+        alert("备份文件格式错误");
+        return;
+      }
+
+      setItems(backup.items);
+
+      localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify(backup.items)
+      );
+
+      alert(`恢复成功，共导入 ${backup.items.length} 条记录`);
+    } catch {
+      alert("无法读取备份文件");
+    }
+  };
+
+  reader.readAsText(file);
+}
   React.useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
   }, [items]);
