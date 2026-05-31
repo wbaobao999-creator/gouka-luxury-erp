@@ -2,11 +2,25 @@
   box-sizing:border-box;
 }
 
+:root{
+  --bg:#f3f6fb;
+  --panel:#ffffff;
+  --ink:#0f172a;
+  --muted:#64748b;
+  --line:#e2e8f0;
+  --nav:#0f172a;
+  --nav2:#111827;
+  --blue:#2563eb;
+  --green:#059669;
+  --red:#dc2626;
+  --shadow:0 16px 40px rgba(15,23,42,.08);
+}
+
 body{
   margin:0;
-  font-family:Arial,"Noto Sans JP","Microsoft YaHei",sans-serif;
-  background:linear-gradient(135deg,#eef2ff 0%,#f8fafc 42%,#eef2f7 100%);
-  color:#0f172a;
+  font-family:Arial,"Microsoft YaHei","Noto Sans JP",sans-serif;
+  background:linear-gradient(135deg,#eef2ff 0%,#f8fafc 45%,#eef2f7 100%);
+  color:var(--ink);
 }
 
 .app{
@@ -14,10 +28,10 @@ body{
   min-height:100vh;
 }
 
-/* 左侧导航 */
+/* 左侧菜单 */
 aside{
   width:260px;
-  background:linear-gradient(180deg,#0f172a 0%,#111827 58%,#020617 100%);
+  background:linear-gradient(180deg,#0f172a 0%,#111827 60%,#020617 100%);
   color:white;
   padding:22px 18px;
   display:flex;
@@ -35,14 +49,13 @@ aside{
   align-items:center;
   padding:10px 8px 24px;
   margin-bottom:8px;
-  border-bottom:1px solid rgba(255,255,255,.10);
+  border-bottom:1px solid rgba(255,255,255,.12);
 }
 
 .brand b{
   display:block;
   font-size:18px;
   line-height:1.25;
-  letter-spacing:.2px;
 }
 
 .brand span{
@@ -80,7 +93,7 @@ aside button.active{
   background:rgba(148,163,184,.18)!important;
 }
 
-/* 主体 */
+/* 主区 */
 main{
   flex:1;
   padding:30px;
@@ -105,6 +118,7 @@ header p{
   margin:0;
   color:#475569;
   font-weight:600;
+  line-height:1.7;
 }
 
 .pill{
@@ -116,39 +130,36 @@ header p{
   box-shadow:0 8px 18px rgba(37,99,235,.18);
 }
 
-/* 卡片 */
-.grid4{
-  display:grid;
-  grid-template-columns:repeat(4,minmax(0,1fr));
-  gap:18px;
+/* 面板和卡片 */
+.panel,.card{
+  background:rgba(255,255,255,.96);
+  border:1px solid rgba(226,232,240,.92);
+  border-radius:22px;
+  padding:24px;
+  box-shadow:var(--shadow);
 }
 
 .card{
-  background:rgba(255,255,255,.92);
-  border:1px solid rgba(226,232,240,.9);
-  border-radius:20px;
-  padding:22px;
   min-height:150px;
-  box-shadow:0 12px 30px rgba(15,23,42,.08);
   transition:.18s ease;
 }
 
 .card:hover{
   transform:translateY(-3px);
-  box-shadow:0 18px 38px rgba(15,23,42,.12);
+  box-shadow:0 20px 46px rgba(15,23,42,.13);
 }
 
 .card svg{
   width:28px;
   height:28px;
-  color:#0f172a;
   margin-bottom:18px;
+  color:#0f172a;
 }
 
 .card p{
   margin:0 0 16px;
   color:#334155;
-  font-weight:700;
+  font-weight:800;
 }
 
 .card h2{
@@ -157,12 +168,10 @@ header p{
   letter-spacing:-.5px;
 }
 
-.panel{
-  background:rgba(255,255,255,.94);
-  border:1px solid rgba(226,232,240,.9);
-  border-radius:20px;
-  padding:24px;
-  box-shadow:0 12px 30px rgba(15,23,42,.08);
+.grid4{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:18px;
 }
 
 .wide{
@@ -213,9 +222,7 @@ header p{
   padding:4px;
 }
 
-select,
-input,
-textarea{
+input,select,textarea{
   border:1px solid #d1d5db;
   border-radius:10px;
   padding:10px;
@@ -231,6 +238,7 @@ button{
   overflow:auto;
   border-radius:16px;
   border:1px solid #e5e7eb;
+  background:white;
 }
 
 table{
@@ -277,7 +285,7 @@ tbody tr:hover{
   box-shadow:0 4px 12px rgba(15,23,42,.18);
 }
 
-/* 状态标签 */
+/* 状态颜色 */
 .status-badge{
   display:inline-block;
   padding:6px 11px;
@@ -347,6 +355,12 @@ tbody tr:hover{
   align-items:center;
 }
 
+.action-row{
+  display:flex;
+  gap:10px;
+  margin-top:18px;
+}
+
 /* 表单 */
 .formgrid{
   display:grid;
@@ -368,12 +382,6 @@ tbody tr:hover{
 
 .full{
   grid-column:1 / -1;
-}
-
-.action-row{
-  display:flex;
-  gap:10px;
-  margin-top:18px;
 }
 
 .image-row{
@@ -476,6 +484,27 @@ tbody tr:hover{
   margin-top:12px;
 }
 
+/* 销售筛选 */
+.filter-row{
+  display:flex;
+  gap:10px;
+  align-items:center;
+  flex-wrap:wrap;
+  margin:0 0 16px;
+}
+
+.filter-row input{
+  min-width:220px;
+}
+
+.filter-row button{
+  border:none;
+  background:#111827;
+  color:white;
+  padding:10px 14px;
+  border-radius:10px;
+}
+
 /* 图片弹窗 */
 .image-modal{
   position:fixed;
@@ -520,28 +549,7 @@ tbody tr:hover{
   font-weight:800;
 }
 
-/* 销售筛选 */
-.filter-row{
-  display:flex;
-  gap:10px;
-  align-items:center;
-  flex-wrap:wrap;
-  margin:0 0 16px;
-}
-
-.filter-row input{
-  min-width:220px;
-}
-
-.filter-row button{
-  border:none;
-  background:#111827;
-  color:white;
-  padding:10px 14px;
-  border-radius:10px;
-}
-
-/* 更漂亮的首页模块，如果 main.jsx 有对应 class 会自动生效 */
+/* 兼容 Dashboard Pro 类名，当前 main.jsx 没这些类也不会影响 */
 .dash-head{
   display:flex;
   justify-content:space-between;
@@ -575,7 +583,7 @@ tbody tr:hover{
   border:1px solid #e5e7eb;
   border-radius:20px;
   padding:20px;
-  box-shadow:0 12px 30px rgba(15,23,42,.08);
+  box-shadow:var(--shadow);
 }
 
 .dash-two{
@@ -602,7 +610,8 @@ tbody tr:hover{
 }
 
 .mini-head{
-  background:#f8fafc;
+  background:#0f172a;
+  color:white;
   font-weight:800;
 }
 
@@ -641,15 +650,15 @@ tbody tr:hover{
     padding:18px;
   }
 
+  header{
+    flex-direction:column;
+  }
+
   .formgrid,
   .grid4,
   .status-grid,
   .money-grid,
   .quick-grid{
     grid-template-columns:1fr;
-  }
-
-  header{
-    flex-direction:column;
   }
 }
