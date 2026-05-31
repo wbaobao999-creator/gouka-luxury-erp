@@ -1,6 +1,7 @@
+```jsx
 import React, { useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { Package, FileText, Calculator, Search, Plus, Building2, ClipboardList, Download } from "lucide-react";
+import { Package, FileText, Calculator, Search, Plus, Building2, Download } from "lucide-react";
 import "./style.css";
 
 const seedItems = [
@@ -94,6 +95,12 @@ function App(){
     setTab("inventory");
   }
 
+  function deleteItem(id){
+    if(window.confirm(`确定删除商品 ${id} 吗？`)){
+      setItems(items.filter(x => x.id !== id));
+    }
+  }
+
   function downloadCSV(rows, filename){
     const csv = rows.map(r => r.map(v => `"${String(v??"").replaceAll('"','""')}"`).join(",")).join("\n");
     const blob = new Blob(["\ufeff"+csv], {type:"text/csv;charset=utf-8"});
@@ -129,7 +136,7 @@ function App(){
 
       {tab==="dashboard" && <Dashboard totals={totals}/>}
       {tab==="add" && <AddForm form={form} setForm={setForm} addItem={addItem}/>}
-      {tab==="inventory" && <Inventory items={filtered} query={query} setQuery={setQuery} downloadCSV={downloadCSV}/>}
+      {tab==="inventory" && <Inventory items={filtered} query={query} setQuery={setQuery} downloadCSV={downloadCSV} deleteItem={deleteItem}/>}
       {tab==="ledger" && <Ledger items={filtered} downloadCSV={downloadCSV}/>}
       {tab==="customs" && <Customs items={filtered} downloadCSV={downloadCSV}/>}
       {tab==="profit" && <Profit items={filtered}/>}
@@ -182,12 +189,21 @@ function AddForm({form,setForm,addItem}){
   </div>
 }
 
-function Inventory({items,query,setQuery,downloadCSV}){
-  const rows = [["商品编号","入库日期","品类","品牌","商品名","材质","颜色","产地","数量","采购CNY","申报CNY","预计销售JPY","状态"]];
-  items.forEach(x=>rows.push([x.id,x.purchaseDate,x.category,x.brand,x.item,x.material,x.color,x.origin,x.qty,x.purchaseCny,x.declaredCny,x.saleJpy,x.status]));
+function Inventory({items,query,setQuery,downloadCSV,deleteItem}){
+  const headers = ["商品编号","入库日期","品类","品牌","商品名","材质","颜色","产地","数量","采购CNY","申报CNY","预计销售JPY","状态","操作"];
+  const csvHeaders = ["商品编号","入库日期","品类","品牌","商品名","材质","颜色","产地","数量","采购CNY","申报CNY","预计销售JPY","状态"];
+  const csvRows = [csvHeaders];
+
+  items.forEach(x=>csvRows.push([x.id,x.purchaseDate,x.category,x.brand,x.item,x.material,x.color,x.origin,x.qty,x.purchaseCny,x.declaredCny,x.saleJpy,x.status]));
+
+  const rows = items.map(x=>[
+    x.id,x.purchaseDate,x.category,x.brand,x.item,x.material,x.color,x.origin,x.qty,x.purchaseCny,x.declaredCny,x.saleJpy,x.status,
+    <button className="danger" onClick={()=>deleteItem(x.id)}>删除</button>
+  ]);
+
   return <div className="panel">
-    <Toolbar title="库存管理" query={query} setQuery={setQuery} onDownload={()=>downloadCSV(rows,"gouka_inventory.csv")}/>
-    <Table headers={rows[0]} rows={rows.slice(1)}/>
+    <Toolbar title="库存管理" query={query} setQuery={setQuery} onDownload={()=>downloadCSV(csvRows,"gouka_inventory.csv")}/>
+    <Table headers={headers} rows={rows}/>
   </div>
 }
 
@@ -243,3 +259,4 @@ function Input({label,value,onChange,type="text",placeholder=""}){return <label>
 function Select({label,value,onChange,options}){return <label>{label}<select value={value} onChange={e=>onChange(e.target.value)}>{options.map(o=><option key={o}>{o}</option>)}</select></label>}
 
 createRoot(document.getElementById("root")).render(<App/>);
+```
