@@ -6,6 +6,7 @@ import "./style.css";
 const STORAGE_KEY = "gouka_erp_v2_items";
 const LOGIN_KEY = "gouka_erp_login";
 const CASHFLOW_KEY = "gouka_erp_cashflow_v431";
+const DICTIONARY_KEY = "gouka_erp_v5_dictionaries";
 const USERS = {
   gouka: { password: "777888", role: "owner", name: "老板账号" }
 };
@@ -69,6 +70,43 @@ const IDCHECK_OPTIONS = [
   "Driver License", "My Number Card", "Auction invoice", "Receipt", "其他"
 ];
 
+const DEFAULT_DICTIONARIES = {
+  brands: BRAND_OPTIONS,
+  itemsByBrand: ITEM_OPTIONS_BY_BRAND,
+  materials: MATERIAL_OPTIONS,
+  colors: COLOR_OPTIONS,
+  origins: ORIGIN_OPTIONS,
+  sources: SOURCE_OPTIONS,
+  platforms: PLATFORM_OPTIONS,
+  idChecks: IDCHECK_OPTIONS
+};
+
+function loadDictionaries() {
+  try {
+    const saved = localStorage.getItem(DICTIONARY_KEY);
+    if (!saved) return DEFAULT_DICTIONARIES;
+    const parsed = JSON.parse(saved);
+    return {
+      brands: Array.isArray(parsed.brands) ? parsed.brands : DEFAULT_DICTIONARIES.brands,
+      itemsByBrand: parsed.itemsByBrand && typeof parsed.itemsByBrand === "object" ? parsed.itemsByBrand : DEFAULT_DICTIONARIES.itemsByBrand,
+      materials: Array.isArray(parsed.materials) ? parsed.materials : DEFAULT_DICTIONARIES.materials,
+      colors: Array.isArray(parsed.colors) ? parsed.colors : DEFAULT_DICTIONARIES.colors,
+      origins: Array.isArray(parsed.origins) ? parsed.origins : DEFAULT_DICTIONARIES.origins,
+      sources: Array.isArray(parsed.sources) ? parsed.sources : DEFAULT_DICTIONARIES.sources,
+      platforms: Array.isArray(parsed.platforms) ? parsed.platforms : DEFAULT_DICTIONARIES.platforms,
+      idChecks: Array.isArray(parsed.idChecks) ? parsed.idChecks : DEFAULT_DICTIONARIES.idChecks
+    };
+  } catch {
+    return DEFAULT_DICTIONARIES;
+  }
+}
+
+function makeAutoTitle(form) {
+  return [form.brand, form.item, form.material, form.color, form.origin, form.category]
+    .filter(Boolean)
+    .join(" ");
+}
+
 function currentMonth() {
   return new Date().toISOString().slice(0, 7);
 }
@@ -84,6 +122,7 @@ const emptyForm = {
   category: "バッグ類",
   brand: "",
   item: "",
+  productTitle: "",
   material: "",
   color: "",
   origin: "France",
@@ -197,6 +236,7 @@ function normalizeItem(x) {
     customsFeeJpy: x.customsFeeJpy || 0,
     platformFeeJpy: x.platformFeeJpy || 0,
     otherCostJpy: x.otherCostJpy || 0,
+    productTitle: x.productTitle || makeAutoTitle(x),
     ...x
   };
 }
@@ -273,7 +313,7 @@ function LoginPage({ onLogin }) {
     <div className="login-page">
       <form className="login-card" onSubmit={submit}>
         <div className="login-logo"><Lock size={28} /></div>
-        <h1>豪嘉ERP V4.31</h1>
+        <h1>豪嘉ERP V5.0</h1>
         <p>豪嘉株式会社内部管理系统</p>
         <p className="note">请输入公司内部账号登录。账号可向管理员确认，密码不在页面显示。</p>
 
@@ -308,6 +348,7 @@ function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(() => !!session);
   const [tab, setTab] = useState("dashboard");
   const [items, setItems] = useState(loadItems);
+  const [dictionaries, setDictionaries] = useState(loadDictionaries);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("全部");
   const [form, setForm] = useState(emptyForm);
@@ -318,6 +359,10 @@ function App() {
   React.useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
   }, [items]);
+
+  React.useEffect(() => {
+    localStorage.setItem(DICTIONARY_KEY, JSON.stringify(dictionaries));
+  }, [dictionaries]);
 
   if (!isLoggedIn) {
     return <LoginPage onLogin={(role) => { setSession({ username: "gouka", role, name: "老板账号" }); setIsLoggedIn(true); }} />;
@@ -333,7 +378,7 @@ function App() {
   }
 
   function exportBackup() {
-    const data = { version: "GOUKA-ERP-V4.311", exportedAt: new Date().toISOString(), items };
+    const data = { version: "GOUKA-ERP-V5.01", exportedAt: new Date().toISOString(), items };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -410,6 +455,7 @@ function App() {
             ? addHistory({
                 ...x,
                 ...form,
+                productTitle: form.productTitle || makeAutoTitle(form),
                 qty: Number(form.qty || 1),
                 purchaseCny: Number(form.purchaseCny || 0),
                 declaredCny: Number(form.declaredCny || form.purchaseCny || 0),
@@ -437,6 +483,7 @@ function App() {
         ledgerStatus: "有效",
         ledgerVoidReason: "",
         ledgerUpdatedAt: new Date().toISOString(),
+        productTitle: form.productTitle || makeAutoTitle(form),
         ledgerHistory: [{ date: new Date().toISOString(), user: session?.username || "gouka", action: "创建商品并生成古物台账" }],
         qty: Number(form.qty || 1),
         purchaseCny: Number(form.purchaseCny || 0),
@@ -530,6 +577,7 @@ function App() {
     ["profit", "利润分析"],
     ["tax", "消费税参考"],
     ["sales", "销售记录"],
+    ["dictionary", "字典管理"],
     ["backup", "备份恢复"]
   ];
 
@@ -540,7 +588,7 @@ function App() {
           <Building2 size={24} />
           <div>
             <b>豪嘉株式会社</b>
-            <span>GOUKA Luxury ERP V4.31</span>
+            <span>GOUKA Luxury ERP V5.0</span>
           </div>
         </div>
 
@@ -556,7 +604,7 @@ function App() {
       <main>
         <header>
           <div>
-            <h1>二手奢侈品管理系统 V4.31</h1>
+            <h1>二手奢侈品管理系统 V5.0</h1>
             <p>自动保存・图片上传・状态筛选・古物台账锁定・EMS报关・利润计算・备份恢复</p>
           </div>
           <span className="pill">Auto Save · {isOwner ? "老板" : "员工"}</span>
@@ -572,6 +620,7 @@ function App() {
             editingId={editingId}
             handleImages={handleImages}
             removeImage={removeImage}
+            dictionaries={dictionaries}
           />
         )}
         {tab === "inventory" && (
@@ -594,6 +643,7 @@ function App() {
         {tab === "profit" && <Profit items={filtered} />}
         {tab === "tax" && <TaxReport items={filtered} totals={totals} downloadCSV={downloadCSV} />}
         {tab === "sales" && <SalesReport items={items} downloadCSV={downloadCSV} />}
+        {tab === "dictionary" && <DictionaryPanel dictionaries={dictionaries} setDictionaries={setDictionaries} />}
         {tab === "backup" && <BackupPanel items={items} exportBackup={exportBackup} importBackup={importBackup} />}
 
         {previewImage && (
@@ -682,7 +732,7 @@ function Dashboard({ totals, items, setTab, exportBackup }) {
     <section className="v3-dashboard">
       <div className="v3-hero">
         <div>
-          <span className="v3-kicker">GOUKA ERP V4.31</span>
+          <span className="v3-kicker">GOUKA ERP V5.0</span>
           <h1>老板驾驶舱</h1>
           <p>库存、现金流、利润、待办、品牌价值集中显示。老板打开第一页就能判断今天该做什么。</p>
           <div className="v3-hero-actions">
@@ -795,7 +845,7 @@ function Dashboard({ totals, items, setTab, exportBackup }) {
 
       <div className="panel wide">
         <h2>经营提醒</h2>
-        <p>V4.31已强化老板看板：库存成本、预计销售、净利润、待办、现金流、品牌价值占比集中显示。重要数据请每周导出JSON备份。</p>
+        <p>V5.0已强化老板看板：库存成本、预计销售、净利润、待办、现金流、品牌价值占比集中显示。重要数据请每周导出JSON备份。</p>
       </div>
     </section>
   );
@@ -811,13 +861,13 @@ function Card({ icon, title, value }) {
   );
 }
 
-function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, removeImage }) {
+function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, removeImage, dictionaries }) {
   const set = (k, v) => setForm({ ...form, [k]: v });
   const preview = calcTax(form);
-  const brandItems = ITEM_OPTIONS_BY_BRAND[form.brand] || ["其他"];
+  const brandItems = dictionaries.itemsByBrand?.[form.brand] || ["其他"];
 
   function setBrand(v) {
-    const nextItems = ITEM_OPTIONS_BY_BRAND[v] || ["其他"];
+    const nextItems = dictionaries.itemsByBrand?.[v] || ["其他"];
     setForm({
       ...form,
       brand: v,
@@ -841,15 +891,17 @@ function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, 
 
         <Select label="品类" value={form.category} onChange={(v) => set("category", v)} options={["バッグ類", "財布・小物類", "時計類", "宝飾品類", "アクセサリー類", "時計", "アパレル", "その他"]} />
 
-        <SelectWithOther label="品牌 Brand" value={form.brand} onChange={setBrand} options={BRAND_OPTIONS} placeholder="选择或输入品牌" />
+        <SelectWithOther label="品牌 Brand" value={form.brand} onChange={setBrand} options={dictionaries.brands} placeholder="选择或输入品牌" />
 
         <SelectWithOther label="商品名 Item" value={form.item} onChange={(v) => set("item", v)} options={brandItems} placeholder="先选品牌，再选择商品名" />
 
-        <SelectWithOther label="材质 Material" value={form.material} onChange={(v) => set("material", v)} options={MATERIAL_OPTIONS} placeholder="选择或输入材质" />
+        <Input label="自动商品标题" value={form.productTitle || makeAutoTitle(form)} onChange={(v) => set("productTitle", v)} placeholder="系统自动生成，也可手动修改" />
 
-        <SelectWithOther label="颜色 Color" value={form.color} onChange={(v) => set("color", v)} options={COLOR_OPTIONS} placeholder="选择或输入颜色" />
+        <SelectWithOther label="材质 Material" value={form.material} onChange={(v) => set("material", v)} options={dictionaries.materials} placeholder="选择或输入材质" />
 
-        <SelectWithOther label="产地 Origin" value={form.origin} onChange={(v) => set("origin", v)} options={ORIGIN_OPTIONS} placeholder="选择或输入产地" />
+        <SelectWithOther label="颜色 Color" value={form.color} onChange={(v) => set("color", v)} options={dictionaries.colors} placeholder="选择或输入颜色" />
+
+        <SelectWithOther label="产地 Origin" value={form.origin} onChange={(v) => set("origin", v)} options={dictionaries.origins} placeholder="选择或输入产地" />
 
         <Input label="数量 Qty" type="number" value={form.qty} onChange={(v) => set("qty", v)} />
 
@@ -864,15 +916,15 @@ function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, 
         <Input label="拍卖/平台手续费 JPY" type="number" value={form.platformFeeJpy || ""} onChange={(v) => set("platformFeeJpy", v)} />
         <Input label="其他费用 JPY" type="number" value={form.otherCostJpy || ""} onChange={(v) => set("otherCostJpy", v)} />
 
-        <SelectWithOther label="仕入先 / 来源" value={form.source} onChange={(v) => set("source", v)} options={SOURCE_OPTIONS} placeholder="选择或输入来源" />
+        <SelectWithOther label="仕入先 / 来源" value={form.source} onChange={(v) => set("source", v)} options={dictionaries.sources} placeholder="选择或输入来源" />
 
         <Input label="供应商地址" value={form.address} onChange={(v) => set("address", v)} placeholder="China / Japan address" />
 
-        <SelectWithOther label="本人确认方式" value={form.idCheck} onChange={(v) => set("idCheck", v)} options={IDCHECK_OPTIONS} placeholder="选择或输入确认方式" />
+        <SelectWithOther label="本人确认方式" value={form.idCheck} onChange={(v) => set("idCheck", v)} options={dictionaries.idChecks} placeholder="选择或输入确认方式" />
 
         <Select label="状态" value={form.status} onChange={(v) => set("status", v)} options={["采购中", "运输中", "已入库", "报关准备", "出品中", "已售出", "保留", "退货"]} />
 
-        <SelectWithOther label="平台 / 运输方式" value={form.platform} onChange={(v) => set("platform", v)} options={PLATFORM_OPTIONS} placeholder="选择或输入平台" />
+        <SelectWithOther label="平台 / 运输方式" value={form.platform} onChange={(v) => set("platform", v)} options={dictionaries.platforms} placeholder="选择或输入平台" />
 
         <div className="full panel" style={{ background: "#f8fafc", padding: "16px" }}>
           <h3 style={{ marginTop: 0 }}>实时利润预览</h3>
@@ -1348,6 +1400,130 @@ function BackupPanel({ items, exportBackup, importBackup }) {
     </div>
   );
 }
+
+function splitLines(text) {
+  return text
+    .split("\n")
+    .map((x) => x.trim())
+    .filter(Boolean);
+}
+
+function joinLines(arr) {
+  return (arr || []).join("\n");
+}
+
+function DictionaryPanel({ dictionaries, setDictionaries }) {
+  const [brandText, setBrandText] = useState(joinLines(dictionaries.brands));
+  const [materialText, setMaterialText] = useState(joinLines(dictionaries.materials));
+  const [colorText, setColorText] = useState(joinLines(dictionaries.colors));
+  const [originText, setOriginText] = useState(joinLines(dictionaries.origins));
+  const [sourceText, setSourceText] = useState(joinLines(dictionaries.sources));
+  const [platformText, setPlatformText] = useState(joinLines(dictionaries.platforms));
+  const [selectedBrand, setSelectedBrand] = useState(dictionaries.brands?.[0] || "CHANEL");
+  const [itemsText, setItemsText] = useState(joinLines(dictionaries.itemsByBrand?.[selectedBrand] || ["其他"]));
+
+  function changeSelectedBrand(v) {
+    setSelectedBrand(v);
+    setItemsText(joinLines(dictionaries.itemsByBrand?.[v] || ["其他"]));
+  }
+
+  function saveDictionary() {
+    const next = {
+      ...dictionaries,
+      brands: splitLines(brandText),
+      materials: splitLines(materialText),
+      colors: splitLines(colorText),
+      origins: splitLines(originText),
+      sources: splitLines(sourceText),
+      platforms: splitLines(platformText),
+      itemsByBrand: {
+        ...dictionaries.itemsByBrand,
+        [selectedBrand]: splitLines(itemsText)
+      }
+    };
+    setDictionaries(next);
+    alert("字典已保存。新商品录入会使用最新字典。");
+  }
+
+  function resetDictionary() {
+    if (!window.confirm("确认恢复系统默认字典吗？")) return;
+    setDictionaries(DEFAULT_DICTIONARIES);
+    setBrandText(joinLines(DEFAULT_DICTIONARIES.brands));
+    setMaterialText(joinLines(DEFAULT_DICTIONARIES.materials));
+    setColorText(joinLines(DEFAULT_DICTIONARIES.colors));
+    setOriginText(joinLines(DEFAULT_DICTIONARIES.origins));
+    setSourceText(joinLines(DEFAULT_DICTIONARIES.sources));
+    setPlatformText(joinLines(DEFAULT_DICTIONARIES.platforms));
+    const b = DEFAULT_DICTIONARIES.brands[0];
+    setSelectedBrand(b);
+    setItemsText(joinLines(DEFAULT_DICTIONARIES.itemsByBrand[b] || ["其他"]));
+  }
+
+  return (
+    <div className="panel">
+      <h2><Database size={20} /> 字典管理</h2>
+      <p className="note">
+        V5.0开始，品牌、商品名、材质、颜色、产地、来源、平台都可以在这里维护。
+        每行一个选项，保存后会自动出现在商品录入下拉菜单中。
+      </p>
+
+      <div className="formgrid">
+        <label>
+          品牌字典（每行一个）
+          <textarea rows={10} value={brandText} onChange={(e) => setBrandText(e.target.value)} />
+        </label>
+
+        <label>
+          材质字典
+          <textarea rows={10} value={materialText} onChange={(e) => setMaterialText(e.target.value)} />
+        </label>
+
+        <label>
+          颜色字典
+          <textarea rows={10} value={colorText} onChange={(e) => setColorText(e.target.value)} />
+        </label>
+
+        <label>
+          产地字典
+          <textarea rows={8} value={originText} onChange={(e) => setOriginText(e.target.value)} />
+        </label>
+
+        <label>
+          来源字典
+          <textarea rows={8} value={sourceText} onChange={(e) => setSourceText(e.target.value)} />
+        </label>
+
+        <label>
+          平台 / 运输方式字典
+          <textarea rows={8} value={platformText} onChange={(e) => setPlatformText(e.target.value)} />
+        </label>
+
+        <label className="full">
+          选择品牌，维护该品牌商品名
+          <select value={selectedBrand} onChange={(e) => changeSelectedBrand(e.target.value)}>
+            {splitLines(brandText).map((b) => <option key={b} value={b}>{b}</option>)}
+          </select>
+        </label>
+
+        <label className="full">
+          {selectedBrand} 商品名字典（每行一个）
+          <textarea rows={10} value={itemsText} onChange={(e) => setItemsText(e.target.value)} />
+        </label>
+      </div>
+
+      <div className="action-row">
+        <button className="primary" onClick={saveDictionary}>保存字典</button>
+        <button className="ghost" onClick={resetDictionary}>恢复默认字典</button>
+      </div>
+
+      <div className="panel" style={{ marginTop: "18px", background: "#f8fafc" }}>
+        <h3>V5.0说明</h3>
+        <p>这一步先实现本地可维护字典。下一阶段可以接 Supabase，把字典、库存、图片全部云端化。</p>
+      </div>
+    </div>
+  );
+}
+
 
 function Toolbar({ title, query, setQuery, statusFilter, setStatusFilter, onDownload }) {
   const statuses = ["全部", "采购中", "运输中", "已入库", "报关准备", "出品中", "已售出", "保留", "退货"];
