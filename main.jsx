@@ -95,10 +95,33 @@ const seedItems = [
 function loadItems() {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
-    return saved ? JSON.parse(saved) : seedItems;
+    return (saved ? JSON.parse(saved) : seedItems).map(normalizeItem);
   } catch {
     return seedItems;
   }
+}
+
+function normalizeItem(x) {
+  return {
+    ledgerStatus: x.ledgerStatus || "有效",
+    ledgerVoidReason: x.ledgerVoidReason || "",
+    ledgerUpdatedAt: x.ledgerUpdatedAt || "",
+    ledgerHistory: Array.isArray(x.ledgerHistory) ? x.ledgerHistory : [
+      { date: new Date().toISOString(), user: "system", action: "创建/导入" }
+    ],
+    ...x
+  };
+}
+
+function addHistory(item, user, action) {
+  return {
+    ...item,
+    ledgerUpdatedAt: new Date().toISOString(),
+    ledgerHistory: [
+      ...(Array.isArray(item.ledgerHistory) ? item.ledgerHistory : []),
+      { date: new Date().toISOString(), user: user || "system", action }
+    ]
+  };
 }
 
 function money(n) {
@@ -159,8 +182,9 @@ function LoginPage({ onLogin }) {
     <div className="login-page">
       <form className="login-card" onSubmit={submit}>
         <div className="login-logo"><Lock size={28} /></div>
-        <h1>豪嘉ERP V2</h1>
+        <h1>豪嘉ERP V4</h1>
         <p>豪嘉株式会社内部管理系统</p>
+        <p className="note">请输入公司内部账号登录。账号可向管理员确认，密码不在页面显示。</p>
 
         <label>
           账号
@@ -173,7 +197,6 @@ function LoginPage({ onLogin }) {
         </label>
 
         {error && <div className="login-error">{error}</div>}
-        <p className="note">老板账号：gouka / 777888　员工账号：staff / 123456</p>
 
         <button className="login-btn" type="submit">登录</button>
       </form>
@@ -219,7 +242,7 @@ function App() {
   }
 
   function exportBackup() {
-    const data = { version: "GOUKA-ERP-V3", exportedAt: new Date().toISOString(), items };
+    const data = { version: "GOUKA-ERP-V4", exportedAt: new Date().toISOString(), items };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -238,7 +261,7 @@ function App() {
         const nextItems = Array.isArray(parsed) ? parsed : parsed.items;
         if (!Array.isArray(nextItems)) throw new Error("bad file");
         if (window.confirm(`确定导入 ${nextItems.length} 条商品数据吗？当前数据会被覆盖。`)) {
-          setItems(nextItems);
+          setItems(nextItems.map(normalizeItem));
           alert("备份数据已恢复");
         }
       } catch {
@@ -293,7 +316,7 @@ function App() {
       setItems(
         items.map((x) =>
           x.id === editingId
-            ? {
+            ? addHistory({
                 ...x,
                 ...form,
                 qty: Number(form.qty || 1),
@@ -306,7 +329,7 @@ function App() {
                 soldPlatform: form.soldPlatform || "",
                 soldPriceJpy: Number(form.soldPriceJpy || 0),
                 soldMemo: form.soldMemo || ""
-              }
+              }, session?.username, "编辑商品信息")
             : x
         )
       );
@@ -315,6 +338,10 @@ function App() {
       const next = {
         ...form,
         id: makeNextId(items),
+        ledgerStatus: "有效",
+        ledgerVoidReason: "",
+        ledgerUpdatedAt: new Date().toISOString(),
+        ledgerHistory: [{ date: new Date().toISOString(), user: session?.username || "gouka", action: "创建商品并生成古物台账" }],
         qty: Number(form.qty || 1),
         purchaseCny: Number(form.purchaseCny || 0),
         declaredCny: Number(form.declaredCny || form.purchaseCny || 0),
@@ -345,9 +372,16 @@ function App() {
   }
 
   function deleteItem(id) {
-    if (window.confirm(`确定删除商品 ${id} 吗？`)) {
-      setItems(items.filter((x) => x.id !== id));
-    }
+    if (!isOwner) return alert("员工账号无删除权限");
+    const reason = window.prompt(`库存记录 ${id} 将移入回收/作废，不会从古物台账物理删除。请输入原因：`, "录入错误/取消采购");
+    if (!reason) return;
+    setItems(items.map((x) => x.id === id ? addHistory({
+      ...x,
+      status: "退货",
+      ledgerStatus: "作废",
+      ledgerVoidReason: reason
+    }, session?.username, `作废库存/台账：${reason}`) : x));
+    alert("已作废。记录仍保留在系统中，可在古物台账导出留档。");
   }
 
   function handleImages(files) {
@@ -405,7 +439,7 @@ function App() {
           <Building2 size={24} />
           <div>
             <b>豪嘉株式会社</b>
-            <span>GOUKA Luxury ERP V2</span>
+            <span>GOUKA Luxury ERP V4</span>
           </div>
         </div>
 
@@ -421,8 +455,8 @@ function App() {
       <main>
         <header>
           <div>
-            <h1>二手奢侈品管理系统 V2</h1>
-            <p>编辑・删除・自动保存・图片上传・状态筛选・古物台账・EMS报关・利润计算・消费税参考</p>
+            <h1>二手奢侈品管理系统 V4</h1>
+            <p>自动保存・图片上传・状态筛选・古物台账锁定・EMS报关・利润计算・备份恢复</p>
           </div>
           <span className="pill">Auto Save · {isOwner ? "老板" : "员工"}</span>
         </header>
@@ -454,7 +488,7 @@ function App() {
             setPreviewScale={setPreviewScale}
           />
         )}
-        {tab === "ledger" && <Ledger items={filtered} downloadCSV={downloadCSV} />}
+        {tab === "ledger" && <Ledger items={filtered} setItems={setItems} isOwner={isOwner} downloadCSV={downloadCSV} />}
         {tab === "customs" && <Customs items={filtered} downloadCSV={downloadCSV} />}
         {tab === "profit" && <Profit items={filtered} />}
         {tab === "tax" && <TaxReport items={filtered} totals={totals} downloadCSV={downloadCSV} />}
@@ -497,7 +531,7 @@ function Dashboard({ totals, items, setTab, exportBackup }) {
     <section className="v3-dashboard">
       <div className="v3-hero">
         <div>
-          <span className="v3-kicker">GOUKA ERP V3</span>
+          <span className="v3-kicker">GOUKA ERP V4</span>
           <h1>老板驾驶舱</h1>
           <p>库存、销售、毛利、消费税、古物台账、EMS报关集中管理。数据自动保存在当前浏览器。</p>
           <div className="v3-hero-actions">
@@ -694,7 +728,7 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
         </button>
         {isOwner && (
           <button className="danger" onClick={() => deleteItem(x.id)}>
-            <Trash2 size={14} /> 删除
+            <Trash2 size={14} /> 作废
           </button>
         )}
       </div>
@@ -716,9 +750,30 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
   );
 }
 
-function Ledger({ items, downloadCSV }) {
+function Ledger({ items, setItems, isOwner, downloadCSV }) {
   const [ledgerQuery, setLedgerQuery] = useState("");
   const [ledgerDate, setLedgerDate] = useState("");
+
+  function voidLedger(id) {
+    if (!isOwner) return alert("员工账号不能作废台账");
+    const reason = window.prompt("请输入作废原因。系统不会删除原始记录，只会标记为作废：", "录入错误，已重新登记");
+    if (!reason) return;
+    setItems((prev) => prev.map((x) => x.id === id ? addHistory({
+      ...x,
+      ledgerStatus: "作废",
+      ledgerVoidReason: reason
+    }, "gouka", `古物台账作废：${reason}`) : x));
+  }
+
+  function restoreLedger(id) {
+    if (!isOwner) return alert("员工账号不能恢复台账");
+    if (!window.confirm("确认恢复这条古物台账为有效状态吗？")) return;
+    setItems((prev) => prev.map((x) => x.id === id ? addHistory({
+      ...x,
+      ledgerStatus: "有效",
+      ledgerVoidReason: ""
+    }, "gouka", "古物台账恢复有效") : x));
+  }
 
   const filteredItems = items.filter((x) => {
     const q = ledgerQuery.toLowerCase();
@@ -759,7 +814,10 @@ function Ledger({ items, downloadCSV }) {
     "住所",
     "本人確認",
     "売却先",
-    "備考"
+    "備考",
+    "台账状态",
+    "更正履历",
+    "操作"
   ];
 
   const rows = filteredItems.map((x, i) => [
@@ -778,7 +836,16 @@ function Ledger({ items, downloadCSV }) {
     x.address,
     x.idCheck,
     "",
-    x.memo
+    x.memo,
+    x.ledgerStatus || "有效",
+    (x.ledgerHistory || []).slice(-3).map((h) => `${(h.date || "").slice(0,10)} ${h.action}`).join(" / "),
+    <div className="table-actions">
+      {(x.ledgerStatus || "有效") === "作废" ? (
+        isOwner ? <button className="edit" onClick={() => restoreLedger(x.id)}>恢复</button> : "作废"
+      ) : (
+        isOwner ? <button className="danger" onClick={() => voidLedger(x.id)}>作废</button> : "锁定"
+      )}
+    </div>
   ]);
 
   return (
@@ -816,7 +883,7 @@ function Ledger({ items, downloadCSV }) {
       </div>
 
       <p className="note">
-        当前显示 {filteredItems.length} 件 / 全部 {items.length} 件
+        当前显示 {filteredItems.length} 件 / 全部 {items.length} 件。古物台账不支持物理删除，只能作废或更正。
       </p>
 
       <Table headers={headers} rows={rows} />
