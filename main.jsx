@@ -272,7 +272,7 @@ function LoginPage({ onLogin }) {
     <div className="login-page">
       <form className="login-card" onSubmit={submit}>
         <div className="login-logo"><Lock size={28} /></div>
-        <h1>豪嘉ERP V4.2</h1>
+        <h1>豪嘉ERP V4.3</h1>
         <p>豪嘉株式会社内部管理系统</p>
         <p className="note">请输入公司内部账号登录。账号可向管理员确认，密码不在页面显示。</p>
 
@@ -332,7 +332,7 @@ function App() {
   }
 
   function exportBackup() {
-    const data = { version: "GOUKA-ERP-V4.2", exportedAt: new Date().toISOString(), items };
+    const data = { version: "GOUKA-ERP-V4.3", exportedAt: new Date().toISOString(), items };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -539,7 +539,7 @@ function App() {
           <Building2 size={24} />
           <div>
             <b>豪嘉株式会社</b>
-            <span>GOUKA Luxury ERP V4.2</span>
+            <span>GOUKA Luxury ERP V4.3</span>
           </div>
         </div>
 
@@ -555,7 +555,7 @@ function App() {
       <main>
         <header>
           <div>
-            <h1>二手奢侈品管理系统 V4.2</h1>
+            <h1>二手奢侈品管理系统 V4.3</h1>
             <p>自动保存・图片上传・状态筛选・古物台账锁定・EMS报关・利润计算・备份恢复</p>
           </div>
           <span className="pill">Auto Save · {isOwner ? "老板" : "员工"}</span>
@@ -613,9 +613,9 @@ function App() {
 }
 
 function Dashboard({ totals, items, setTab, exportBackup }) {
-  const margin = totals.sale ? (totals.profit / totals.sale) * 100 : 0;
   const withImages = items.filter((x) => x.images && x.images.length).length;
-  const activeStock = items.filter((x) => x.status !== "已售出" && x.status !== "退货").length;
+  const activeItems = items.filter((x) => x.status !== "已售出" && x.status !== "退货");
+  const activeStock = activeItems.length;
   const soldItems = items.filter((x) => x.status === "已售出");
   const month = currentMonth();
   const monthIn = items.filter((x) => (x.purchaseDate || "").startsWith(month));
@@ -624,21 +624,43 @@ function Dashboard({ totals, items, setTab, exportBackup }) {
   const monthProfit = monthSold.reduce((a, x) => a + calcTax(x).grossProfit, 0);
   const recent = items.slice(0, 5);
 
+  const expectedNetProfit = totals.profit;
+  const expectedMargin = totals.sale ? (expectedNetProfit / totals.sale) * 100 : 0;
+
+  const todoCustoms = items.filter((x) => x.status === "报关准备").length;
+  const todoListing = items.filter((x) => x.status === "已入库").length;
+  const todoShipping = items.filter((x) => x.status === "已售出" && !String(x.soldMemo || "").includes("発送済")).length;
+  const now = new Date();
+  const over90 = activeItems.filter((x) => {
+    if (!x.purchaseDate) return false;
+    const d = new Date(x.purchaseDate);
+    if (Number.isNaN(d.getTime())) return false;
+    return (now - d) / (1000 * 60 * 60 * 24) >= 90;
+  }).length;
+
   const brandMap = items.reduce((a, x) => {
     const k = x.brand || "未填写";
-    a[k] = (a[k] || 0) + 1;
+    if (!a[k]) a[k] = { count: 0, value: 0 };
+    a[k].count += Number(x.qty || 1);
+    a[k].value += calcTax(x).costJpy;
     return a;
   }, {});
-  const brandRows = Object.entries(brandMap).sort((a,b)=>b[1]-a[1]).slice(0,5);
-  const maxBrand = Math.max(1, ...brandRows.map(([,v])=>v));
+  const brandRows = Object.entries(brandMap).sort((a,b)=>b[1].value-a[1].value).slice(0,6);
+  const totalBrandValue = brandRows.reduce((a, [,v]) => a + v.value, 0) || 1;
+  const maxBrandValue = Math.max(1, ...brandRows.map(([,v])=>v.value));
+
+  const rentIncome = 1320000;
+  const loanPayment = 450000;
+  const rentCashflow = rentIncome - loanPayment;
+  const companyReserve = 30000000;
 
   return (
     <section className="v3-dashboard">
       <div className="v3-hero">
         <div>
-          <span className="v3-kicker">GOUKA ERP V4.2</span>
+          <span className="v3-kicker">GOUKA ERP V4.3</span>
           <h1>老板驾驶舱</h1>
-          <p>库存、销售、毛利、消费税、古物台账、EMS报关集中管理。数据自动保存在当前浏览器。</p>
+          <p>库存、现金流、利润、待办、品牌价值集中显示。老板打开第一页就能判断今天该做什么。</p>
           <div className="v3-hero-actions">
             <button onClick={() => setTab("add")}>新增商品</button>
             <button onClick={() => setTab("inventory")}>查看库存</button>
@@ -646,31 +668,47 @@ function Dashboard({ totals, items, setTab, exportBackup }) {
           </div>
         </div>
         <div className="v3-hero-right">
-          <p>预计总毛利</p>
-          <h2>{jpy(totals.profit)}</h2>
-          <span>预计利润率 {margin.toFixed(1)}% · 当前库存 {activeStock} 件</span>
+          <p>预计净利润</p>
+          <h2>{jpy(expectedNetProfit)}</h2>
+          <span>利润率 {expectedMargin.toFixed(1)}% · 当前库存 {activeStock} 件 · 有图 {withImages} 件</span>
         </div>
       </div>
 
       <div className="v3-kpi-grid">
-        <div className="v3-kpi blue"><span>📦</span><p>当前库存</p><h2>{activeStock} 件</h2><small>不含已售出与退货</small></div>
-        <div className="v3-kpi green"><span>💴</span><p>已售金额</p><h2>{jpy(totals.soldAmount)}</h2><small>已售 {soldItems.length} 件</small></div>
-        <div className="v3-kpi orange"><span>📷</span><p>有图片商品</p><h2>{withImages} 件</h2><small>方便出品与台账留档</small></div>
-        <div className="v3-kpi purple"><span>🧾</span><p>消费税差额参考</p><h2>{jpy(totals.taxBalance)}</h2><small>正式申告交由税理士确认</small></div>
+        <div className="v3-kpi blue"><span>💰</span><p>库存总成本</p><h2>{jpy(totals.cost)}</h2><small>采购成本 + 运费关税手续费</small></div>
+        <div className="v3-kpi green"><span>🏷️</span><p>预计销售总额</p><h2>{jpy(totals.sale)}</h2><small>库存预计含税销售额</small></div>
+        <div className="v3-kpi orange"><span>📈</span><p>预计净利润</p><h2>{jpy(expectedNetProfit)}</h2><small>已扣附加成本</small></div>
+        <div className="v3-kpi purple"><span>📊</span><p>预计利润率</p><h2>{expectedMargin.toFixed(1)}%</h2><small>老板判断用</small></div>
       </div>
 
       <div className="v3-money-grid">
-        <div className="v3-money-card"><p>库存采购成本</p><h2>{jpy(totals.cost)}</h2><small>CNY按录入汇率换算</small></div>
-        <div className="v3-money-card"><p>预计销售总额</p><h2>{jpy(totals.sale)}</h2><small>含税销售额</small></div>
-        <div className="v3-money-card"><p>销售消费税参考</p><h2>{jpy(totals.outputTax)}</h2><small>含税倒算10/110</small></div>
-        <div className="v3-money-card highlight"><p>不含税利润参考</p><h2>{jpy(totals.profitExTax)}</h2><small>经营判断用</small></div>
+        <div className="v3-money-card"><p>本月入库</p><h2>{monthIn.length} 件</h2><small>{month}</small></div>
+        <div className="v3-money-card"><p>本月销售额</p><h2>{jpy(monthSale)}</h2><small>按销售日期统计</small></div>
+        <div className="v3-money-card"><p>本月净利润</p><h2>{jpy(monthProfit)}</h2><small>已扣真实成本</small></div>
+        <div className="v3-money-card highlight"><p>消费税差额参考</p><h2>{jpy(totals.taxBalance)}</h2><small>正式申告交由税理士确认</small></div>
       </div>
 
-      <div className="v3-kpi-grid">
-        <div className="v3-kpi blue"><span>📥</span><p>本月入库</p><h2>{monthIn.length} 件</h2><small>{month}</small></div>
-        <div className="v3-kpi green"><span>📤</span><p>本月售出</p><h2>{monthSold.length} 件</h2><small>按销售日期统计</small></div>
-        <div className="v3-kpi orange"><span>💴</span><p>本月销售额</p><h2>{jpy(monthSale)}</h2><small>含税销售额</small></div>
-        <div className="v3-kpi purple"><span>📈</span><p>本月净毛利</p><h2>{jpy(monthProfit)}</h2><small>已扣附加成本</small></div>
+      <div className="v3-layout">
+        <div className="v3-panel">
+          <div className="v3-panel-title"><div><h2>经营现金流参考</h2><p>房租现金流作为长期定投与公司安全垫参考</p></div></div>
+          <div className="v3-mini-stats" style={{gridTemplateColumns:"repeat(4,1fr)"}}>
+            <div><b>{jpy(rentIncome)}</b><span>月房租收入</span></div>
+            <div><b>{jpy(loanPayment)}</b><span>贷款支出参考</span></div>
+            <div><b>{jpy(rentCashflow)}</b><span>租金净现金流</span></div>
+            <div><b>{jpy(companyReserve)}</b><span>公司备用金</span></div>
+          </div>
+          <p className="note">此处为老板经营参考值，后续可升级为可编辑现金流模块。</p>
+        </div>
+
+        <div className="v3-panel">
+          <div className="v3-panel-title"><div><h2>待办中心</h2><p>每天打开系统先看这里</p></div></div>
+          <div className="v3-tax-list">
+            <div><span>待报关</span><b>{todoCustoms} 件</b></div>
+            <div><span>待出品</span><b>{todoListing} 件</b></div>
+            <div><span>待发货确认</span><b>{todoShipping} 件</b></div>
+            <div><span>库存超90天</span><b>{over90} 件</b></div>
+          </div>
+        </div>
       </div>
 
       <div className="v3-layout">
@@ -689,14 +727,17 @@ function Dashboard({ totals, items, setTab, exportBackup }) {
         </div>
 
         <div className="v3-panel">
-          <div className="v3-panel-title"><div><h2>品牌占比</h2><p>按库存件数统计</p></div></div>
+          <div className="v3-panel-title"><div><h2>品牌价值占比</h2><p>按库存成本金额统计，不再只看件数</p></div></div>
           <div className="v3-bars">
-            {brandRows.map(([brand, count]) => (
-              <div key={brand}>
-                <div className="v3-bar-label"><b>{brand}</b><span>{count} 件</span></div>
-                <div className="v3-bar-track"><div style={{width:`${Math.max(8, count / maxBrand * 100)}%`}} /></div>
-              </div>
-            ))}
+            {brandRows.map(([brand, data]) => {
+              const percent = data.value / totalBrandValue * 100;
+              return (
+                <div key={brand}>
+                  <div className="v3-bar-label"><b>{brand}</b><span>{percent.toFixed(1)}% / {jpy(data.value)}</span></div>
+                  <div className="v3-bar-track"><div style={{width:`${Math.max(8, data.value / maxBrandValue * 100)}%`}} /></div>
+                </div>
+              );
+            })}
           </div>
           <div className="v3-mini-stats">
             <div><b>{items.length}</b><span>总记录</span></div>
@@ -708,7 +749,7 @@ function Dashboard({ totals, items, setTab, exportBackup }) {
 
       <div className="panel wide">
         <h2>经营提醒</h2>
-        <p>这个版本是前端本地系统，数据保存在当前电脑浏览器。重要数据请每周点击「立即备份」导出JSON文件，另存到移动硬盘或Google Drive。</p>
+        <p>V4.3已强化老板看板：库存成本、预计销售、净利润、待办、现金流、品牌价值占比集中显示。重要数据请每周导出JSON备份。</p>
       </div>
     </section>
   );
