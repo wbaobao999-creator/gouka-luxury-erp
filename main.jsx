@@ -1,12 +1,14 @@
 import React, { useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { Package, FileText, Calculator, Search, Plus, Building2, Download, Edit3, Trash2, ImagePlus, Save, X, Lock } from "lucide-react";
+import { Package, FileText, Calculator, Search, Plus, Building2, Download, Edit3, Trash2, ImagePlus, Save, X, Lock, Database, Upload } from "lucide-react";
 import "./style.css";
 
 const STORAGE_KEY = "gouka_erp_v2_items";
 const LOGIN_KEY = "gouka_erp_login";
-const LOGIN_USER = "gouka";
-const LOGIN_PASS = "777888";
+const USERS = {
+  gouka: { password: "777888", role: "owner", name: "老板账号" },
+  staff: { password: "123456", role: "staff", name: "员工账号" }
+};
 const TAX_RATE = 0.10;
 
 const emptyForm = {
@@ -111,6 +113,19 @@ function cny(n) {
   return "CNY " + money(Number(n || 0));
 }
 
+function makeNextId(items) {
+  const d = new Date();
+  const ym = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}`;
+  const prefix = `GOUKA-${ym}-`;
+  const nums = items
+    .map((x) => String(x.id || ""))
+    .filter((id) => id.startsWith(prefix))
+    .map((id) => Number(id.replace(prefix, "")))
+    .filter((n) => !Number.isNaN(n));
+  const next = (nums.length ? Math.max(...nums) : 0) + 1;
+  return `${prefix}${String(next).padStart(4, "0")}`;
+}
+
 function calcTax(x) {
   const costJpy = Number(x.purchaseCny || 0) * Number(x.rate || 0);
   const declaredJpy = Number(x.declaredCny || 0) * Number(x.rate || 0);
@@ -131,9 +146,10 @@ function LoginPage({ onLogin }) {
 
   function submit(e) {
     e.preventDefault();
-    if (username === LOGIN_USER && password === LOGIN_PASS) {
-      localStorage.setItem(LOGIN_KEY, "yes");
-      onLogin();
+    const user = USERS[username];
+    if (user && password === user.password) {
+      localStorage.setItem(LOGIN_KEY, JSON.stringify({ username, role: user.role, name: user.name }));
+      onLogin(user.role);
     } else {
       setError("账号或密码错误");
     }
@@ -157,6 +173,7 @@ function LoginPage({ onLogin }) {
         </label>
 
         {error && <div className="login-error">{error}</div>}
+        <p className="note">老板账号：gouka / 777888　员工账号：staff / 123456</p>
 
         <button className="login-btn" type="submit">登录</button>
       </form>
@@ -165,7 +182,16 @@ function LoginPage({ onLogin }) {
 }
 
 function App() {
-  const [isLoggedIn, setIsLoggedIn] = useState(() => localStorage.getItem(LOGIN_KEY) === "yes");
+  const [session, setSession] = useState(() => {
+    try {
+      const raw = localStorage.getItem(LOGIN_KEY);
+      if (raw === "yes") return { username: "gouka", role: "owner", name: "老板账号" };
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [isLoggedIn, setIsLoggedIn] = useState(() => !!session);
   const [tab, setTab] = useState("dashboard");
   const [items, setItems] = useState(loadItems);
   const [query, setQuery] = useState("");
@@ -180,12 +206,46 @@ function App() {
   }, [items]);
 
   if (!isLoggedIn) {
-    return <LoginPage onLogin={() => setIsLoggedIn(true)} />;
+    return <LoginPage onLogin={(role) => { setSession({ role }); setIsLoggedIn(true); }} />;
   }
+
+  const role = session?.role || "owner";
+  const isOwner = role === "owner";
 
   function logout() {
     localStorage.removeItem(LOGIN_KEY);
+    setSession(null);
     setIsLoggedIn(false);
+  }
+
+  function exportBackup() {
+    const data = { version: "GOUKA-ERP-V3", exportedAt: new Date().toISOString(), items };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `gouka_erp_backup_${new Date().toISOString().slice(0,10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function importBackup(file) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const parsed = JSON.parse(reader.result);
+        const nextItems = Array.isArray(parsed) ? parsed : parsed.items;
+        if (!Array.isArray(nextItems)) throw new Error("bad file");
+        if (window.confirm(`确定导入 ${nextItems.length} 条商品数据吗？当前数据会被覆盖。`)) {
+          setItems(nextItems);
+          alert("备份数据已恢复");
+        }
+      } catch {
+        alert("备份文件格式不正确");
+      }
+    };
+    reader.readAsText(file);
   }
 
   const filtered = useMemo(() => {
@@ -254,7 +314,7 @@ function App() {
     } else {
       const next = {
         ...form,
-        id: `GOUKA-${new Date().getFullYear()}-${String(items.length + 1).padStart(4, "0")}`,
+        id: makeNextId(items),
         qty: Number(form.qty || 1),
         purchaseCny: Number(form.purchaseCny || 0),
         declaredCny: Number(form.declaredCny || form.purchaseCny || 0),
@@ -334,7 +394,8 @@ function App() {
     ["customs", "EMS报关"],
     ["profit", "利润分析"],
     ["tax", "消费税参考"],
-    ["sales", "销售记录"]
+    ["sales", "销售记录"],
+    ["backup", "备份恢复"]
   ];
 
   return (
@@ -363,10 +424,10 @@ function App() {
             <h1>二手奢侈品管理系统 V2</h1>
             <p>编辑・删除・自动保存・图片上传・状态筛选・古物台账・EMS报关・利润计算・消费税参考</p>
           </div>
-          <span className="pill">Auto Save</span>
+          <span className="pill">Auto Save · {isOwner ? "老板" : "员工"}</span>
         </header>
 
-        {tab === "dashboard" && <Dashboard totals={totals} items={items} />}
+        {tab === "dashboard" && <Dashboard totals={totals} items={items} setTab={setTab} exportBackup={exportBackup} />}
         {tab === "add" && (
           <AddForm
             form={form}
@@ -388,6 +449,7 @@ function App() {
             downloadCSV={downloadCSV}
             editItem={editItem}
             deleteItem={deleteItem}
+            isOwner={isOwner}
             setPreviewImage={setPreviewImage}
             setPreviewScale={setPreviewScale}
           />
@@ -397,6 +459,7 @@ function App() {
         {tab === "profit" && <Profit items={filtered} />}
         {tab === "tax" && <TaxReport items={filtered} totals={totals} downloadCSV={downloadCSV} />}
         {tab === "sales" && <SalesReport items={items} downloadCSV={downloadCSV} />}
+        {tab === "backup" && <BackupPanel items={items} exportBackup={exportBackup} importBackup={importBackup} />}
 
         {previewImage && (
           <div className="image-modal" onClick={() => setPreviewImage(null)}>
@@ -415,34 +478,91 @@ function App() {
   );
 }
 
-function Dashboard({ totals, items }) {
+function Dashboard({ totals, items, setTab, exportBackup }) {
   const margin = totals.sale ? (totals.profit / totals.sale) * 100 : 0;
   const withImages = items.filter((x) => x.images && x.images.length).length;
   const activeStock = items.filter((x) => x.status !== "已售出" && x.status !== "退货").length;
-  const soldItems = items.filter((x) => x.status === "已售出").length;
+  const soldItems = items.filter((x) => x.status === "已售出");
+  const recent = items.slice(0, 5);
+
+  const brandMap = items.reduce((a, x) => {
+    const k = x.brand || "未填写";
+    a[k] = (a[k] || 0) + 1;
+    return a;
+  }, {});
+  const brandRows = Object.entries(brandMap).sort((a,b)=>b[1]-a[1]).slice(0,5);
+  const maxBrand = Math.max(1, ...brandRows.map(([,v])=>v));
 
   return (
-    <section>
-      <div className="grid4">
-        <Card icon={<Package />} title="当前库存件数" value={`${activeStock} 件`} />
-        <Card icon={<FileText />} title="库存总采购成本" value={jpy(totals.cost)} />
-        <Card icon={<Calculator />} title="预计销售总额" value={jpy(totals.sale)} />
-        <Card icon={<Calculator />} title="预计毛利" value={jpy(totals.profit)} />
-
-        <Card icon={<Calculator />} title="已售数量" value={`${soldItems} 件`} />
-        <Card icon={<Calculator />} title="已售金额" value={jpy(totals.soldAmount)} />
-        <Card icon={<Calculator />} title="已售毛利" value={jpy(totals.soldProfit)} />
-        <Card icon={<ImagePlus />} title="有图片商品" value={`${withImages} 件`} />
-
-        <Card icon={<Calculator />} title="销售消费税参考" value={jpy(totals.outputTax)} />
-        <Card icon={<Calculator />} title="进项消费税参考" value={jpy(totals.inputTax)} />
-        <Card icon={<Calculator />} title="消费税差额参考" value={jpy(totals.taxBalance)} />
-        <Card icon={<Calculator />} title="预计利润率" value={`${margin.toFixed(1)}%`} />
+    <section className="v3-dashboard">
+      <div className="v3-hero">
+        <div>
+          <span className="v3-kicker">GOUKA ERP V3</span>
+          <h1>老板驾驶舱</h1>
+          <p>库存、销售、毛利、消费税、古物台账、EMS报关集中管理。数据自动保存在当前浏览器。</p>
+          <div className="v3-hero-actions">
+            <button onClick={() => setTab("add")}>新增商品</button>
+            <button onClick={() => setTab("inventory")}>查看库存</button>
+            <button onClick={exportBackup}>立即备份</button>
+          </div>
+        </div>
+        <div className="v3-hero-right">
+          <p>预计总毛利</p>
+          <h2>{jpy(totals.profit)}</h2>
+          <span>预计利润率 {margin.toFixed(1)}% · 当前库存 {activeStock} 件</span>
+        </div>
       </div>
 
-      <div className="panel wide" style={{marginTop:"16px"}}>
-        <h2>经营概览</h2>
-        <p>库存、销售、利润、消费税参考已整合。销售额与消费税为经营参考，正式申告请交由税理士确认。</p>
+      <div className="v3-kpi-grid">
+        <div className="v3-kpi blue"><span>📦</span><p>当前库存</p><h2>{activeStock} 件</h2><small>不含已售出与退货</small></div>
+        <div className="v3-kpi green"><span>💴</span><p>已售金额</p><h2>{jpy(totals.soldAmount)}</h2><small>已售 {soldItems.length} 件</small></div>
+        <div className="v3-kpi orange"><span>📷</span><p>有图片商品</p><h2>{withImages} 件</h2><small>方便出品与台账留档</small></div>
+        <div className="v3-kpi purple"><span>🧾</span><p>消费税差额参考</p><h2>{jpy(totals.taxBalance)}</h2><small>正式申告交由税理士确认</small></div>
+      </div>
+
+      <div className="v3-money-grid">
+        <div className="v3-money-card"><p>库存采购成本</p><h2>{jpy(totals.cost)}</h2><small>CNY按录入汇率换算</small></div>
+        <div className="v3-money-card"><p>预计销售总额</p><h2>{jpy(totals.sale)}</h2><small>含税销售额</small></div>
+        <div className="v3-money-card"><p>销售消费税参考</p><h2>{jpy(totals.outputTax)}</h2><small>含税倒算10/110</small></div>
+        <div className="v3-money-card highlight"><p>不含税利润参考</p><h2>{jpy(totals.profitExTax)}</h2><small>经营判断用</small></div>
+      </div>
+
+      <div className="v3-layout">
+        <div className="v3-panel">
+          <div className="v3-panel-title"><div><h2>最近入库商品</h2><p>最新录入的前5件商品</p></div><button onClick={()=>setTab("inventory")}>库存管理</button></div>
+          <div className="v3-recent-list">
+            {recent.length ? recent.map((x) => (
+              <div className="v3-recent-item" key={x.id}>
+                <div className="v3-recent-img">{x.images?.[0] ? <img src={x.images[0]} alt={x.item} /> : "📦"}</div>
+                <div><b>{x.brand} {x.item}</b><p>{x.category} / {x.color || "未填颜色"}</p><small>{x.id}</small></div>
+                <StatusBadge status={x.status} />
+                <span className="v3-recent-date">{x.purchaseDate || "未填日期"}</span>
+              </div>
+            )) : <p className="note">暂无商品，先录入第一件商品。</p>}
+          </div>
+        </div>
+
+        <div className="v3-panel">
+          <div className="v3-panel-title"><div><h2>品牌占比</h2><p>按库存件数统计</p></div></div>
+          <div className="v3-bars">
+            {brandRows.map(([brand, count]) => (
+              <div key={brand}>
+                <div className="v3-bar-label"><b>{brand}</b><span>{count} 件</span></div>
+                <div className="v3-bar-track"><div style={{width:`${Math.max(8, count / maxBrand * 100)}%`}} /></div>
+              </div>
+            ))}
+          </div>
+          <div className="v3-mini-stats">
+            <div><b>{items.length}</b><span>总记录</span></div>
+            <div><b>{soldItems.length}</b><span>已售</span></div>
+            <div><b>{withImages}</b><span>有图</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div className="panel wide">
+        <h2>经营提醒</h2>
+        <p>这个版本是前端本地系统，数据保存在当前电脑浏览器。重要数据请每周点击「立即备份」导出JSON文件，另存到移动硬盘或Google Drive。</p>
       </div>
     </section>
   );
@@ -539,7 +659,7 @@ function StatusBadge({ status }) {
   return <span className={`status-badge status-${status}`}>{status}</span>;
 }
 
-function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, downloadCSV, editItem, deleteItem, setPreviewImage, setPreviewScale }) {
+function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, downloadCSV, editItem, deleteItem, isOwner, setPreviewImage, setPreviewScale }) {
   const headers = ["图片", "商品编号", "入库日期", "品类", "品牌", "商品名", "材质", "颜色", "产地", "数量", "采购CNY", "申报CNY", "采购JPY", "进项税参考", "预计销售JPY（税込）", "状态", "操作"];
   const csvHeaders = ["商品编号", "入库日期", "品类", "品牌", "商品名", "材质", "颜色", "产地", "数量", "采购CNY", "申报CNY", "采购JPY", "进项消费税参考", "预计销售JPY税込", "状态"];
   const csvRows = [csvHeaders];
@@ -572,9 +692,11 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
         <button className="edit" onClick={() => editItem(x)}>
           <Edit3 size={14} /> 编辑
         </button>
-        <button className="danger" onClick={() => deleteItem(x.id)}>
-          <Trash2 size={14} /> 删除
-        </button>
+        {isOwner && (
+          <button className="danger" onClick={() => deleteItem(x.id)}>
+            <Trash2 size={14} /> 删除
+          </button>
+        )}
       </div>
     ];
   });
@@ -830,6 +952,32 @@ function SalesReport({ items, downloadCSV }) {
 
       <p>销售消费税参考：{jpy(totalOutputTax)}</p>
       <Table headers={headers} rows={rows} />
+    </div>
+  );
+}
+
+function BackupPanel({ items, exportBackup, importBackup }) {
+  return (
+    <div className="panel">
+      <h2><Database size={20} /> 数据备份 / 恢复</h2>
+      <p className="note">当前系统数据保存在本机浏览器。换电脑、清理浏览器、重装系统前，一定要先导出备份。</p>
+
+      <div className="grid4" style={{marginTop:"16px"}}>
+        <Card icon={<Package />} title="当前商品记录" value={`${items.length} 件`} />
+        <Card icon={<ImagePlus />} title="有图片商品" value={`${items.filter(x => x.images?.length).length} 件`} />
+        <Card icon={<Calculator />} title="已售商品" value={`${items.filter(x => x.status === "已售出").length} 件`} />
+        <Card icon={<Database />} title="备份格式" value="JSON" />
+      </div>
+
+      <div className="action-row" style={{marginTop:"20px"}}>
+        <button className="primary" onClick={exportBackup}><Download size={16} /> 导出备份JSON</button>
+        <label className="ghost" style={{display:"inline-flex", alignItems:"center", gap:"8px", cursor:"pointer"}}>
+          <Upload size={16} /> 导入备份JSON
+          <input type="file" accept="application/json" style={{display:"none"}} onChange={(e)=>importBackup(e.target.files?.[0])} />
+        </label>
+      </div>
+
+      <p className="note">建议：每周导出一次，文件名保留日期；重要月份结账后再导出一次。</p>
     </div>
   );
 }
