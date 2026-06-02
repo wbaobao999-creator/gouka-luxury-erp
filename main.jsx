@@ -11,24 +11,79 @@ const USERS = {
 const TAX_RATE = 0.10;
 
 const STANDARD_OPTIONS = {
-  brands: ["CHANEL", "HERMES", "Louis Vuitton", "GUCCI", "Dior", "Cartier", "BVLGARI", "Tiffany", "Van Cleef & Arpels", "Rolex", "OMEGA", "PRADA", "CELINE", "FENDI", "BOTTEGA VENETA", "LOEWE", "其他"],
-  materials: ["Caviar Leather", "Lambskin Leather", "Calfskin Leather", "Coated Canvas", "Canvas", "Togo Leather", "Epsom Leather", "Swift Leather", "Clemence Leather", "Gold", "Silver", "Platinum", "Diamond", "其他"],
-  colors: ["Black", "Brown", "White", "Grey", "Beige", "Blue", "Navy", "Red", "Pink", "Green", "Yellow", "Gold", "Silver", "其他"],
-  origins: ["France", "Italy", "Spain", "Germany", "Japan", "Switzerland", "USA", "China", "其他"],
-  sources: ["中国供应商", "中国个人", "日本个人", "ECO Ring", "JBA", "AUCNET", "Star Buyers", "NBAA", "Mercari", "Yahoo", "店头收购", "其他"],
-  platforms: ["EMS", "DHL", "FedEx", "佐川急便", "ヤマト運輸", "ECO Ring", "JBA", "Mercari", "Yahoo", "Rakuten", "店铺", "其他"]
+  brands: [
+    "CHANEL", "HERMES", "Louis Vuitton", "GUCCI", "Dior", "Cartier", "BVLGARI",
+    "Tiffany", "Van Cleef & Arpels", "Rolex", "OMEGA", "Chopard", "PRADA",
+    "CELINE", "FENDI", "BOTTEGA VENETA", "LOEWE", "BALENCIAGA", "SAINT LAURENT",
+    "MIU MIU", "BURBERRY", "GOYARD", "其他"
+  ],
+  materials: [
+    "Caviar Leather", "Lambskin Leather", "Calfskin Leather", "Coated Canvas", "Canvas",
+    "Monogram Canvas", "Damier Canvas", "Epi Leather", "Taiga Leather", "Togo Leather",
+    "Epsom Leather", "Swift Leather", "Clemence Leather", "Box Calf", "Ostrich",
+    "Crocodile", "Lizard", "Gold", "White Gold", "Rose Gold", "Silver", "Platinum",
+    "Diamond", "Pearl", "Ceramic", "Stainless Steel", "其他"
+  ],
+  colors: [
+    "Black", "Brown", "Monogram", "Damier Ebene", "Damier Azur", "White", "Ivory", "Grey",
+    "Beige", "Camel", "Blue", "Navy", "Red", "Bordeaux", "Pink", "Purple", "Green",
+    "Yellow", "Orange", "Gold", "Silver", "Rose Gold", "Multi Color", "其他"
+  ],
+  origins: [
+    "France", "Italy", "Spain", "Germany", "Switzerland", "Japan", "USA", "UK",
+    "Romania", "Portugal", "China", "Korea", "Thailand", "Vietnam", "其他"
+  ],
+  sources: [
+    "中国供应商", "中国个人", "日本个人", "日本法人", "ECO Ring", "JBA", "AUCNET",
+    "Star Buyers", "NBAA", "MONO AUCTION", "KOMEHYO Auction", "Mercari", "Yahoo",
+    "Rakuten", "店头收购", "委托销售", "库存转入", "其他"
+  ],
+  platforms: [
+    "EMS", "DHL", "FedEx", "UPS", "佐川急便", "ヤマト運輸", "日本郵便",
+    "顺丰国际", "手提携带", "ECO Ring", "JBA", "AUCNET", "Mercari", "Yahoo",
+    "Rakuten", "自社EC", "店铺", "Instagram", "其他"
+  ],
+  idChecks: [
+    "Supplier invoice", "Supplier invoice / customs documents", "Passport", "Residence Card",
+    "Driver License", "My Number Card", "Corporate documents", "Auction statement",
+    "Bank transfer record", "其他"
+  ],
+  statuses: ["采购中", "运输中", "报关准备", "已入库", "出品中", "已售出", "保留", "退货"]
 };
 
 const ITEM_OPTIONS_BY_BRAND = {
-  CHANEL: ["Classic Flap Bag", "Chain Flap Bag", "Boy Chanel", "Chanel 19", "Chanel 22", "Coco Handle", "Gabrielle", "Wallet", "Card Case", "其他"],
-  HERMES: ["Birkin", "Kelly", "Constance", "Picotin", "Garden Party", "Evelyne", "Lindy", "Bolide", "Bracelet", "Scarf", "其他"],
-  "Louis Vuitton": ["Neverfull", "Speedy", "Alma", "OnTheGo", "Keepall", "Noe", "Pochette", "Wallet", "Card Case", "其他"],
-  GUCCI: ["Dionysus", "Marmont", "Jackie", "Ophidia", "Horsebit", "Wallet", "其他"],
-  Dior: ["Lady Dior", "Saddle", "Book Tote", "Diorama", "Wallet", "其他"],
-  Cartier: ["LOVE", "Juste un Clou", "Trinity", "Ballon Bleu", "Tank", "Ring", "Bracelet", "其他"],
-  BVLGARI: ["B.zero1", "Serpenti", "Divas Dream", "Ring", "Necklace", "其他"],
-  Tiffany: ["T Smile", "T Wire", "Victoria", "Key", "Ring", "Necklace", "其他"],
-  "Van Cleef & Arpels": ["Alhambra", "Frivole", "Perlee", "Ring", "Necklace", "其他"]
+  CHANEL: [
+    "Classic Flap Bag", "Chain Flap Bag", "Boy Chanel", "Chanel 19", "Chanel 22",
+    "Coco Handle", "Gabrielle", "Deauville", "Wallet on Chain", "Vanity Case",
+    "Card Case", "Wallet", "Necklace", "Earrings", "Brooch", "Watch", "其他"
+  ],
+  HERMES: [
+    "Birkin", "Kelly", "Constance", "Picotin", "Garden Party", "Evelyne", "Lindy",
+    "Bolide", "Herbag", "Jypsiere", "Roulis", "Dogon Wallet", "Bearn Wallet",
+    "Bracelet", "Scarf", "Twilly", "其他"
+  ],
+  "Louis Vuitton": [
+    "Neverfull", "Speedy", "Alma", "OnTheGo", "Keepall", "Noe", "Pochette",
+    "Pochette Accessoires", "Multi Pochette", "Capucines", "Diane", "Palm Springs",
+    "Felicie", "Zippy Wallet", "Card Case", "Wallet", "其他"
+  ],
+  GUCCI: ["Dionysus", "Marmont", "Jackie", "Ophidia", "Horsebit", "Soho", "Bamboo", "Wallet", "Card Case", "其他"],
+  Dior: ["Lady Dior", "Saddle", "Book Tote", "Diorama", "Caro", "30 Montaigne", "Wallet", "Card Case", "其他"],
+  Cartier: ["LOVE Ring", "LOVE Bracelet", "Juste un Clou", "Trinity", "Ballon Bleu", "Tank", "Santos", "Panthere", "Ring", "Bracelet", "Necklace", "Watch", "其他"],
+  BVLGARI: ["B.zero1", "Serpenti", "Divas Dream", "Bvlgari Bvlgari", "Save the Children", "Ring", "Necklace", "Bracelet", "Watch", "其他"],
+  Tiffany: ["T Smile", "T Wire", "Victoria", "Key", "HardWear", "Open Heart", "Atlas", "Ring", "Necklace", "Bracelet", "其他"],
+  "Van Cleef & Arpels": ["Vintage Alhambra", "Sweet Alhambra", "Magic Alhambra", "Frivole", "Perlee", "Ring", "Necklace", "Bracelet", "其他"],
+  Rolex: ["Submariner", "Daytona", "Datejust", "GMT-Master", "Explorer", "Yacht-Master", "Oyster Perpetual", "其他"],
+  OMEGA: ["Speedmaster", "Seamaster", "Constellation", "De Ville", "其他"],
+  Chopard: ["Happy Diamonds", "Happy Sport", "Ice Cube", "Ring", "Necklace", "Watch", "其他"],
+  PRADA: ["Galleria", "Re-Edition", "Cahier", "Canapa", "Wallet", "其他"],
+  CELINE: ["Luggage", "Belt Bag", "Triomphe", "Box", "Ava", "Wallet", "其他"],
+  FENDI: ["Peekaboo", "Baguette", "By The Way", "Wallet", "其他"],
+  "BOTTEGA VENETA": ["Cassette", "Jodie", "Arco", "Pouch", "Wallet", "其他"],
+  LOEWE: ["Puzzle", "Hammock", "Gate", "Amazona", "Wallet", "其他"],
+  BALENCIAGA: ["City", "Hourglass", "Le Cagole", "Wallet", "其他"],
+  "SAINT LAURENT": ["LouLou", "Kate", "Niki", "Sac de Jour", "Wallet", "其他"],
+  GOYARD: ["Saint Louis", "Anjou", "Artois", "Saigon", "Wallet", "其他"]
 };
 
 const emptyForm = {
@@ -221,7 +276,7 @@ function LoginPage({ onLogin }) {
     <div className="login-page">
       <form className="login-card" onSubmit={submit}>
         <div className="login-logo"><Lock size={28} /></div>
-        <h1>豪嘉ERP V4</h1>
+        <h1>豪嘉ERP V4.2</h1>
         <p>豪嘉株式会社内部管理系统</p>
         <p className="note">请输入公司内部账号登录。账号可向管理员确认，密码不在页面显示。</p>
 
@@ -282,7 +337,7 @@ function App() {
   }
 
   function exportBackup() {
-    const data = { version: "GOUKA-ERP-V4", exportedAt: new Date().toISOString(), items };
+    const data = { version: "GOUKA-ERP-V4.2", exportedAt: new Date().toISOString(), items };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -489,7 +544,7 @@ function App() {
           <Building2 size={24} />
           <div>
             <b>豪嘉株式会社</b>
-            <span>GOUKA Luxury ERP V4.1</span>
+            <span>GOUKA Luxury ERP V4.2</span>
           </div>
         </div>
 
@@ -505,7 +560,7 @@ function App() {
       <main>
         <header>
           <div>
-            <h1>二手奢侈品管理系统 V4.1</h1>
+            <h1>二手奢侈品管理系统 V4.2</h1>
             <p>自动保存・图片上传・状态筛选・古物台账锁定・EMS报关・利润计算・备份恢复</p>
           </div>
           <span className="pill">Auto Save · {isOwner ? "老板" : "员工"}</span>
@@ -589,7 +644,7 @@ function Dashboard({ totals, items, setTab, exportBackup }) {
     <section className="v3-dashboard">
       <div className="v3-hero">
         <div>
-          <span className="v3-kicker">GOUKA ERP V4.1</span>
+          <span className="v3-kicker">GOUKA ERP V4.2</span>
           <h1>老板驾驶舱</h1>
           <p>库存、销售、真实成本、净利润、消费税、古物台账、EMS报关集中管理。</p>
           <div className="v3-hero-actions">
@@ -654,7 +709,7 @@ function Dashboard({ totals, items, setTab, exportBackup }) {
 
       <div className="panel wide">
         <h2>经营提醒</h2>
-        <p>V4.1 已加入标准化录入、真实成本、拖拽图片、月度经营数据。重要数据请每周导出JSON备份。</p>
+        <p>V4.2 已强化品牌字典、商品名联动、产地/来源/平台标准化与实时利润预览。重要数据请每周导出JSON备份。</p>
       </div>
     </section>
   );
@@ -672,7 +727,8 @@ function Card({ icon, title, value }) {
 
 function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, removeImage }) {
   const set = (k, v) => setForm({ ...form, [k]: v });
-  const itemOptions = ITEM_OPTIONS_BY_BRAND[form.brand] || ["Bag", "Wallet", "Watch", "Ring", "Necklace", "Bracelet", "Accessory", "其他"];
+  const itemOptions = ITEM_OPTIONS_BY_BRAND[form.brand] || ["Bag", "Wallet", "Watch", "Ring", "Necklace", "Bracelet", "Accessory", "Scarf", "Card Case", "其他"];
+  const formPreview = calcTax(form);
 
   function onDropImages(e) {
     e.preventDefault();
@@ -688,7 +744,7 @@ function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, 
       <div className="formgrid">
         <Input label="仕入日" type="date" value={form.purchaseDate} onChange={(v) => set("purchaseDate", v)} />
         <Select label="品类" value={form.category} onChange={(v) => set("category", v)} options={["バッグ類", "財布・小物類", "時計類", "宝飾品類", "アクセサリー類", "その他"]} />
-        <SmartInput label="品牌 Brand" value={form.brand} onChange={(v) => set("brand", v)} options={STANDARD_OPTIONS.brands} placeholder="选择或输入品牌" />
+        <SmartInput label="品牌 Brand" value={form.brand} onChange={(v) => setForm({ ...form, brand: v, item: ITEM_OPTIONS_BY_BRAND[v]?.includes(form.item) ? form.item : "" })} options={STANDARD_OPTIONS.brands} placeholder="选择或输入品牌" />
         <SmartInput label="商品名 Item" value={form.item} onChange={(v) => set("item", v)} options={itemOptions} placeholder="先选品牌，再选择/输入商品名" />
         <SmartInput label="材质 Material" value={form.material} onChange={(v) => set("material", v)} options={STANDARD_OPTIONS.materials} placeholder="选择或输入材质" />
         <SmartInput label="颜色 Color" value={form.color} onChange={(v) => set("color", v)} options={STANDARD_OPTIONS.colors} placeholder="选择或输入颜色" />
@@ -707,8 +763,8 @@ function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, 
 
         <SmartInput label="仕入先 / 来源" value={form.source} onChange={(v) => set("source", v)} options={STANDARD_OPTIONS.sources} placeholder="选择或输入来源" />
         <Input label="供应商地址" value={form.address} onChange={(v) => set("address", v)} placeholder="China / Japan address" />
-        <Input label="本人确认方式" value={form.idCheck} onChange={(v) => set("idCheck", v)} placeholder="Invoice / Passport / Residence Card" />
-        <Select label="状态" value={form.status} onChange={(v) => set("status", v)} options={["采购中", "运输中", "已入库", "报关准备", "出品中", "已售出", "保留", "退货"]} />
+        <SmartInput label="本人确认方式" value={form.idCheck} onChange={(v) => set("idCheck", v)} options={STANDARD_OPTIONS.idChecks} placeholder="选择或输入本人确认方式" />
+        <Select label="状态" value={form.status} onChange={(v) => set("status", v)} options={STANDARD_OPTIONS.statuses} />
         <SmartInput label="平台" value={form.platform} onChange={(v) => set("platform", v)} options={STANDARD_OPTIONS.platforms} placeholder="选择或输入平台" />
 
         {form.status === "已售出" && (
@@ -743,6 +799,17 @@ function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, 
           备注
           <textarea value={form.memo} onChange={(e) => set("memo", e.target.value)} />
         </label>
+      </div>
+
+      <div className="panel" style={{ marginTop: "18px", background: "#f8fafc" }}>
+        <h3>实时利润预览</h3>
+        <div className="grid4">
+          <Card icon={<Calculator />} title="采购成本JPY" value={jpy(formPreview.purchaseCostJpy)} />
+          <Card icon={<Calculator />} title="费用合计JPY" value={jpy(formPreview.extraCostJpy)} />
+          <Card icon={<Calculator />} title="真实总成本" value={jpy(formPreview.totalCostJpy)} />
+          <Card icon={<Calculator />} title="预计净利润" value={jpy(formPreview.netProfit)} />
+        </div>
+        <p className="note">费用合计 = EMS/国际运费 + 关税 + 报关/代行费 + 拍卖/平台手续费 + 其他费用。录入时实时更新，方便判断是否值得出品。</p>
       </div>
 
       <div className="action-row">
@@ -994,7 +1061,7 @@ function Profit({ items }) {
   return (
     <div className="panel">
       <h2><Calculator size={20} /> 利润分析</h2>
-      <p className="note">V4.1：预计净利润已扣除采购成本、EMS运费、关税、报关费、拍卖/平台手续费和其他费用。</p>
+      <p className="note">V4.2：预计净利润已扣除采购成本、EMS运费、关税、报关费、拍卖/平台手续费和其他费用。</p>
       <Table headers={headers} rows={rows} />
     </div>
   );
