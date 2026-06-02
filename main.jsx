@@ -5,6 +5,7 @@ import "./style.css";
 
 const STORAGE_KEY = "gouka_erp_v2_items";
 const LOGIN_KEY = "gouka_erp_login";
+const CASHFLOW_KEY = "gouka_erp_cashflow_v431";
 const USERS = {
   gouka: { password: "777888", role: "owner", name: "老板账号" }
 };
@@ -272,7 +273,7 @@ function LoginPage({ onLogin }) {
     <div className="login-page">
       <form className="login-card" onSubmit={submit}>
         <div className="login-logo"><Lock size={28} /></div>
-        <h1>豪嘉ERP V4.3</h1>
+        <h1>豪嘉ERP V4.31</h1>
         <p>豪嘉株式会社内部管理系统</p>
         <p className="note">请输入公司内部账号登录。账号可向管理员确认，密码不在页面显示。</p>
 
@@ -332,7 +333,7 @@ function App() {
   }
 
   function exportBackup() {
-    const data = { version: "GOUKA-ERP-V4.3", exportedAt: new Date().toISOString(), items };
+    const data = { version: "GOUKA-ERP-V4.311", exportedAt: new Date().toISOString(), items };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -378,7 +379,7 @@ function App() {
         a.declared += Number(x.declaredCny || 0);
         a.cost += t.costJpy;
         a.sale += t.saleJpy;
-        a.profit += t.grossProfit;
+        a.profit += t.profitExTax;
         a.inputTax += t.inputTax;
         a.outputTax += t.outputTax;
         a.taxBalance += t.taxBalance;
@@ -386,7 +387,7 @@ function App() {
         if (x.status === "已售出") {
           a.soldCount += Number(x.qty || 0);
           a.soldAmount += Number(x.soldPriceJpy || x.saleJpy || 0);
-          a.soldProfit += t.grossProfit;
+          a.soldProfit += t.profitExTax;
         }
         return a;
       },
@@ -539,7 +540,7 @@ function App() {
           <Building2 size={24} />
           <div>
             <b>豪嘉株式会社</b>
-            <span>GOUKA Luxury ERP V4.3</span>
+            <span>GOUKA Luxury ERP V4.31</span>
           </div>
         </div>
 
@@ -555,7 +556,7 @@ function App() {
       <main>
         <header>
           <div>
-            <h1>二手奢侈品管理系统 V4.3</h1>
+            <h1>二手奢侈品管理系统 V4.31</h1>
             <p>自动保存・图片上传・状态筛选・古物台账锁定・EMS报关・利润计算・备份恢复</p>
           </div>
           <span className="pill">Auto Save · {isOwner ? "老板" : "员工"}</span>
@@ -621,7 +622,7 @@ function Dashboard({ totals, items, setTab, exportBackup }) {
   const monthIn = items.filter((x) => (x.purchaseDate || "").startsWith(month));
   const monthSold = items.filter((x) => (x.soldDate || "").startsWith(month) || (x.status === "已售出" && !(x.soldDate)));
   const monthSale = monthSold.reduce((a, x) => a + calcTax(x).saleJpy, 0);
-  const monthProfit = monthSold.reduce((a, x) => a + calcTax(x).grossProfit, 0);
+  const monthProfit = monthSold.reduce((a, x) => a + calcTax(x).profitExTax, 0);
   const recent = items.slice(0, 5);
 
   const expectedNetProfit = totals.profit;
@@ -649,16 +650,39 @@ function Dashboard({ totals, items, setTab, exportBackup }) {
   const totalBrandValue = brandRows.reduce((a, [,v]) => a + v.value, 0) || 1;
   const maxBrandValue = Math.max(1, ...brandRows.map(([,v])=>v.value));
 
-  const rentIncome = 1320000;
-  const loanPayment = 450000;
+  const defaultCashflow = { rentIncome: 1320000, loanPayment: 450000, companyReserve: 30000000, memo: "房租现金流作为长期定投与公司安全垫参考" };
+  const [cashflow, setCashflow] = useState(() => {
+    try {
+      const saved = localStorage.getItem(CASHFLOW_KEY);
+      return saved ? { ...defaultCashflow, ...JSON.parse(saved) } : defaultCashflow;
+    } catch {
+      return defaultCashflow;
+    }
+  });
+  const [cashflowEdit, setCashflowEdit] = useState(false);
+  const [cashflowDraft, setCashflowDraft] = useState(cashflow);
+  const rentIncome = Number(cashflow.rentIncome || 0);
+  const loanPayment = Number(cashflow.loanPayment || 0);
   const rentCashflow = rentIncome - loanPayment;
-  const companyReserve = 30000000;
+  const companyReserve = Number(cashflow.companyReserve || 0);
+
+  function saveCashflow() {
+    const next = {
+      rentIncome: Number(cashflowDraft.rentIncome || 0),
+      loanPayment: Number(cashflowDraft.loanPayment || 0),
+      companyReserve: Number(cashflowDraft.companyReserve || 0),
+      memo: cashflowDraft.memo || ""
+    };
+    localStorage.setItem(CASHFLOW_KEY, JSON.stringify(next));
+    setCashflow(next);
+    setCashflowEdit(false);
+  }
 
   return (
     <section className="v3-dashboard">
       <div className="v3-hero">
         <div>
-          <span className="v3-kicker">GOUKA ERP V4.3</span>
+          <span className="v3-kicker">GOUKA ERP V4.31</span>
           <h1>老板驾驶舱</h1>
           <p>库存、现金流、利润、待办、品牌价值集中显示。老板打开第一页就能判断今天该做什么。</p>
           <div className="v3-hero-actions">
@@ -690,14 +714,36 @@ function Dashboard({ totals, items, setTab, exportBackup }) {
 
       <div className="v3-layout">
         <div className="v3-panel">
-          <div className="v3-panel-title"><div><h2>经营现金流参考</h2><p>房租现金流作为长期定投与公司安全垫参考</p></div></div>
-          <div className="v3-mini-stats" style={{gridTemplateColumns:"repeat(4,1fr)"}}>
-            <div><b>{jpy(rentIncome)}</b><span>月房租收入</span></div>
-            <div><b>{jpy(loanPayment)}</b><span>贷款支出参考</span></div>
-            <div><b>{jpy(rentCashflow)}</b><span>租金净现金流</span></div>
-            <div><b>{jpy(companyReserve)}</b><span>公司备用金</span></div>
+          <div className="v3-panel-title">
+            <div>
+              <h2>经营现金流参考</h2>
+              <p>{cashflow.memo || "房租现金流作为长期定投与公司安全垫参考"}</p>
+            </div>
+            <button onClick={() => { setCashflowDraft(cashflow); setCashflowEdit(true); }}>编辑现金流</button>
           </div>
-          <p className="note">此处为老板经营参考值，后续可升级为可编辑现金流模块。</p>
+
+          {cashflowEdit ? (
+            <div className="formgrid" style={{gridTemplateColumns:"repeat(2,1fr)"}}>
+              <Input label="月房租收入 JPY" type="number" value={cashflowDraft.rentIncome} onChange={(v) => setCashflowDraft({ ...cashflowDraft, rentIncome: v })} />
+              <Input label="贷款支出 JPY" type="number" value={cashflowDraft.loanPayment} onChange={(v) => setCashflowDraft({ ...cashflowDraft, loanPayment: v })} />
+              <Input label="公司备用金 JPY" type="number" value={cashflowDraft.companyReserve} onChange={(v) => setCashflowDraft({ ...cashflowDraft, companyReserve: v })} />
+              <Input label="备注" value={cashflowDraft.memo || ""} onChange={(v) => setCashflowDraft({ ...cashflowDraft, memo: v })} />
+              <div className="action-row full">
+                <button className="primary" onClick={saveCashflow}>保存现金流</button>
+                <button className="ghost" onClick={() => setCashflowEdit(false)}>取消</button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="v3-mini-stats" style={{gridTemplateColumns:"repeat(4,1fr)"}}>
+                <div><b>{jpy(rentIncome)}</b><span>月房租收入</span></div>
+                <div><b>{jpy(loanPayment)}</b><span>贷款支出参考</span></div>
+                <div><b>{jpy(rentCashflow)}</b><span>租金净现金流</span></div>
+                <div><b>{jpy(companyReserve)}</b><span>公司备用金</span></div>
+              </div>
+              <p className="note">这些数字已可编辑，并保存在当前浏览器。</p>
+            </>
+          )}
         </div>
 
         <div className="v3-panel">
@@ -749,7 +795,7 @@ function Dashboard({ totals, items, setTab, exportBackup }) {
 
       <div className="panel wide">
         <h2>经营提醒</h2>
-        <p>V4.3已强化老板看板：库存成本、预计销售、净利润、待办、现金流、品牌价值占比集中显示。重要数据请每周导出JSON备份。</p>
+        <p>V4.31已强化老板看板：库存成本、预计销售、净利润、待办、现金流、品牌价值占比集中显示。重要数据请每周导出JSON备份。</p>
       </div>
     </section>
   );
@@ -834,7 +880,7 @@ function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, 
             <Card icon={<Calculator />} title="基础采购成本" value={jpy(preview.baseCostJpy)} />
             <Card icon={<Calculator />} title="附加成本合计" value={jpy(preview.extraCostJpy)} />
             <Card icon={<Calculator />} title="真实总成本" value={jpy(preview.costJpy)} />
-            <Card icon={<Calculator />} title="预计净毛利" value={jpy(preview.grossProfit)} />
+            <Card icon={<Calculator />} title="预计毛利" value={jpy(preview.grossProfit)} />
           </div>
           <p className="note">
             利润率：{(preview.margin || 0).toFixed(1)}%　销售消费税参考：{jpy(preview.outputTax)}　进项消费税参考：{jpy(preview.inputTax)}
@@ -901,13 +947,13 @@ function StatusBadge({ status }) {
 
 function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, downloadCSV, editItem, deleteItem, isOwner, setPreviewImage, setPreviewScale }) {
   const [detailItem, setDetailItem] = useState(null);
-  const headers = ["图片", "商品编号", "入库日期", "品牌", "商品名", "状态", "真实成本JPY", "预计销售JPY（税込）", "预计毛利", "利润率", "操作"];
-  const csvHeaders = ["商品编号", "入库日期", "品类", "品牌", "商品名", "材质", "颜色", "产地", "数量", "采购CNY", "申报CNY", "采购JPY", "附加成本JPY", "真实成本JPY", "进项消费税参考", "预计销售JPY税込", "状态"];
+  const headers = ["图片", "商品编号", "入库日期", "品牌", "商品名", "状态", "真实成本JPY", "预计售价JPY（税込）", "销售消费税", "税抜售价", "净利润", "利润率", "操作"];
+  const csvHeaders = ["商品编号", "入库日期", "品类", "品牌", "商品名", "材质", "颜色", "产地", "数量", "采购CNY", "申报CNY", "采购JPY", "附加成本JPY", "真实成本JPY", "进项消费税参考", "预计销售JPY税込", "销售消费税", "税抜售价", "净利润", "状态"];
   const csvRows = [csvHeaders];
 
   items.forEach((x) => {
     const t = calcTax(x);
-    csvRows.push([x.id, x.purchaseDate, x.category, x.brand, x.item, x.material, x.color, x.origin, x.qty, x.purchaseCny, x.declaredCny, Math.round(t.baseCostJpy), Math.round(t.extraCostJpy), Math.round(t.costJpy), Math.round(t.inputTax), x.saleJpy, x.status]);
+    csvRows.push([x.id, x.purchaseDate, x.category, x.brand, x.item, x.material, x.color, x.origin, x.qty, x.purchaseCny, x.declaredCny, Math.round(t.baseCostJpy), Math.round(t.extraCostJpy), Math.round(t.costJpy), Math.round(t.inputTax), x.saleJpy, Math.round(t.outputTax), Math.round(t.saleExTax), Math.round(t.profitExTax), x.status]);
   });
 
   const rows = items.map((x) => {
@@ -921,8 +967,10 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
       <StatusBadge status={x.status} />,
       Math.round(t.costJpy),
       x.saleJpy,
-      Math.round(t.grossProfit),
-      `${(t.margin || 0).toFixed(1)}%`,
+      Math.round(t.outputTax),
+      Math.round(t.saleExTax),
+      Math.round(t.profitExTax),
+      `${(t.saleExTax ? (t.profitExTax / t.saleExTax * 100) : 0).toFixed(1)}%`,
       <div className="table-actions">
         <button className="ghost" onClick={() => setDetailItem(x)}>详情</button>
         <button className="edit" onClick={() => editItem(x)}>
@@ -964,7 +1012,9 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
               <Card icon={<Package />} title="商品编号" value={detailItem.id} />
               <Card icon={<FileText />} title="品类" value={detailItem.category} />
               <Card icon={<Calculator />} title="真实成本" value={jpy(calcTax(detailItem).costJpy)} />
-              <Card icon={<Calculator />} title="预计毛利" value={jpy(calcTax(detailItem).grossProfit)} />
+              <Card icon={<Calculator />} title="销售消费税" value={jpy(calcTax(detailItem).outputTax)} />
+              <Card icon={<Calculator />} title="税抜售价" value={jpy(calcTax(detailItem).saleExTax)} />
+              <Card icon={<Calculator />} title="净利润" value={jpy(calcTax(detailItem).profitExTax)} />
             </div>
             <p><b>材质：</b>{detailItem.material}</p>
             <p><b>颜色：</b>{detailItem.color}</p>
@@ -1004,6 +1054,23 @@ function Ledger({ items, setItems, isOwner, downloadCSV }) {
       ledgerStatus: "有效",
       ledgerVoidReason: ""
     }, "gouka", "古物台账恢复有效") : x));
+  }
+
+  function correctLedger(id) {
+    if (!isOwner) return alert("员工账号不能更正台账");
+    const note = window.prompt("请输入更正内容或原因（例：更正商品颜色 / 更正材质 / 更正供应商）：", "更正商品信息");
+    if (!note) return;
+    setItems((prev) => prev.map((x) => x.id === id ? addHistory({
+      ...x,
+      ledgerStatus: "更正",
+      ledgerVoidReason: ""
+    }, "gouka", `古物台账更正：${note}`) : x));
+    alert("已记录更正履历。需要修改具体商品内容时，请到库存管理点「编辑」。");
+  }
+
+  function showLedgerHistory(item) {
+    const history = (item.ledgerHistory || []).map((h, i) => `${i + 1}. ${(h.date || "").slice(0, 19)} / ${h.user || "system"} / ${h.action || ""}`).join("\n");
+    alert(`商品编号：${item.id}\n台账状态：${item.ledgerStatus || "有效"}\n作废原因：${item.ledgerVoidReason || "无"}\n\n更正履历：\n${history || "暂无履历"}`);
   }
 
   const filteredItems = items.filter((x) => {
@@ -1071,6 +1138,8 @@ function Ledger({ items, setItems, isOwner, downloadCSV }) {
     x.ledgerStatus || "有效",
     (x.ledgerHistory || []).slice(-3).map((h) => `${(h.date || "").slice(0,10)} ${h.action}`).join(" / "),
     <div className="table-actions">
+      <button className="ghost" onClick={() => showLedgerHistory(x)}>履历</button>
+      {isOwner && <button className="edit" onClick={() => correctLedger(x.id)}>更正</button>}
       {(x.ledgerStatus || "有效") === "作废" ? (
         isOwner ? <button className="edit" onClick={() => restoreLedger(x.id)}>恢复</button> : "作废"
       ) : (
@@ -1145,10 +1214,10 @@ function Customs({ items, downloadCSV }) {
 }
 
 function Profit({ items }) {
-  const headers = ["商品编号", "品牌", "商品名", "基础成本JPY", "附加成本JPY", "真实成本JPY", "销售JPY（税込）", "销售不含税", "销售消费税", "预计净毛利", "不含税利润参考", "利润率"];
+  const headers = ["商品编号", "品牌", "商品名", "基础成本JPY", "附加成本JPY", "真实成本JPY", "销售JPY（税込）", "销售不含税", "销售消费税", "预计毛利", "不含税利润参考", "利润率"];
   const rows = items.map((x) => {
     const t = calcTax(x);
-    const margin = t.saleJpy ? ((t.grossProfit / t.saleJpy) * 100).toFixed(1) + "%" : "";
+    const margin = t.saleExTax ? ((t.profitExTax / t.saleExTax) * 100).toFixed(1) + "%" : "";
     return [x.id, x.brand, x.item, Math.round(t.baseCostJpy), Math.round(t.extraCostJpy), Math.round(t.costJpy), x.saleJpy, Math.round(t.saleExTax), Math.round(t.outputTax), Math.round(t.grossProfit), Math.round(t.profitExTax), margin];
   });
 
