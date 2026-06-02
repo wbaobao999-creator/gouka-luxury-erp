@@ -10,81 +10,73 @@ const USERS = {
 };
 const TAX_RATE = 0.10;
 
-const STANDARD_OPTIONS = {
-  brands: [
-    "CHANEL", "HERMES", "Louis Vuitton", "GUCCI", "Dior", "Cartier", "BVLGARI",
-    "Tiffany", "Van Cleef & Arpels", "Rolex", "OMEGA", "Chopard", "PRADA",
-    "CELINE", "FENDI", "BOTTEGA VENETA", "LOEWE", "BALENCIAGA", "SAINT LAURENT",
-    "MIU MIU", "BURBERRY", "GOYARD", "其他"
-  ],
-  materials: [
-    "Caviar Leather", "Lambskin Leather", "Calfskin Leather", "Coated Canvas", "Canvas",
-    "Monogram Canvas", "Damier Canvas", "Epi Leather", "Taiga Leather", "Togo Leather",
-    "Epsom Leather", "Swift Leather", "Clemence Leather", "Box Calf", "Ostrich",
-    "Crocodile", "Lizard", "Gold", "White Gold", "Rose Gold", "Silver", "Platinum",
-    "Diamond", "Pearl", "Ceramic", "Stainless Steel", "其他"
-  ],
-  colors: [
-    "Black", "Brown", "Monogram", "Damier Ebene", "Damier Azur", "White", "Ivory", "Grey",
-    "Beige", "Camel", "Blue", "Navy", "Red", "Bordeaux", "Pink", "Purple", "Green",
-    "Yellow", "Orange", "Gold", "Silver", "Rose Gold", "Multi Color", "其他"
-  ],
-  origins: [
-    "France", "Italy", "Spain", "Germany", "Switzerland", "Japan", "USA", "UK",
-    "Romania", "Portugal", "China", "Korea", "Thailand", "Vietnam", "其他"
-  ],
-  sources: [
-    "中国供应商", "中国个人", "日本个人", "日本法人", "ECO Ring", "JBA", "AUCNET",
-    "Star Buyers", "NBAA", "MONO AUCTION", "KOMEHYO Auction", "Mercari", "Yahoo",
-    "Rakuten", "店头收购", "委托销售", "库存转入", "其他"
-  ],
-  platforms: [
-    "EMS", "DHL", "FedEx", "UPS", "佐川急便", "ヤマト運輸", "日本郵便",
-    "顺丰国际", "手提携带", "ECO Ring", "JBA", "AUCNET", "Mercari", "Yahoo",
-    "Rakuten", "自社EC", "店铺", "Instagram", "其他"
-  ],
-  idChecks: [
-    "Supplier invoice", "Supplier invoice / customs documents", "Passport", "Residence Card",
-    "Driver License", "My Number Card", "Corporate documents", "Auction statement",
-    "Bank transfer record", "其他"
-  ],
-  statuses: ["采购中", "运输中", "报关准备", "已入库", "出品中", "已售出", "保留", "退货"]
-};
+const BRAND_OPTIONS = [
+  "CHANEL", "HERMES", "Louis Vuitton", "GUCCI", "Dior", "Prada", "Fendi", "Celine",
+  "Bottega Veneta", "Balenciaga", "Saint Laurent", "LOEWE", "Cartier", "BVLGARI",
+  "Tiffany", "Van Cleef & Arpels", "Chopard", "Rolex", "OMEGA", "其他"
+];
 
 const ITEM_OPTIONS_BY_BRAND = {
-  CHANEL: [
-    "Classic Flap Bag", "Chain Flap Bag", "Boy Chanel", "Chanel 19", "Chanel 22",
-    "Coco Handle", "Gabrielle", "Deauville", "Wallet on Chain", "Vanity Case",
-    "Card Case", "Wallet", "Necklace", "Earrings", "Brooch", "Watch", "其他"
-  ],
-  HERMES: [
-    "Birkin", "Kelly", "Constance", "Picotin", "Garden Party", "Evelyne", "Lindy",
-    "Bolide", "Herbag", "Jypsiere", "Roulis", "Dogon Wallet", "Bearn Wallet",
-    "Bracelet", "Scarf", "Twilly", "其他"
-  ],
-  "Louis Vuitton": [
-    "Neverfull", "Speedy", "Alma", "OnTheGo", "Keepall", "Noe", "Pochette",
-    "Pochette Accessoires", "Multi Pochette", "Capucines", "Diane", "Palm Springs",
-    "Felicie", "Zippy Wallet", "Card Case", "Wallet", "其他"
-  ],
-  GUCCI: ["Dionysus", "Marmont", "Jackie", "Ophidia", "Horsebit", "Soho", "Bamboo", "Wallet", "Card Case", "其他"],
-  Dior: ["Lady Dior", "Saddle", "Book Tote", "Diorama", "Caro", "30 Montaigne", "Wallet", "Card Case", "其他"],
-  Cartier: ["LOVE Ring", "LOVE Bracelet", "Juste un Clou", "Trinity", "Ballon Bleu", "Tank", "Santos", "Panthere", "Ring", "Bracelet", "Necklace", "Watch", "其他"],
-  BVLGARI: ["B.zero1", "Serpenti", "Divas Dream", "Bvlgari Bvlgari", "Save the Children", "Ring", "Necklace", "Bracelet", "Watch", "其他"],
-  Tiffany: ["T Smile", "T Wire", "Victoria", "Key", "HardWear", "Open Heart", "Atlas", "Ring", "Necklace", "Bracelet", "其他"],
-  "Van Cleef & Arpels": ["Vintage Alhambra", "Sweet Alhambra", "Magic Alhambra", "Frivole", "Perlee", "Ring", "Necklace", "Bracelet", "其他"],
-  Rolex: ["Submariner", "Daytona", "Datejust", "GMT-Master", "Explorer", "Yacht-Master", "Oyster Perpetual", "其他"],
-  OMEGA: ["Speedmaster", "Seamaster", "Constellation", "De Ville", "其他"],
-  Chopard: ["Happy Diamonds", "Happy Sport", "Ice Cube", "Ring", "Necklace", "Watch", "其他"],
-  PRADA: ["Galleria", "Re-Edition", "Cahier", "Canapa", "Wallet", "其他"],
-  CELINE: ["Luggage", "Belt Bag", "Triomphe", "Box", "Ava", "Wallet", "其他"],
-  FENDI: ["Peekaboo", "Baguette", "By The Way", "Wallet", "其他"],
-  "BOTTEGA VENETA": ["Cassette", "Jodie", "Arco", "Pouch", "Wallet", "其他"],
-  LOEWE: ["Puzzle", "Hammock", "Gate", "Amazona", "Wallet", "其他"],
-  BALENCIAGA: ["City", "Hourglass", "Le Cagole", "Wallet", "其他"],
-  "SAINT LAURENT": ["LouLou", "Kate", "Niki", "Sac de Jour", "Wallet", "其他"],
-  GOYARD: ["Saint Louis", "Anjou", "Artois", "Saigon", "Wallet", "其他"]
+  "CHANEL": ["Classic Flap Bag", "Boy Chanel", "Chanel 19", "Chanel 22", "Coco Handle", "Gabrielle", "Wallet on Chain", "Vanity Bag", "Wallet", "其他"],
+  "HERMES": ["Birkin", "Kelly", "Constance", "Picotin", "Garden Party", "Evelyne", "Lindy", "Bolide", "Bearn Wallet", "其他"],
+  "Louis Vuitton": ["Neverfull", "Speedy", "Alma", "OnTheGo", "Keepall", "Pochette", "Noe", "Dauphine", "Wallet", "其他"],
+  "GUCCI": ["Dionysus", "Marmont", "Jackie", "Bamboo", "Ophidia", "Horsebit", "Wallet", "其他"],
+  "Dior": ["Lady Dior", "Book Tote", "Saddle Bag", "Dior Caro", "30 Montaigne", "Wallet", "其他"],
+  "Prada": ["Galleria", "Re-Edition", "Cleo", "Nylon Bag", "Wallet", "其他"],
+  "Fendi": ["Peekaboo", "Baguette", "By The Way", "Sunshine Shopper", "Wallet", "其他"],
+  "Celine": ["Luggage", "Belt Bag", "Triomphe", "Box", "Cab 平", "Wallet", "其他"],
+  "Bottega Veneta": ["Cassette", "Jodie", "Pouch", "Arco", "Wallet", "其他"],
+  "Balenciaga": ["City", "Hourglass", "Le Cagole", "Wallet", "其他"],
+  "Saint Laurent": ["Niki", "Loulou", "Kate", "Sac de Jour", "Wallet", "其他"],
+  "Cartier": ["LOVE Ring", "LOVE Bracelet", "Juste un Clou", "Trinity", "Tank Watch", "Santos", "其他"],
+  "BVLGARI": ["Serpenti", "B.zero1", "Divas' Dream", "Bvlgari Bvlgari", "其他"],
+  "Tiffany": ["T Smile", "T Wire", "Victoria", "Keys", "HardWear", "其他"],
+  "Van Cleef & Arpels": ["Alhambra", "Frivole", "Perlee", "其他"],
+  "Chopard": ["Happy Diamonds", "Ice Cube", "Happy Hearts", "其他"],
+  "Rolex": ["Submariner", "Datejust", "Daytona", "GMT-Master", "Oyster Perpetual", "其他"],
+  "OMEGA": ["Speedmaster", "Seamaster", "Constellation", "De Ville", "其他"]
 };
+
+const MATERIAL_OPTIONS = [
+  "Caviar Leather", "Lambskin Leather", "Calfskin Leather", "Coated Canvas", "Canvas",
+  "Togo Leather", "Epsom Leather", "Swift Leather", "Clemence Leather", "Box Leather",
+  "Monogram Canvas", "Damier Canvas", "Nylon", "Gold", "Pink Gold", "White Gold",
+  "Silver", "Platinum", "Diamond", "Ceramic", "其他"
+];
+
+const COLOR_OPTIONS = [
+  "Black", "Brown", "White", "Beige", "Grey", "Blue", "Navy", "Red", "Pink",
+  "Green", "Yellow", "Orange", "Purple", "Gold", "Silver", "Multicolor", "其他"
+];
+
+const ORIGIN_OPTIONS = [
+  "France", "Italy", "Spain", "Germany", "Switzerland", "Japan", "USA", "UK", "China", "Korea", "其他"
+];
+
+const SOURCE_OPTIONS = [
+  "中国供应商", "中国个人", "日本个人", "ECO Ring", "JBA", "AUCNET", "Star Buyers",
+  "NBAA", "MONO", "Mercari", "Yahoo", "店头收购", "其他"
+];
+
+const PLATFORM_OPTIONS = [
+  "EMS", "DHL", "FedEx", "UPS", "SF Express", "Yamato", "佐川急便", "日本郵便",
+  "手提搬入", "船运", "空运", "其他"
+];
+
+const IDCHECK_OPTIONS = [
+  "Supplier invoice", "Supplier invoice / customs documents", "Passport", "Residence Card",
+  "Driver License", "My Number Card", "Auction invoice", "Receipt", "其他"
+];
+
+function currentMonth() {
+  return new Date().toISOString().slice(0, 7);
+}
+
+function sumExtraCosts(x) {
+  return Number(x.shippingJpy || 0) + Number(x.dutyJpy || 0) + Number(x.customsFeeJpy || 0) + Number(x.platformFeeJpy || 0) + Number(x.otherCostJpy || 0);
+}
+
+
 
 const emptyForm = {
   purchaseDate: "",
@@ -102,8 +94,8 @@ const emptyForm = {
   shippingJpy: "",
   dutyJpy: "",
   customsFeeJpy: "",
-  auctionFeeJpy: "",
-  otherFeeJpy: "",
+  platformFeeJpy: "",
+  otherCostJpy: "",
   source: "",
   address: "",
   idCheck: "Supplier invoice",
@@ -132,6 +124,11 @@ const seedItems = [
     declaredCny: 11500,
     rate: 21.8,
     saleJpy: 285000,
+    shippingJpy: 0,
+    dutyJpy: 0,
+    customsFeeJpy: 0,
+    platformFeeJpy: 0,
+    otherCostJpy: 0,
     source: "China Supplier A",
     address: "China",
     idCheck: "Supplier invoice / customs documents",
@@ -158,6 +155,11 @@ const seedItems = [
     declaredCny: 19500,
     rate: 21.8,
     saleJpy: 430000,
+    shippingJpy: 0,
+    dutyJpy: 0,
+    customsFeeJpy: 0,
+    platformFeeJpy: 0,
+    otherCostJpy: 0,
     source: "China Supplier B",
     address: "China",
     idCheck: "Supplier invoice / customs documents",
@@ -183,17 +185,17 @@ function loadItems() {
 
 function normalizeItem(x) {
   return {
-    shippingJpy: Number(x.shippingJpy || 0),
-    dutyJpy: Number(x.dutyJpy || 0),
-    customsFeeJpy: Number(x.customsFeeJpy || 0),
-    auctionFeeJpy: Number(x.auctionFeeJpy || 0),
-    otherFeeJpy: Number(x.otherFeeJpy || 0),
     ledgerStatus: x.ledgerStatus || "有效",
     ledgerVoidReason: x.ledgerVoidReason || "",
     ledgerUpdatedAt: x.ledgerUpdatedAt || "",
     ledgerHistory: Array.isArray(x.ledgerHistory) ? x.ledgerHistory : [
       { date: new Date().toISOString(), user: "system", action: "创建/导入" }
     ],
+    shippingJpy: x.shippingJpy || 0,
+    dutyJpy: x.dutyJpy || 0,
+    customsFeeJpy: x.customsFeeJpy || 0,
+    platformFeeJpy: x.platformFeeJpy || 0,
+    otherCostJpy: x.otherCostJpy || 0,
     ...x
   };
 }
@@ -235,25 +237,19 @@ function makeNextId(items) {
 }
 
 function calcTax(x) {
-  const purchaseCostJpy = Number(x.purchaseCny || 0) * Number(x.rate || 0);
+  const baseCostJpy = Number(x.purchaseCny || 0) * Number(x.rate || 0);
+  const extraCostJpy = sumExtraCosts(x);
+  const costJpy = baseCostJpy + extraCostJpy;
   const declaredJpy = Number(x.declaredCny || 0) * Number(x.rate || 0);
-  const shippingJpy = Number(x.shippingJpy || 0);
-  const dutyJpy = Number(x.dutyJpy || 0);
-  const customsFeeJpy = Number(x.customsFeeJpy || 0);
-  const auctionFeeJpy = Number(x.auctionFeeJpy || 0);
-  const otherFeeJpy = Number(x.otherFeeJpy || 0);
-  const extraCostJpy = shippingJpy + dutyJpy + customsFeeJpy + auctionFeeJpy + otherFeeJpy;
-  const totalCostJpy = purchaseCostJpy + extraCostJpy;
-  const costJpy = purchaseCostJpy;
   const inputTax = declaredJpy * TAX_RATE;
   const saleJpy = Number(x.soldPriceJpy || x.saleJpy || 0);
   const outputTax = saleJpy * TAX_RATE / (1 + TAX_RATE);
   const saleExTax = saleJpy - outputTax;
-  const grossProfit = saleJpy - purchaseCostJpy;
-  const netProfit = saleJpy - totalCostJpy;
+  const grossProfit = saleJpy - costJpy;
   const taxBalance = outputTax - inputTax;
-  const profitExTax = saleExTax - totalCostJpy;
-  return { purchaseCostJpy, costJpy, declaredJpy, inputTax, saleJpy, outputTax, saleExTax, grossProfit, shippingJpy, dutyJpy, customsFeeJpy, auctionFeeJpy, otherFeeJpy, extraCostJpy, totalCostJpy, netProfit, taxBalance, profitExTax };
+  const profitExTax = saleExTax - costJpy;
+  const margin = saleJpy ? grossProfit / saleJpy * 100 : 0;
+  return { baseCostJpy, extraCostJpy, costJpy, declaredJpy, inputTax, saleJpy, outputTax, saleExTax, grossProfit, taxBalance, profitExTax, margin };
 }
 
 function LoginPage({ onLogin }) {
@@ -266,7 +262,7 @@ function LoginPage({ onLogin }) {
     const user = USERS[username];
     if (user && password === user.password) {
       localStorage.setItem(LOGIN_KEY, JSON.stringify({ username, role: user.role, name: user.name }));
-      onLogin({ username, role: user.role, name: user.name });
+      onLogin(user.role);
     } else {
       setError("账号或密码错误");
     }
@@ -317,18 +313,17 @@ function App() {
   const [editingId, setEditingId] = useState(null);
   const [previewImage, setPreviewImage] = useState(null);
   const [previewScale, setPreviewScale] = useState(1);
-  const [detailItem, setDetailItem] = useState(null);
 
   React.useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
   }, [items]);
 
   if (!isLoggedIn) {
-    return <LoginPage onLogin={(newSession) => { setSession(newSession); setIsLoggedIn(true); }} />;
+    return <LoginPage onLogin={(role) => { setSession({ username: "gouka", role, name: "老板账号" }); setIsLoggedIn(true); }} />;
   }
 
   const role = session?.role || "owner";
-  const isOwner = true;
+  const isOwner = role === "owner";
 
   function logout() {
     localStorage.removeItem(LOGIN_KEY);
@@ -381,9 +376,9 @@ function App() {
         const t = calcTax(x);
         a.qty += Number(x.qty || 0);
         a.declared += Number(x.declaredCny || 0);
-        a.cost += t.totalCostJpy;
+        a.cost += t.costJpy;
         a.sale += t.saleJpy;
-        a.profit += t.netProfit;
+        a.profit += t.grossProfit;
         a.inputTax += t.inputTax;
         a.outputTax += t.outputTax;
         a.taxBalance += t.taxBalance;
@@ -391,7 +386,7 @@ function App() {
         if (x.status === "已售出") {
           a.soldCount += Number(x.qty || 0);
           a.soldAmount += Number(x.soldPriceJpy || x.saleJpy || 0);
-          a.soldProfit += t.netProfit;
+          a.soldProfit += t.grossProfit;
         }
         return a;
       },
@@ -422,8 +417,8 @@ function App() {
                 shippingJpy: Number(form.shippingJpy || 0),
                 dutyJpy: Number(form.dutyJpy || 0),
                 customsFeeJpy: Number(form.customsFeeJpy || 0),
-                auctionFeeJpy: Number(form.auctionFeeJpy || 0),
-                otherFeeJpy: Number(form.otherFeeJpy || 0),
+                platformFeeJpy: Number(form.platformFeeJpy || 0),
+                otherCostJpy: Number(form.otherCostJpy || 0),
                 images: form.images || [],
                 soldDate: form.soldDate || "",
                 soldPlatform: form.soldPlatform || "",
@@ -450,8 +445,8 @@ function App() {
         shippingJpy: Number(form.shippingJpy || 0),
         dutyJpy: Number(form.dutyJpy || 0),
         customsFeeJpy: Number(form.customsFeeJpy || 0),
-        auctionFeeJpy: Number(form.auctionFeeJpy || 0),
-        otherFeeJpy: Number(form.otherFeeJpy || 0),
+        platformFeeJpy: Number(form.platformFeeJpy || 0),
+        otherCostJpy: Number(form.otherCostJpy || 0),
         images: form.images || [],
         soldDate: form.soldDate || "",
         soldPlatform: form.soldPlatform || "",
@@ -589,7 +584,6 @@ function App() {
             editItem={editItem}
             deleteItem={deleteItem}
             isOwner={isOwner}
-            setDetailItem={setDetailItem}
             setPreviewImage={setPreviewImage}
             setPreviewScale={setPreviewScale}
           />
@@ -600,8 +594,6 @@ function App() {
         {tab === "tax" && <TaxReport items={filtered} totals={totals} downloadCSV={downloadCSV} />}
         {tab === "sales" && <SalesReport items={items} downloadCSV={downloadCSV} />}
         {tab === "backup" && <BackupPanel items={items} exportBackup={exportBackup} importBackup={importBackup} />}
-
-        {detailItem && <DetailModal item={detailItem} onClose={() => setDetailItem(null)} />}
 
         {previewImage && (
           <div className="image-modal" onClick={() => setPreviewImage(null)}>
@@ -625,12 +617,12 @@ function Dashboard({ totals, items, setTab, exportBackup }) {
   const withImages = items.filter((x) => x.images && x.images.length).length;
   const activeStock = items.filter((x) => x.status !== "已售出" && x.status !== "退货").length;
   const soldItems = items.filter((x) => x.status === "已售出");
+  const month = currentMonth();
+  const monthIn = items.filter((x) => (x.purchaseDate || "").startsWith(month));
+  const monthSold = items.filter((x) => (x.soldDate || "").startsWith(month) || (x.status === "已售出" && !(x.soldDate)));
+  const monthSale = monthSold.reduce((a, x) => a + calcTax(x).saleJpy, 0);
+  const monthProfit = monthSold.reduce((a, x) => a + calcTax(x).grossProfit, 0);
   const recent = items.slice(0, 5);
-  const currentMonth = new Date().toISOString().slice(0, 7);
-  const monthInItems = items.filter((x) => (x.purchaseDate || "").startsWith(currentMonth));
-  const monthSoldItems = items.filter((x) => x.status === "已售出" && (x.soldDate || "").startsWith(currentMonth));
-  const monthSale = monthSoldItems.reduce((a, x) => a + calcTax(x).saleJpy, 0);
-  const monthProfit = monthSoldItems.reduce((a, x) => a + calcTax(x).netProfit, 0);
 
   const brandMap = items.reduce((a, x) => {
     const k = x.brand || "未填写";
@@ -646,7 +638,7 @@ function Dashboard({ totals, items, setTab, exportBackup }) {
         <div>
           <span className="v3-kicker">GOUKA ERP V4.2</span>
           <h1>老板驾驶舱</h1>
-          <p>库存、销售、真实成本、净利润、消费税、古物台账、EMS报关集中管理。</p>
+          <p>库存、销售、毛利、消费税、古物台账、EMS报关集中管理。数据自动保存在当前浏览器。</p>
           <div className="v3-hero-actions">
             <button onClick={() => setTab("add")}>新增商品</button>
             <button onClick={() => setTab("inventory")}>查看库存</button>
@@ -654,24 +646,31 @@ function Dashboard({ totals, items, setTab, exportBackup }) {
           </div>
         </div>
         <div className="v3-hero-right">
-          <p>预计净利润</p>
+          <p>预计总毛利</p>
           <h2>{jpy(totals.profit)}</h2>
           <span>预计利润率 {margin.toFixed(1)}% · 当前库存 {activeStock} 件</span>
         </div>
       </div>
 
       <div className="v3-kpi-grid">
-        <div className="v3-kpi blue"><span>📦</span><p>本月入库</p><h2>{monthInItems.length} 件</h2><small>{currentMonth}</small></div>
-        <div className="v3-kpi green"><span>💴</span><p>本月销售额</p><h2>{jpy(monthSale)}</h2><small>本月售出 {monthSoldItems.length} 件</small></div>
-        <div className="v3-kpi orange"><span>📈</span><p>本月净利润</p><h2>{jpy(monthProfit)}</h2><small>扣除运费/关税/手续费</small></div>
+        <div className="v3-kpi blue"><span>📦</span><p>当前库存</p><h2>{activeStock} 件</h2><small>不含已售出与退货</small></div>
+        <div className="v3-kpi green"><span>💴</span><p>已售金额</p><h2>{jpy(totals.soldAmount)}</h2><small>已售 {soldItems.length} 件</small></div>
+        <div className="v3-kpi orange"><span>📷</span><p>有图片商品</p><h2>{withImages} 件</h2><small>方便出品与台账留档</small></div>
         <div className="v3-kpi purple"><span>🧾</span><p>消费税差额参考</p><h2>{jpy(totals.taxBalance)}</h2><small>正式申告交由税理士确认</small></div>
       </div>
 
       <div className="v3-money-grid">
-        <div className="v3-money-card"><p>当前库存</p><h2>{activeStock} 件</h2><small>不含已售出与退货</small></div>
-        <div className="v3-money-card"><p>真实成本合计</p><h2>{jpy(totals.cost)}</h2><small>采购+运费+关税+手续费</small></div>
+        <div className="v3-money-card"><p>库存采购成本</p><h2>{jpy(totals.cost)}</h2><small>CNY按录入汇率换算</small></div>
         <div className="v3-money-card"><p>预计销售总额</p><h2>{jpy(totals.sale)}</h2><small>含税销售额</small></div>
-        <div className="v3-money-card highlight"><p>有图片商品</p><h2>{withImages} 件</h2><small>方便出品与台账留档</small></div>
+        <div className="v3-money-card"><p>销售消费税参考</p><h2>{jpy(totals.outputTax)}</h2><small>含税倒算10/110</small></div>
+        <div className="v3-money-card highlight"><p>不含税利润参考</p><h2>{jpy(totals.profitExTax)}</h2><small>经营判断用</small></div>
+      </div>
+
+      <div className="v3-kpi-grid">
+        <div className="v3-kpi blue"><span>📥</span><p>本月入库</p><h2>{monthIn.length} 件</h2><small>{month}</small></div>
+        <div className="v3-kpi green"><span>📤</span><p>本月售出</p><h2>{monthSold.length} 件</h2><small>按销售日期统计</small></div>
+        <div className="v3-kpi orange"><span>💴</span><p>本月销售额</p><h2>{jpy(monthSale)}</h2><small>含税销售额</small></div>
+        <div className="v3-kpi purple"><span>📈</span><p>本月净毛利</p><h2>{jpy(monthProfit)}</h2><small>已扣附加成本</small></div>
       </div>
 
       <div className="v3-layout">
@@ -709,7 +708,7 @@ function Dashboard({ totals, items, setTab, exportBackup }) {
 
       <div className="panel wide">
         <h2>经营提醒</h2>
-        <p>V4.2 已强化品牌字典、商品名联动、产地/来源/平台标准化与实时利润预览。重要数据请每周导出JSON备份。</p>
+        <p>这个版本是前端本地系统，数据保存在当前电脑浏览器。重要数据请每周点击「立即备份」导出JSON文件，另存到移动硬盘或Google Drive。</p>
       </div>
     </section>
   );
@@ -727,8 +726,17 @@ function Card({ icon, title, value }) {
 
 function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, removeImage }) {
   const set = (k, v) => setForm({ ...form, [k]: v });
-  const itemOptions = ITEM_OPTIONS_BY_BRAND[form.brand] || ["Bag", "Wallet", "Watch", "Ring", "Necklace", "Bracelet", "Accessory", "Scarf", "Card Case", "其他"];
-  const formPreview = calcTax(form);
+  const preview = calcTax(form);
+  const brandItems = ITEM_OPTIONS_BY_BRAND[form.brand] || ["其他"];
+
+  function setBrand(v) {
+    const nextItems = ITEM_OPTIONS_BY_BRAND[v] || ["其他"];
+    setForm({
+      ...form,
+      brand: v,
+      item: nextItems.includes(form.item) ? form.item : ""
+    });
+  }
 
   function onDropImages(e) {
     e.preventDefault();
@@ -743,34 +751,59 @@ function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, 
 
       <div className="formgrid">
         <Input label="仕入日" type="date" value={form.purchaseDate} onChange={(v) => set("purchaseDate", v)} />
-        <Select label="品类" value={form.category} onChange={(v) => set("category", v)} options={["バッグ類", "財布・小物類", "時計類", "宝飾品類", "アクセサリー類", "その他"]} />
-        <SmartInput label="品牌 Brand" value={form.brand} onChange={(v) => setForm({ ...form, brand: v, item: ITEM_OPTIONS_BY_BRAND[v]?.includes(form.item) ? form.item : "" })} options={STANDARD_OPTIONS.brands} placeholder="选择或输入品牌" />
-        <SmartInput label="商品名 Item" value={form.item} onChange={(v) => set("item", v)} options={itemOptions} placeholder="先选品牌，再选择/输入商品名" />
-        <SmartInput label="材质 Material" value={form.material} onChange={(v) => set("material", v)} options={STANDARD_OPTIONS.materials} placeholder="选择或输入材质" />
-        <SmartInput label="颜色 Color" value={form.color} onChange={(v) => set("color", v)} options={STANDARD_OPTIONS.colors} placeholder="选择或输入颜色" />
-        <SmartInput label="产地 Origin" value={form.origin} onChange={(v) => set("origin", v)} options={STANDARD_OPTIONS.origins} placeholder="选择或输入产地" />
+
+        <Select label="品类" value={form.category} onChange={(v) => set("category", v)} options={["バッグ類", "財布・小物類", "時計類", "宝飾品類", "アクセサリー類", "時計", "アパレル", "その他"]} />
+
+        <SelectWithOther label="品牌 Brand" value={form.brand} onChange={setBrand} options={BRAND_OPTIONS} placeholder="选择或输入品牌" />
+
+        <SelectWithOther label="商品名 Item" value={form.item} onChange={(v) => set("item", v)} options={brandItems} placeholder="先选品牌，再选择商品名" />
+
+        <SelectWithOther label="材质 Material" value={form.material} onChange={(v) => set("material", v)} options={MATERIAL_OPTIONS} placeholder="选择或输入材质" />
+
+        <SelectWithOther label="颜色 Color" value={form.color} onChange={(v) => set("color", v)} options={COLOR_OPTIONS} placeholder="选择或输入颜色" />
+
+        <SelectWithOther label="产地 Origin" value={form.origin} onChange={(v) => set("origin", v)} options={ORIGIN_OPTIONS} placeholder="选择或输入产地" />
+
         <Input label="数量 Qty" type="number" value={form.qty} onChange={(v) => set("qty", v)} />
+
         <Input label="采购金额 CNY" type="number" value={form.purchaseCny} onChange={(v) => set("purchaseCny", v)} />
         <Input label="申报金额 CNY" type="number" value={form.declaredCny} onChange={(v) => set("declaredCny", v)} />
         <Input label="汇率 CNY→JPY" type="number" value={form.rate} onChange={(v) => set("rate", v)} />
         <Input label="预计销售额 JPY（税込）" type="number" value={form.saleJpy} onChange={(v) => set("saleJpy", v)} />
 
-        <Input label="EMS/国际运费 JPY" type="number" value={form.shippingJpy} onChange={(v) => set("shippingJpy", v)} />
-        <Input label="关税 JPY" type="number" value={form.dutyJpy} onChange={(v) => set("dutyJpy", v)} />
-        <Input label="报关/代行费 JPY" type="number" value={form.customsFeeJpy} onChange={(v) => set("customsFeeJpy", v)} />
-        <Input label="拍卖/平台手续费 JPY" type="number" value={form.auctionFeeJpy} onChange={(v) => set("auctionFeeJpy", v)} />
-        <Input label="其他费用 JPY" type="number" value={form.otherFeeJpy} onChange={(v) => set("otherFeeJpy", v)} />
+        <Input label="EMS/国际运费 JPY" type="number" value={form.shippingJpy || ""} onChange={(v) => set("shippingJpy", v)} />
+        <Input label="关税 JPY" type="number" value={form.dutyJpy || ""} onChange={(v) => set("dutyJpy", v)} />
+        <Input label="报关代行费 JPY" type="number" value={form.customsFeeJpy || ""} onChange={(v) => set("customsFeeJpy", v)} />
+        <Input label="拍卖/平台手续费 JPY" type="number" value={form.platformFeeJpy || ""} onChange={(v) => set("platformFeeJpy", v)} />
+        <Input label="其他费用 JPY" type="number" value={form.otherCostJpy || ""} onChange={(v) => set("otherCostJpy", v)} />
 
-        <SmartInput label="仕入先 / 来源" value={form.source} onChange={(v) => set("source", v)} options={STANDARD_OPTIONS.sources} placeholder="选择或输入来源" />
+        <SelectWithOther label="仕入先 / 来源" value={form.source} onChange={(v) => set("source", v)} options={SOURCE_OPTIONS} placeholder="选择或输入来源" />
+
         <Input label="供应商地址" value={form.address} onChange={(v) => set("address", v)} placeholder="China / Japan address" />
-        <SmartInput label="本人确认方式" value={form.idCheck} onChange={(v) => set("idCheck", v)} options={STANDARD_OPTIONS.idChecks} placeholder="选择或输入本人确认方式" />
-        <Select label="状态" value={form.status} onChange={(v) => set("status", v)} options={STANDARD_OPTIONS.statuses} />
-        <SmartInput label="平台" value={form.platform} onChange={(v) => set("platform", v)} options={STANDARD_OPTIONS.platforms} placeholder="选择或输入平台" />
+
+        <SelectWithOther label="本人确认方式" value={form.idCheck} onChange={(v) => set("idCheck", v)} options={IDCHECK_OPTIONS} placeholder="选择或输入确认方式" />
+
+        <Select label="状态" value={form.status} onChange={(v) => set("status", v)} options={["采购中", "运输中", "已入库", "报关准备", "出品中", "已售出", "保留", "退货"]} />
+
+        <SelectWithOther label="平台 / 运输方式" value={form.platform} onChange={(v) => set("platform", v)} options={PLATFORM_OPTIONS} placeholder="选择或输入平台" />
+
+        <div className="full panel" style={{ background: "#f8fafc", padding: "16px" }}>
+          <h3 style={{ marginTop: 0 }}>实时利润预览</h3>
+          <div className="grid4">
+            <Card icon={<Calculator />} title="基础采购成本" value={jpy(preview.baseCostJpy)} />
+            <Card icon={<Calculator />} title="附加成本合计" value={jpy(preview.extraCostJpy)} />
+            <Card icon={<Calculator />} title="真实总成本" value={jpy(preview.costJpy)} />
+            <Card icon={<Calculator />} title="预计净毛利" value={jpy(preview.grossProfit)} />
+          </div>
+          <p className="note">
+            利润率：{(preview.margin || 0).toFixed(1)}%　销售消费税参考：{jpy(preview.outputTax)}　进项消费税参考：{jpy(preview.inputTax)}
+          </p>
+        </div>
 
         {form.status === "已售出" && (
           <>
             <Input label="销售日期" type="date" value={form.soldDate || ""} onChange={(v) => set("soldDate", v)} />
-            <SmartInput label="销售平台" value={form.soldPlatform || ""} onChange={(v) => set("soldPlatform", v)} options={STANDARD_OPTIONS.platforms} placeholder="选择或输入销售平台" />
+            <Input label="销售平台" value={form.soldPlatform || ""} onChange={(v) => set("soldPlatform", v)} placeholder="EcoRing / Mercari / 店铺 / 其他" />
             <Input label="实际销售额 JPY（税込）" type="number" value={form.soldPriceJpy || ""} onChange={(v) => set("soldPriceJpy", v)} />
             <label className="full">
               销售备注
@@ -779,7 +812,12 @@ function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, 
           </>
         )}
 
-        <label className="full" onDragOver={(e) => e.preventDefault()} onDrop={onDropImages}>
+        <label
+          className="full"
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={onDropImages}
+          style={{ border: "1px dashed #94a3b8", borderRadius: "14px", padding: "14px", background: "#f8fafc" }}
+        >
           商品图片（最多3张，本地保存，可拖拽图片到这里）
           <input type="file" accept="image/*" multiple onChange={(e) => handleImages(e.target.files)} />
         </label>
@@ -801,17 +839,6 @@ function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, 
         </label>
       </div>
 
-      <div className="panel" style={{ marginTop: "18px", background: "#f8fafc" }}>
-        <h3>实时利润预览</h3>
-        <div className="grid4">
-          <Card icon={<Calculator />} title="采购成本JPY" value={jpy(formPreview.purchaseCostJpy)} />
-          <Card icon={<Calculator />} title="费用合计JPY" value={jpy(formPreview.extraCostJpy)} />
-          <Card icon={<Calculator />} title="真实总成本" value={jpy(formPreview.totalCostJpy)} />
-          <Card icon={<Calculator />} title="预计净利润" value={jpy(formPreview.netProfit)} />
-        </div>
-        <p className="note">费用合计 = EMS/国际运费 + 关税 + 报关/代行费 + 拍卖/平台手续费 + 其他费用。录入时实时更新，方便判断是否值得出品。</p>
-      </div>
-
       <div className="action-row">
         <button className="primary" onClick={saveItem}>
           <Save size={16} /> {editingId ? "保存修改" : "添加到库存"}
@@ -826,18 +853,20 @@ function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, 
   );
 }
 
+
 function StatusBadge({ status }) {
   return <span className={`status-badge status-${status}`}>{status}</span>;
 }
 
-function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, downloadCSV, editItem, deleteItem, isOwner, setDetailItem, setPreviewImage, setPreviewScale }) {
-  const headers = ["图片", "商品编号", "入库日期", "品牌", "商品名", "状态", "真实成本JPY", "预计销售JPY（税込）", "预计净利润", "操作"];
-  const csvHeaders = ["商品编号", "入库日期", "品类", "品牌", "商品名", "材质", "颜色", "产地", "数量", "采购CNY", "申报CNY", "采购JPY", "运费JPY", "关税JPY", "报关费JPY", "拍卖手续费JPY", "其他费用JPY", "真实成本JPY", "进项消费税参考", "预计销售JPY税込", "预计净利润", "状态"];
+function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, downloadCSV, editItem, deleteItem, isOwner, setPreviewImage, setPreviewScale }) {
+  const [detailItem, setDetailItem] = useState(null);
+  const headers = ["图片", "商品编号", "入库日期", "品牌", "商品名", "状态", "真实成本JPY", "预计销售JPY（税込）", "预计毛利", "利润率", "操作"];
+  const csvHeaders = ["商品编号", "入库日期", "品类", "品牌", "商品名", "材质", "颜色", "产地", "数量", "采购CNY", "申报CNY", "采购JPY", "附加成本JPY", "真实成本JPY", "进项消费税参考", "预计销售JPY税込", "状态"];
   const csvRows = [csvHeaders];
 
   items.forEach((x) => {
     const t = calcTax(x);
-    csvRows.push([x.id, x.purchaseDate, x.category, x.brand, x.item, x.material, x.color, x.origin, x.qty, x.purchaseCny, x.declaredCny, Math.round(t.purchaseCostJpy), Math.round(t.shippingJpy), Math.round(t.dutyJpy), Math.round(t.customsFeeJpy), Math.round(t.auctionFeeJpy), Math.round(t.otherFeeJpy), Math.round(t.totalCostJpy), Math.round(t.inputTax), x.saleJpy, Math.round(t.netProfit), x.status]);
+    csvRows.push([x.id, x.purchaseDate, x.category, x.brand, x.item, x.material, x.color, x.origin, x.qty, x.purchaseCny, x.declaredCny, Math.round(t.baseCostJpy), Math.round(t.extraCostJpy), Math.round(t.costJpy), Math.round(t.inputTax), x.saleJpy, x.status]);
   });
 
   const rows = items.map((x) => {
@@ -849,13 +878,20 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
       x.brand,
       x.item,
       <StatusBadge status={x.status} />,
-      Math.round(t.totalCostJpy),
+      Math.round(t.costJpy),
       x.saleJpy,
-      Math.round(t.netProfit),
+      Math.round(t.grossProfit),
+      `${(t.margin || 0).toFixed(1)}%`,
       <div className="table-actions">
         <button className="ghost" onClick={() => setDetailItem(x)}>详情</button>
-        <button className="edit" onClick={() => editItem(x)}><Edit3 size={14} /> 编辑</button>
-        {isOwner && <button className="danger" onClick={() => deleteItem(x.id)}><Trash2 size={14} /> 作废</button>}
+        <button className="edit" onClick={() => editItem(x)}>
+          <Edit3 size={14} /> 编辑
+        </button>
+        {isOwner && (
+          <button className="danger" onClick={() => deleteItem(x.id)}>
+            <Trash2 size={14} /> 作废
+          </button>
+        )}
       </div>
     ];
   });
@@ -868,9 +904,38 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
         setQuery={setQuery}
         statusFilter={statusFilter}
         setStatusFilter={setStatusFilter}
-        onDownload={() => downloadCSV(csvRows, "gouka_inventory_v41.csv")}
+        onDownload={() => downloadCSV(csvRows, "gouka_inventory_tax.csv")}
       />
+      <p className="note">表格已精简。详细字段请点「详情」查看，避免页面过宽。</p>
       <Table headers={headers} rows={rows} />
+
+      {detailItem && (
+        <div className="image-modal" onClick={() => setDetailItem(null)}>
+          <div className="panel" style={{ width: "860px", maxWidth: "92vw", maxHeight: "88vh", overflow: "auto" }} onClick={(e) => e.stopPropagation()}>
+            <div className="toolbar">
+              <h2>{detailItem.brand} {detailItem.item}</h2>
+              <button onClick={() => setDetailItem(null)}>关闭</button>
+            </div>
+            <div className="image-row">
+              {(detailItem.images || []).map((src, i) => <img key={i} className="thumb" style={{ width: 120, height: 120 }} src={src} alt="detail" />)}
+            </div>
+            <div className="grid4" style={{ marginTop: 16 }}>
+              <Card icon={<Package />} title="商品编号" value={detailItem.id} />
+              <Card icon={<FileText />} title="品类" value={detailItem.category} />
+              <Card icon={<Calculator />} title="真实成本" value={jpy(calcTax(detailItem).costJpy)} />
+              <Card icon={<Calculator />} title="预计毛利" value={jpy(calcTax(detailItem).grossProfit)} />
+            </div>
+            <p><b>材质：</b>{detailItem.material}</p>
+            <p><b>颜色：</b>{detailItem.color}</p>
+            <p><b>产地：</b>{detailItem.origin}</p>
+            <p><b>来源：</b>{detailItem.source}</p>
+            <p><b>供应商地址：</b>{detailItem.address}</p>
+            <p><b>平台/运输：</b>{detailItem.platform}</p>
+            <p><b>费用：</b>运费 {jpy(detailItem.shippingJpy)} / 关税 {jpy(detailItem.dutyJpy)} / 报关 {jpy(detailItem.customsFeeJpy)} / 手续费 {jpy(detailItem.platformFeeJpy)} / 其他 {jpy(detailItem.otherCostJpy)}</p>
+            <p><b>备注：</b>{detailItem.memo}</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -888,15 +953,6 @@ function Ledger({ items, setItems, isOwner, downloadCSV }) {
       ledgerStatus: "作废",
       ledgerVoidReason: reason
     }, "gouka", `古物台账作废：${reason}`) : x));
-  }
-
-  function markCorrected(id) {
-    const memo = window.prompt("请输入更正说明：", "已根据原始资料更正录入内容");
-    if (!memo) return;
-    setItems((prev) => prev.map((x) => x.id === id ? addHistory({
-      ...x,
-      ledgerStatus: "更正"
-    }, "gouka", `古物台账更正：${memo}`) : x));
   }
 
   function restoreLedger(id) {
@@ -977,10 +1033,7 @@ function Ledger({ items, setItems, isOwner, downloadCSV }) {
       {(x.ledgerStatus || "有效") === "作废" ? (
         isOwner ? <button className="edit" onClick={() => restoreLedger(x.id)}>恢复</button> : "作废"
       ) : (
-        <>
-          <button className="edit" onClick={() => markCorrected(x.id)}>更正</button>
-          {isOwner && <button className="danger" onClick={() => voidLedger(x.id)}>作废</button>}
-        </>
+        isOwner ? <button className="danger" onClick={() => voidLedger(x.id)}>作废</button> : "锁定"
       )}
     </div>
   ]);
@@ -1051,17 +1104,18 @@ function Customs({ items, downloadCSV }) {
 }
 
 function Profit({ items }) {
-  const headers = ["商品编号", "品牌", "商品名", "采购成本JPY", "运费", "关税", "报关费", "手续费", "其他", "真实成本", "销售JPY（税込）", "销售消费税", "预计净利润", "不含税利润参考", "利润率"];
+  const headers = ["商品编号", "品牌", "商品名", "基础成本JPY", "附加成本JPY", "真实成本JPY", "销售JPY（税込）", "销售不含税", "销售消费税", "预计净毛利", "不含税利润参考", "利润率"];
   const rows = items.map((x) => {
     const t = calcTax(x);
-    const margin = t.saleJpy ? ((t.netProfit / t.saleJpy) * 100).toFixed(1) + "%" : "";
-    return [x.id, x.brand, x.item, Math.round(t.purchaseCostJpy), Math.round(t.shippingJpy), Math.round(t.dutyJpy), Math.round(t.customsFeeJpy), Math.round(t.auctionFeeJpy), Math.round(t.otherFeeJpy), Math.round(t.totalCostJpy), Math.round(t.saleJpy), Math.round(t.outputTax), Math.round(t.netProfit), Math.round(t.profitExTax), margin];
+    const margin = t.saleJpy ? ((t.grossProfit / t.saleJpy) * 100).toFixed(1) + "%" : "";
+    return [x.id, x.brand, x.item, Math.round(t.baseCostJpy), Math.round(t.extraCostJpy), Math.round(t.costJpy), x.saleJpy, Math.round(t.saleExTax), Math.round(t.outputTax), Math.round(t.grossProfit), Math.round(t.profitExTax), margin];
   });
 
   return (
     <div className="panel">
-      <h2><Calculator size={20} /> 利润分析</h2>
-      <p className="note">V4.2：预计净利润已扣除采购成本、EMS运费、关税、报关费、拍卖/平台手续费和其他费用。</p>
+      <h2>
+        <Calculator size={20} /> 利润分析
+      </h2>
       <Table headers={headers} rows={rows} />
     </div>
   );
@@ -1113,17 +1167,17 @@ function SalesReport({ items, downloadCSV }) {
       x.soldDate || "",
       x.soldPlatform || "",
       Math.round(t.saleJpy),
-      Math.round(t.totalCostJpy),
+      Math.round(t.costJpy),
       Math.round(t.outputTax),
-      Math.round(t.netProfit),
+      Math.round(t.grossProfit),
       Math.round(t.profitExTax),
       x.soldMemo || ""
     ];
   });
 
   const totalSale = filteredSold.reduce((a, x) => a + Number(x.soldPriceJpy || x.saleJpy || 0), 0);
-  const totalCost = filteredSold.reduce((a, x) => a + calcTax(x).totalCostJpy, 0);
-  const totalProfit = filteredSold.reduce((a, x) => a + calcTax(x).netProfit, 0);
+  const totalCost = filteredSold.reduce((a, x) => a + calcTax(x).costJpy, 0);
+  const totalProfit = filteredSold.reduce((a, x) => a + calcTax(x).grossProfit, 0);
   const totalOutputTax = filteredSold.reduce((a, x) => a + calcTax(x).outputTax, 0);
 
   return (
@@ -1237,41 +1291,6 @@ function Table({ headers, rows }) {
   );
 }
 
-function SmartInput({ label, value, onChange, options = [], placeholder = "" }) {
-  const listId = "list-" + label.replace(/[^a-zA-Z0-9]/g, "-");
-  return (
-    <label>
-      {label}
-      <input list={listId} value={value || ""} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} />
-      <datalist id={listId}>
-        {options.map((o) => <option key={o} value={o} />)}
-      </datalist>
-    </label>
-  );
-}
-
-function DetailModal({ item, onClose }) {
-  const t = calcTax(item);
-  const rows = [
-    ["商品编号", item.id], ["入库日期", item.purchaseDate], ["品类", item.category], ["品牌", item.brand], ["商品名", item.item],
-    ["材质", item.material], ["颜色", item.color], ["产地", item.origin], ["数量", item.qty], ["来源", item.source], ["供应商地址", item.address],
-    ["采购CNY", item.purchaseCny], ["申报CNY", item.declaredCny], ["采购成本JPY", jpy(t.purchaseCostJpy)], ["运费JPY", jpy(t.shippingJpy)],
-    ["关税JPY", jpy(t.dutyJpy)], ["报关费JPY", jpy(t.customsFeeJpy)], ["手续费JPY", jpy(t.auctionFeeJpy)], ["其他费用JPY", jpy(t.otherFeeJpy)],
-    ["真实成本JPY", jpy(t.totalCostJpy)], ["预计销售JPY", jpy(t.saleJpy)], ["预计净利润", jpy(t.netProfit)], ["状态", item.status], ["台账状态", item.ledgerStatus || "有效"], ["备注", item.memo]
-  ];
-  return (
-    <div className="image-modal" onClick={onClose}>
-      <div className="panel" style={{width:"86vw", maxHeight:"86vh", overflow:"auto"}} onClick={(e) => e.stopPropagation()}>
-        <div className="toolbar"><h2>商品详情</h2><button onClick={onClose}>关闭</button></div>
-        <div className="image-row" style={{marginBottom:"16px"}}>
-          {(item.images || []).map((src, i) => <div className="image-box" key={i}><img src={src} alt={item.item} /></div>)}
-        </div>
-        <Table headers={["项目", "内容"]} rows={rows} />
-      </div>
-    </div>
-  );
-}
-
 function Input({ label, value, onChange, type = "text", placeholder = "" }) {
   return (
     <label>
@@ -1293,5 +1312,43 @@ function Select({ label, value, onChange, options }) {
     </label>
   );
 }
+
+
+function SelectWithOther({ label, value, onChange, options, placeholder = "" }) {
+  const isKnown = options.includes(value);
+  const selectValue = isKnown ? value : (value ? "其他" : "");
+  const showCustom = selectValue === "其他";
+
+  return (
+    <label>
+      {label}
+      <select
+        value={selectValue}
+        onChange={(e) => {
+          const v = e.target.value;
+          if (v === "其他") {
+            onChange("");
+          } else {
+            onChange(v);
+          }
+        }}
+      >
+        <option value="">{placeholder || "请选择"}</option>
+        {options.map((o) => (
+          <option key={o} value={o}>{o}</option>
+        ))}
+      </select>
+      {showCustom && (
+        <input
+          style={{ marginTop: "6px" }}
+          value={value === "其他" ? "" : value}
+          placeholder="手动输入"
+          onChange={(e) => onChange(e.target.value)}
+        />
+      )}
+    </label>
+  );
+}
+
 
 createRoot(document.getElementById("root")).render(<App />);
