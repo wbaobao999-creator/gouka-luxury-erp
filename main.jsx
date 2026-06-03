@@ -12,6 +12,17 @@ const USERS = {
   gouka: { password: "777888", role: "owner", name: "老板账号" }
 };
 const TAX_RATE = 0.10;
+const CURRENCY_OPTIONS = ["CNY", "USD", "HKD", "EUR", "JPY"];
+const DEFAULT_JPY_RATES = { CNY: 21.8, USD: 157, HKD: 20.1, EUR: 170, JPY: 1 };
+
+function defaultRateFor(currency) {
+  return DEFAULT_JPY_RATES[currency] || 1;
+}
+
+function amountToJpy(amount, currency, rate) {
+  if (currency === "JPY") return Number(amount || 0);
+  return Number(amount || 0) * Number(rate || defaultRateFor(currency));
+}
 
 const BRAND_OPTIONS = [
   "CHANEL", "HERMES", "Louis Vuitton", "GUCCI", "Dior", "Prada", "Fendi", "Celine",
@@ -167,8 +178,12 @@ const emptyForm = {
   color: "",
   origin: "France",
   qty: 1,
+  purchaseCurrency: "CNY",
   purchaseCny: "",
+  purchaseRateToJpy: 21.8,
+  declaredCurrency: "CNY",
   declaredCny: "",
+  declaredRateToJpy: 21.8,
   rate: 21.8,
   saleJpy: "",
   shippingJpy: "",
@@ -200,8 +215,12 @@ const seedItems = [
     color: "Black",
     origin: "Italy",
     qty: 1,
+    purchaseCurrency: "CNY",
     purchaseCny: 11500,
+    purchaseRateToJpy: 21.8,
+    declaredCurrency: "CNY",
     declaredCny: 11500,
+    declaredRateToJpy: 21.8,
     rate: 21.8,
     saleJpy: 285000,
     shippingJpy: 0,
@@ -231,8 +250,12 @@ const seedItems = [
     color: "Brown",
     origin: "France",
     qty: 2,
+    purchaseCurrency: "CNY",
     purchaseCny: 19500,
+    purchaseRateToJpy: 21.8,
+    declaredCurrency: "CNY",
     declaredCny: 19500,
+    declaredRateToJpy: 21.8,
     rate: 21.8,
     saleJpy: 430000,
     shippingJpy: 0,
@@ -271,6 +294,10 @@ function normalizeItem(x) {
     ledgerHistory: Array.isArray(x.ledgerHistory) ? x.ledgerHistory : [
       { date: new Date().toISOString(), user: "system", action: "创建/导入" }
     ],
+    purchaseCurrency: x.purchaseCurrency || "CNY",
+    purchaseRateToJpy: x.purchaseRateToJpy || x.rate || defaultRateFor(x.purchaseCurrency || "CNY"),
+    declaredCurrency: x.declaredCurrency || "CNY",
+    declaredRateToJpy: x.declaredRateToJpy || x.rate || defaultRateFor(x.declaredCurrency || "CNY"),
     shippingJpy: x.shippingJpy || 0,
     dutyJpy: x.dutyJpy || 0,
     customsFeeJpy: x.customsFeeJpy || 0,
@@ -318,10 +345,10 @@ function makeNextId(items) {
 }
 
 function calcTax(x) {
-  const baseCostJpy = Number(x.purchaseCny || 0) * Number(x.rate || 0);
+  const baseCostJpy = amountToJpy(x.purchaseCny, x.purchaseCurrency || "CNY", x.purchaseRateToJpy || x.rate || defaultRateFor(x.purchaseCurrency || "CNY"));
   const extraCostJpy = sumExtraCosts(x);
   const costJpy = baseCostJpy + extraCostJpy;
-  const declaredJpy = Number(x.declaredCny || 0) * Number(x.rate || 0);
+  const declaredJpy = amountToJpy(x.declaredCny, x.declaredCurrency || "CNY", x.declaredRateToJpy || x.rate || defaultRateFor(x.declaredCurrency || "CNY"));
   const inputTax = declaredJpy * TAX_RATE;
   const saleJpy = Number(x.soldPriceJpy || x.saleJpy || 0);
   const outputTax = saleJpy * TAX_RATE / (1 + TAX_RATE);
@@ -353,7 +380,7 @@ function LoginPage({ onLogin }) {
     <div className="login-page">
       <form className="login-card" onSubmit={submit}>
         <div className="login-logo"><Lock size={28} /></div>
-        <h1>豪嘉ERP V5.2</h1>
+        <h1>豪嘉ERP V5.3</h1>
         <p>豪嘉株式会社内部管理系统</p>
         <p className="note">请输入公司内部账号登录。账号可向管理员确认，密码不在页面显示。</p>
 
@@ -423,12 +450,12 @@ function App() {
   }
 
   function exportBackup() {
-    const data = { version: "GOUKA-ERP-V5.21", exportedAt: new Date().toISOString(), items };
+    const data = { version: "GOUKA-ERP-V5.31", exportedAt: new Date().toISOString(), items };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `gouka_erp_v52_backup_${new Date().toISOString().slice(0,10)}.json`;
+    a.download = `gouka_erp_v53_backup_${new Date().toISOString().slice(0,10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -505,9 +532,13 @@ function App() {
                 ...form,
                 productTitle: form.productTitle || makeAutoTitle(form),
                 qty: Number(form.qty || 1),
+                purchaseCurrency: form.purchaseCurrency || "CNY",
                 purchaseCny: Number(form.purchaseCny || 0),
+                purchaseRateToJpy: Number(form.purchaseRateToJpy || defaultRateFor(form.purchaseCurrency || "CNY")),
+                declaredCurrency: form.declaredCurrency || form.purchaseCurrency || "CNY",
                 declaredCny: Number(form.declaredCny || form.purchaseCny || 0),
-                rate: Number(form.rate || 0),
+                declaredRateToJpy: Number(form.declaredRateToJpy || defaultRateFor(form.declaredCurrency || form.purchaseCurrency || "CNY")),
+                rate: Number(form.purchaseRateToJpy || form.rate || 0),
                 saleJpy: Number(form.saleJpy || 0),
                 shippingJpy: Number(form.shippingJpy || 0),
                 dutyJpy: Number(form.dutyJpy || 0),
@@ -534,9 +565,13 @@ function App() {
         productTitle: form.productTitle || makeAutoTitle(form),
         ledgerHistory: [{ date: new Date().toISOString(), user: session?.username || "gouka", action: "创建商品并生成古物台账" }],
         qty: Number(form.qty || 1),
+        purchaseCurrency: form.purchaseCurrency || "CNY",
         purchaseCny: Number(form.purchaseCny || 0),
+        purchaseRateToJpy: Number(form.purchaseRateToJpy || defaultRateFor(form.purchaseCurrency || "CNY")),
+        declaredCurrency: form.declaredCurrency || form.purchaseCurrency || "CNY",
         declaredCny: Number(form.declaredCny || form.purchaseCny || 0),
-        rate: Number(form.rate || 0),
+        declaredRateToJpy: Number(form.declaredRateToJpy || defaultRateFor(form.declaredCurrency || form.purchaseCurrency || "CNY")),
+        rate: Number(form.purchaseRateToJpy || form.rate || 0),
         saleJpy: Number(form.saleJpy || 0),
         shippingJpy: Number(form.shippingJpy || 0),
         dutyJpy: Number(form.dutyJpy || 0),
@@ -637,7 +672,7 @@ function App() {
           <Building2 size={24} />
           <div>
             <b>豪嘉株式会社</b>
-            <span>GOUKA Luxury ERP V5.2</span>
+            <span>GOUKA Luxury ERP V5.3</span>
           </div>
         </div>
 
@@ -653,7 +688,7 @@ function App() {
       <main>
         <header>
           <div>
-            <h1>二手奢侈品管理系统 V5.2</h1>
+            <h1>二手奢侈品管理系统 V5.3</h1>
             <p>自动保存・图片上传・状态筛选・古物台账锁定・EMS报关・利润计算・备份恢复</p>
           </div>
           <span className="pill">Auto Save · {isOwner ? "老板" : "员工"}</span>
@@ -808,7 +843,7 @@ function Dashboard({ totals, items, setTab, exportBackup }) {
     <section className="v3-dashboard">
       <div className="v3-hero">
         <div>
-          <span className="v3-kicker">GOUKA ERP V5.2</span>
+          <span className="v3-kicker">GOUKA ERP V5.3</span>
           <h1>经营驾驶舱</h1>
           <p>今日经营、库存预警、品牌利润、供应商利润集中显示。老板打开第一页就知道该赚钱、该出品、该清库存。</p>
           <div className="v3-hero-actions">
@@ -945,7 +980,7 @@ function Dashboard({ totals, items, setTab, exportBackup }) {
       </div>
       <div className="panel wide">
         <h2>经营提醒</h2>
-        <p>V5.2新增今日经营、库存预警、品牌利润排行、供应商利润排行。下一阶段可接Supabase，实现多电脑同步和图片云存储。</p>
+        <p>V5.3新增今日经营、库存预警、品牌利润排行、供应商利润排行。下一阶段可接Supabase，实现多电脑同步和图片云存储。</p>
       </div>
     </section>
   );
@@ -964,6 +999,12 @@ function Card({ icon, title, value }) {
 
 function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, removeImage, dictionaries, suppliers }) {
   const set = (k, v) => setForm({ ...form, [k]: v });
+  function setPurchaseCurrency(v) {
+    setForm({ ...form, purchaseCurrency: v, purchaseRateToJpy: defaultRateFor(v) });
+  }
+  function setDeclaredCurrency(v) {
+    setForm({ ...form, declaredCurrency: v, declaredRateToJpy: defaultRateFor(v) });
+  }
   const preview = calcTax(form);
   const brandItems = dictionaries.itemsByBrand?.[form.brand] || ["其他"];
   const supplierNames = suppliers.map((s) => s.name).filter(Boolean);
@@ -1022,9 +1063,14 @@ function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, 
 
         <Input label="数量 Qty" type="number" value={form.qty} onChange={(v) => set("qty", v)} />
 
-        <Input label="采购金额 CNY" type="number" value={form.purchaseCny} onChange={(v) => set("purchaseCny", v)} />
-        <Input label="申报金额 CNY" type="number" value={form.declaredCny} onChange={(v) => set("declaredCny", v)} />
-        <Input label="汇率 CNY→JPY" type="number" value={form.rate} onChange={(v) => set("rate", v)} />
+        <Select label="采购币种" value={form.purchaseCurrency || "CNY"} onChange={setPurchaseCurrency} options={CURRENCY_OPTIONS} />
+        <Input label={`采购金额 ${form.purchaseCurrency || "CNY"}`} type="number" value={form.purchaseCny} onChange={(v) => set("purchaseCny", v)} />
+        <Input label={`${form.purchaseCurrency || "CNY"}→JPY 汇率`} type="number" value={form.purchaseRateToJpy || defaultRateFor(form.purchaseCurrency || "CNY")} onChange={(v) => set("purchaseRateToJpy", v)} />
+
+        <Select label="申报币种" value={form.declaredCurrency || form.purchaseCurrency || "CNY"} onChange={setDeclaredCurrency} options={CURRENCY_OPTIONS} />
+        <Input label={`申报金额 ${form.declaredCurrency || "CNY"}`} type="number" value={form.declaredCny} onChange={(v) => set("declaredCny", v)} />
+        <Input label={`${form.declaredCurrency || "CNY"}→JPY 汇率`} type="number" value={form.declaredRateToJpy || defaultRateFor(form.declaredCurrency || "CNY")} onChange={(v) => set("declaredRateToJpy", v)} />
+
         <Input label="预计销售额 JPY（税込）" type="number" value={form.saleJpy} onChange={(v) => set("saleJpy", v)} />
 
         <Input label="EMS/国际运费 JPY" type="number" value={form.shippingJpy || ""} onChange={(v) => set("shippingJpy", v)} />
@@ -1052,7 +1098,7 @@ function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, 
             <Card icon={<Calculator />} title="预计毛利" value={jpy(preview.grossProfit)} />
           </div>
           <p className="note">
-            利润率：{(preview.margin || 0).toFixed(1)}%　销售消费税参考：{jpy(preview.outputTax)}　进项消费税参考：{jpy(preview.inputTax)}
+            采购换算：{jpy(preview.baseCostJpy)}　申报换算：{jpy(preview.declaredJpy)}　利润率：{(preview.margin || 0).toFixed(1)}%　销售消费税参考：{jpy(preview.outputTax)}　进项消费税参考：{jpy(preview.inputTax)}
           </p>
           <div className="action-row">
             <button className="ghost" type="button" onClick={() => copyText(makePlatformTitle(form, "mercari"))}>复制Mercari标题</button>
@@ -1122,12 +1168,12 @@ function StatusBadge({ status }) {
 function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, downloadCSV, editItem, deleteItem, isOwner, setPreviewImage, setPreviewScale }) {
   const [detailItem, setDetailItem] = useState(null);
   const headers = ["图片", "商品编号", "入库日期", "品牌", "商品名", "状态", "真实成本JPY", "预计售价JPY（税込）", "销售消费税", "税抜售价", "净利润", "利润率", "操作"];
-  const csvHeaders = ["商品编号", "入库日期", "品类", "品牌", "商品名", "材质", "颜色", "产地", "数量", "采购CNY", "申报CNY", "采购JPY", "附加成本JPY", "真实成本JPY", "进项消费税参考", "预计销售JPY税込", "销售消费税", "税抜售价", "净利润", "状态"];
+  const csvHeaders = ["商品编号", "入库日期", "品类", "品牌", "商品名", "材质", "颜色", "产地", "数量", "采购币种", "采购金额", "采购汇率", "申报币种", "申报金额", "申报汇率", "采购JPY", "附加成本JPY", "真实成本JPY", "进项消费税参考", "预计销售JPY税込", "销售消费税", "税抜售价", "净利润", "状态"];
   const csvRows = [csvHeaders];
 
   items.forEach((x) => {
     const t = calcTax(x);
-    csvRows.push([x.id, x.purchaseDate, x.category, x.brand, x.item, x.material, x.color, x.origin, x.qty, x.purchaseCny, x.declaredCny, Math.round(t.baseCostJpy), Math.round(t.extraCostJpy), Math.round(t.costJpy), Math.round(t.inputTax), x.saleJpy, Math.round(t.outputTax), Math.round(t.saleExTax), Math.round(t.profitExTax), x.status]);
+    csvRows.push([x.id, x.purchaseDate, x.category, x.brand, x.item, x.material, x.color, x.origin, x.qty, x.purchaseCurrency || "CNY", x.purchaseCny, x.purchaseRateToJpy || x.rate, x.declaredCurrency || "CNY", x.declaredCny, x.declaredRateToJpy || x.rate, Math.round(t.baseCostJpy), Math.round(t.extraCostJpy), Math.round(t.costJpy), Math.round(t.inputTax), x.saleJpy, Math.round(t.outputTax), Math.round(t.saleExTax), Math.round(t.profitExTax), x.status]);
   });
 
   const rows = items.map((x) => {
@@ -1303,7 +1349,7 @@ function Ledger({ items, setItems, isOwner, downloadCSV }) {
     x.qty,
     "仕入",
     x.purchaseCny,
-    "CNY",
+    x.purchaseCurrency || "CNY",
     x.source,
     x.address,
     x.idCheck,
@@ -1367,22 +1413,22 @@ function Ledger({ items, setItems, isOwner, downloadCSV }) {
 
 
 function Customs({ items, downloadCSV }) {
-  const headers = ["No.", "Brand", "Item", "Material", "Color", "Specification", "Qty", "Country of Origin", "Declared Value (CNY)", "Declared Value (JPY)", "Import Tax 10% Ref", "Remarks"];
+  const headers = ["No.", "Brand", "Item", "Material", "Color", "Specification", "Qty", "Country of Origin", "Declared Currency", "Declared Value", "Declared Value (JPY)", "Import Tax 10% Ref", "Remarks"];
   const rows = items.map((x, i) => {
     const t = calcTax(x);
-    return [i + 1, x.brand, x.item, x.material, x.color, x.category, x.qty, x.origin, x.declaredCny, Math.round(t.declaredJpy), Math.round(t.inputTax), "Used luxury goods / Non-CITES material"];
+    return [i + 1, x.brand, x.item, x.material, x.color, x.category, x.qty, x.origin, x.declaredCurrency || "CNY", x.declaredCny, Math.round(t.declaredJpy), Math.round(t.inputTax), "Used luxury goods / Non-CITES material"];
   });
   const totalQty = items.reduce((a, x) => a + Number(x.qty || 0), 0);
-  const totalValue = items.reduce((a, x) => a + Number(x.declaredCny || 0), 0);
+  const totalValue = items.reduce((a, x) => a + calcTax(x).declaredJpy, 0);
 
   return (
     <div className="panel">
-      <Toolbar title="EMS Commercial Customs Declaration" onDownload={() => downloadCSV([headers, ...rows, [], ["Total Quantity", totalQty], ["Total Declared Value CNY", totalValue]], "gouka_ems_customs_tax.csv")} />
+      <Toolbar title="EMS Commercial Customs Declaration" onDownload={() => downloadCSV([headers, ...rows, [], ["Total Quantity", totalQty], ["Total Declared Value JPY", Math.round(totalValue)]], "gouka_ems_customs_tax.csv")} />
       <p>
         <b>Importer:</b> 豪嘉株式会社 (GOUKA INC.)
       </p>
       <Table headers={headers} rows={rows} />
-      <p className="note">Total Quantity: {totalQty} pieces / Total Declared Value: {cny(totalValue)}</p>
+      <p className="note">Total Quantity: {totalQty} pieces / Total Declared Value JPY: {jpy(totalValue)}</p>
     </div>
   );
 }
@@ -1501,7 +1547,7 @@ function BackupPanel({ items, exportBackup, importBackup }) {
   return (
     <div className="panel">
       <h2><Database size={20} /> 数据备份 / 恢复</h2>
-      <p className="note">当前系统数据保存在本机浏览器。V5.2备份会包含商品、字典、供应商、现金流。换电脑、清理浏览器、重装系统前，一定要先导出备份。</p>
+      <p className="note">当前系统数据保存在本机浏览器。V5.3备份会包含商品、字典、供应商、现金流。换电脑、清理浏览器、重装系统前，一定要先导出备份。</p>
 
       <div className="grid4" style={{marginTop:"16px"}}>
         <Card icon={<Package />} title="当前商品记录" value={`${items.length} 件`} />
@@ -1587,7 +1633,7 @@ function SupplierPanel({ suppliers, setSuppliers, downloadCSV }) {
     <div className="panel">
       <h2><Building2 size={20} /> 供应商管理</h2>
       <p className="note">
-        V5.2新增：供应商独立管理。录入商品选择供应商后，会自动带出地址与备注，减少员工重复输入。
+        V5.3新增：供应商独立管理。录入商品选择供应商后，会自动带出地址与备注，减少员工重复输入。
       </p>
 
       <div className="formgrid">
@@ -1688,7 +1734,7 @@ function DictionaryPanel({ dictionaries, setDictionaries }) {
     <div className="panel">
       <h2><Database size={20} /> 字典管理</h2>
       <p className="note">
-        V5.2开始，品牌、商品名、材质、颜色、产地、来源、平台都可以在这里维护。
+        V5.3开始，品牌、商品名、材质、颜色、产地、来源、平台都可以在这里维护。
         每行一个选项，保存后会自动出现在商品录入下拉菜单中。
       </p>
 
@@ -1742,7 +1788,7 @@ function DictionaryPanel({ dictionaries, setDictionaries }) {
       </div>
 
       <div className="panel" style={{ marginTop: "18px", background: "#f8fafc" }}>
-        <h3>V5.2说明</h3>
+        <h3>V5.3说明</h3>
         <p>这一步先实现本地可维护字典。下一阶段可以接 Supabase，把字典、库存、图片全部云端化。</p>
       </div>
     </div>
