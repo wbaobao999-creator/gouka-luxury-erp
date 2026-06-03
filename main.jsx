@@ -7,6 +7,7 @@ const STORAGE_KEY = "gouka_erp_v2_items";
 const LOGIN_KEY = "gouka_erp_login";
 const CASHFLOW_KEY = "gouka_erp_cashflow_v431";
 const DICTIONARY_KEY = "gouka_erp_v5_dictionaries";
+const SUPPLIER_KEY = "gouka_erp_v51_suppliers";
 const USERS = {
   gouka: { password: "777888", role: "owner", name: "老板账号" }
 };
@@ -80,6 +81,32 @@ const DEFAULT_DICTIONARIES = {
   platforms: PLATFORM_OPTIONS,
   idChecks: IDCHECK_OPTIONS
 };
+
+const DEFAULT_SUPPLIERS = [
+  { id: "SUP-001", name: "中国供应商A", type: "中国供应商", country: "China", address: "China", contact: "", phone: "", email: "", memo: "默认供应商" },
+  { id: "SUP-002", name: "中国供应商B", type: "中国供应商", country: "China", address: "China", contact: "", phone: "", email: "", memo: "默认供应商" },
+  { id: "SUP-003", name: "ECO Ring", type: "日本拍卖", country: "Japan", address: "Japan", contact: "", phone: "", email: "", memo: "日本拍卖/仕入先" },
+  { id: "SUP-004", name: "JBA", type: "日本拍卖", country: "Japan", address: "Japan", contact: "", phone: "", email: "", memo: "日本拍卖/仕入先" }
+];
+
+function loadSuppliers() {
+  try {
+    const saved = localStorage.getItem(SUPPLIER_KEY);
+    return saved ? JSON.parse(saved) : DEFAULT_SUPPLIERS;
+  } catch {
+    return DEFAULT_SUPPLIERS;
+  }
+}
+
+function makeSupplierId(suppliers) {
+  const nums = suppliers
+    .map((x) => String(x.id || ""))
+    .filter((id) => id.startsWith("SUP-"))
+    .map((id) => Number(id.replace("SUP-", "")))
+    .filter((n) => !Number.isNaN(n));
+  const next = (nums.length ? Math.max(...nums) : 0) + 1;
+  return `SUP-${String(next).padStart(3, "0")}`;
+}
 
 function loadDictionaries() {
   try {
@@ -313,7 +340,7 @@ function LoginPage({ onLogin }) {
     <div className="login-page">
       <form className="login-card" onSubmit={submit}>
         <div className="login-logo"><Lock size={28} /></div>
-        <h1>豪嘉ERP V5.0</h1>
+        <h1>豪嘉ERP V5.1</h1>
         <p>豪嘉株式会社内部管理系统</p>
         <p className="note">请输入公司内部账号登录。账号可向管理员确认，密码不在页面显示。</p>
 
@@ -349,6 +376,7 @@ function App() {
   const [tab, setTab] = useState("dashboard");
   const [items, setItems] = useState(loadItems);
   const [dictionaries, setDictionaries] = useState(loadDictionaries);
+  const [suppliers, setSuppliers] = useState(loadSuppliers);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("全部");
   const [form, setForm] = useState(emptyForm);
@@ -364,6 +392,10 @@ function App() {
     localStorage.setItem(DICTIONARY_KEY, JSON.stringify(dictionaries));
   }, [dictionaries]);
 
+  React.useEffect(() => {
+    localStorage.setItem(SUPPLIER_KEY, JSON.stringify(suppliers));
+  }, [suppliers]);
+
   if (!isLoggedIn) {
     return <LoginPage onLogin={(role) => { setSession({ username: "gouka", role, name: "老板账号" }); setIsLoggedIn(true); }} />;
   }
@@ -378,12 +410,12 @@ function App() {
   }
 
   function exportBackup() {
-    const data = { version: "GOUKA-ERP-V5.01", exportedAt: new Date().toISOString(), items };
+    const data = { version: "GOUKA-ERP-V5.11", exportedAt: new Date().toISOString(), items };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `gouka_erp_backup_${new Date().toISOString().slice(0,10)}.json`;
+    a.download = `gouka_erp_v51_backup_${new Date().toISOString().slice(0,10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -398,7 +430,10 @@ function App() {
         if (!Array.isArray(nextItems)) throw new Error("bad file");
         if (window.confirm(`确定导入 ${nextItems.length} 条商品数据吗？当前数据会被覆盖。`)) {
           setItems(nextItems.map(normalizeItem));
-          alert("备份数据已恢复");
+          if (parsed.dictionaries) setDictionaries({ ...DEFAULT_DICTIONARIES, ...parsed.dictionaries });
+          if (Array.isArray(parsed.suppliers)) setSuppliers(parsed.suppliers);
+          if (parsed.cashflow) localStorage.setItem(CASHFLOW_KEY, JSON.stringify(parsed.cashflow));
+          alert("备份数据已恢复。若包含字典、供应商、现金流，也已同步恢复。");
         }
       } catch {
         alert("备份文件格式不正确");
@@ -577,6 +612,7 @@ function App() {
     ["profit", "利润分析"],
     ["tax", "消费税参考"],
     ["sales", "销售记录"],
+    ["suppliers", "供应商管理"],
     ["dictionary", "字典管理"],
     ["backup", "备份恢复"]
   ];
@@ -588,7 +624,7 @@ function App() {
           <Building2 size={24} />
           <div>
             <b>豪嘉株式会社</b>
-            <span>GOUKA Luxury ERP V5.0</span>
+            <span>GOUKA Luxury ERP V5.1</span>
           </div>
         </div>
 
@@ -604,7 +640,7 @@ function App() {
       <main>
         <header>
           <div>
-            <h1>二手奢侈品管理系统 V5.0</h1>
+            <h1>二手奢侈品管理系统 V5.1</h1>
             <p>自动保存・图片上传・状态筛选・古物台账锁定・EMS报关・利润计算・备份恢复</p>
           </div>
           <span className="pill">Auto Save · {isOwner ? "老板" : "员工"}</span>
@@ -621,6 +657,7 @@ function App() {
             handleImages={handleImages}
             removeImage={removeImage}
             dictionaries={dictionaries}
+            suppliers={suppliers}
           />
         )}
         {tab === "inventory" && (
@@ -643,6 +680,7 @@ function App() {
         {tab === "profit" && <Profit items={filtered} />}
         {tab === "tax" && <TaxReport items={filtered} totals={totals} downloadCSV={downloadCSV} />}
         {tab === "sales" && <SalesReport items={items} downloadCSV={downloadCSV} />}
+        {tab === "suppliers" && <SupplierPanel suppliers={suppliers} setSuppliers={setSuppliers} downloadCSV={downloadCSV} />}
         {tab === "dictionary" && <DictionaryPanel dictionaries={dictionaries} setDictionaries={setDictionaries} />}
         {tab === "backup" && <BackupPanel items={items} exportBackup={exportBackup} importBackup={importBackup} />}
 
@@ -732,7 +770,7 @@ function Dashboard({ totals, items, setTab, exportBackup }) {
     <section className="v3-dashboard">
       <div className="v3-hero">
         <div>
-          <span className="v3-kicker">GOUKA ERP V5.0</span>
+          <span className="v3-kicker">GOUKA ERP V5.1</span>
           <h1>老板驾驶舱</h1>
           <p>库存、现金流、利润、待办、品牌价值集中显示。老板打开第一页就能判断今天该做什么。</p>
           <div className="v3-hero-actions">
@@ -845,7 +883,7 @@ function Dashboard({ totals, items, setTab, exportBackup }) {
 
       <div className="panel wide">
         <h2>经营提醒</h2>
-        <p>V5.0已强化老板看板：库存成本、预计销售、净利润、待办、现金流、品牌价值占比集中显示。重要数据请每周导出JSON备份。</p>
+        <p>V5.1已强化老板看板：库存成本、预计销售、净利润、待办、现金流、品牌价值占比集中显示。重要数据请每周导出JSON备份。</p>
       </div>
     </section>
   );
@@ -861,10 +899,26 @@ function Card({ icon, title, value }) {
   );
 }
 
-function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, removeImage, dictionaries }) {
+function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, removeImage, dictionaries, suppliers }) {
   const set = (k, v) => setForm({ ...form, [k]: v });
   const preview = calcTax(form);
   const brandItems = dictionaries.itemsByBrand?.[form.brand] || ["其他"];
+  const supplierNames = suppliers.map((s) => s.name).filter(Boolean);
+  const sourceOptions = Array.from(new Set([...(supplierNames || []), ...(dictionaries.sources || [])]));
+
+  function setSourceFromSupplier(v) {
+    const supplier = suppliers.find((s) => s.name === v);
+    if (supplier) {
+      setForm({
+        ...form,
+        source: v,
+        address: supplier.address || form.address || "",
+        memo: form.memo || supplier.memo || ""
+      });
+    } else {
+      set("source", v);
+    }
+  }
 
   function setBrand(v) {
     const nextItems = dictionaries.itemsByBrand?.[v] || ["其他"];
@@ -916,7 +970,7 @@ function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, 
         <Input label="拍卖/平台手续费 JPY" type="number" value={form.platformFeeJpy || ""} onChange={(v) => set("platformFeeJpy", v)} />
         <Input label="其他费用 JPY" type="number" value={form.otherCostJpy || ""} onChange={(v) => set("otherCostJpy", v)} />
 
-        <SelectWithOther label="仕入先 / 来源" value={form.source} onChange={(v) => set("source", v)} options={dictionaries.sources} placeholder="选择或输入来源" />
+        <SelectWithOther label="仕入先 / 来源" value={form.source} onChange={setSourceFromSupplier} options={sourceOptions} placeholder="选择供应商或输入来源" />
 
         <Input label="供应商地址" value={form.address} onChange={(v) => set("address", v)} placeholder="China / Japan address" />
 
@@ -1379,7 +1433,7 @@ function BackupPanel({ items, exportBackup, importBackup }) {
   return (
     <div className="panel">
       <h2><Database size={20} /> 数据备份 / 恢复</h2>
-      <p className="note">当前系统数据保存在本机浏览器。换电脑、清理浏览器、重装系统前，一定要先导出备份。</p>
+      <p className="note">当前系统数据保存在本机浏览器。V5.1备份会包含商品、字典、供应商、现金流。换电脑、清理浏览器、重装系统前，一定要先导出备份。</p>
 
       <div className="grid4" style={{marginTop:"16px"}}>
         <Card icon={<Package />} title="当前商品记录" value={`${items.length} 件`} />
@@ -1400,6 +1454,109 @@ function BackupPanel({ items, exportBackup, importBackup }) {
     </div>
   );
 }
+
+
+function SupplierPanel({ suppliers, setSuppliers, downloadCSV }) {
+  const emptySupplier = { id: "", name: "", type: "中国供应商", country: "China", address: "", contact: "", phone: "", email: "", memo: "" };
+  const [form, setForm] = useState(emptySupplier);
+  const [editingId, setEditingId] = useState(null);
+  const [supplierQuery, setSupplierQuery] = useState("");
+
+  const set = (k, v) => setForm({ ...form, [k]: v });
+
+  const filtered = suppliers.filter((s) =>
+    Object.values(s).join(" ").toLowerCase().includes(supplierQuery.toLowerCase())
+  );
+
+  function resetSupplierForm() {
+    setForm(emptySupplier);
+    setEditingId(null);
+  }
+
+  function saveSupplier() {
+    if (!form.name) return alert("请填写供应商名称");
+    if (editingId) {
+      setSuppliers(suppliers.map((s) => s.id === editingId ? { ...s, ...form } : s));
+      alert("供应商已更新");
+    } else {
+      const next = { ...form, id: makeSupplierId(suppliers) };
+      setSuppliers([next, ...suppliers]);
+      alert("供应商已新增");
+    }
+    resetSupplierForm();
+  }
+
+  function editSupplier(s) {
+    setForm(s);
+    setEditingId(s.id);
+  }
+
+  function deleteSupplier(id) {
+    if (!window.confirm("确认删除这个供应商吗？历史商品记录不会删除，只是不再出现在供应商列表中。")) return;
+    setSuppliers(suppliers.filter((s) => s.id !== id));
+  }
+
+  const headers = ["编号", "名称", "类型", "国家", "地址", "联系人", "电话", "邮箱", "备注", "操作"];
+  const rows = filtered.map((s) => [
+    s.id,
+    s.name,
+    s.type,
+    s.country,
+    s.address,
+    s.contact,
+    s.phone,
+    s.email,
+    s.memo,
+    <div className="table-actions">
+      <button className="edit" onClick={() => editSupplier(s)}>编辑</button>
+      <button className="danger" onClick={() => deleteSupplier(s.id)}>删除</button>
+    </div>
+  ]);
+
+  const csvRows = [["编号", "名称", "类型", "国家", "地址", "联系人", "电话", "邮箱", "备注"], ...filtered.map((s) => [s.id, s.name, s.type, s.country, s.address, s.contact, s.phone, s.email, s.memo])];
+
+  return (
+    <div className="panel">
+      <h2><Building2 size={20} /> 供应商管理</h2>
+      <p className="note">
+        V5.1新增：供应商独立管理。录入商品选择供应商后，会自动带出地址与备注，减少员工重复输入。
+      </p>
+
+      <div className="formgrid">
+        <Input label="供应商名称" value={form.name} onChange={(v) => set("name", v)} placeholder="中国供应商A / ECO Ring / JBA" />
+        <Select label="类型" value={form.type} onChange={(v) => set("type", v)} options={["中国供应商", "中国个人", "日本个人", "日本拍卖", "平台采购", "店头收购", "其他"]} />
+        <Input label="国家" value={form.country} onChange={(v) => set("country", v)} placeholder="China / Japan" />
+        <Input label="地址" value={form.address} onChange={(v) => set("address", v)} placeholder="供应商地址" />
+        <Input label="联系人" value={form.contact} onChange={(v) => set("contact", v)} />
+        <Input label="电话" value={form.phone} onChange={(v) => set("phone", v)} />
+        <Input label="邮箱" value={form.email} onChange={(v) => set("email", v)} />
+        <label>
+          备注
+          <textarea value={form.memo} onChange={(e) => set("memo", e.target.value)} />
+        </label>
+      </div>
+
+      <div className="action-row">
+        <button className="primary" onClick={saveSupplier}>{editingId ? "保存供应商" : "新增供应商"}</button>
+        {editingId && <button className="ghost" onClick={resetSupplierForm}>取消编辑</button>}
+        <button className="ghost" onClick={() => downloadCSV(csvRows, "gouka_suppliers.csv")}>CSV导出</button>
+      </div>
+
+      <div className="toolbar" style={{ marginTop: "18px" }}>
+        <h2>供应商列表</h2>
+        <div className="toolbar-right">
+          <div className="search">
+            <Search size={16} />
+            <input placeholder="搜索供应商/地址/联系人" value={supplierQuery} onChange={(e) => setSupplierQuery(e.target.value)} />
+          </div>
+        </div>
+      </div>
+
+      <Table headers={headers} rows={rows} />
+    </div>
+  );
+}
+
 
 function splitLines(text) {
   return text
@@ -1463,7 +1620,7 @@ function DictionaryPanel({ dictionaries, setDictionaries }) {
     <div className="panel">
       <h2><Database size={20} /> 字典管理</h2>
       <p className="note">
-        V5.0开始，品牌、商品名、材质、颜色、产地、来源、平台都可以在这里维护。
+        V5.1开始，品牌、商品名、材质、颜色、产地、来源、平台都可以在这里维护。
         每行一个选项，保存后会自动出现在商品录入下拉菜单中。
       </p>
 
@@ -1517,7 +1674,7 @@ function DictionaryPanel({ dictionaries, setDictionaries }) {
       </div>
 
       <div className="panel" style={{ marginTop: "18px", background: "#f8fafc" }}>
-        <h3>V5.0说明</h3>
+        <h3>V5.1说明</h3>
         <p>这一步先实现本地可维护字典。下一阶段可以接 Supabase，把字典、库存、图片全部云端化。</p>
       </div>
     </div>
