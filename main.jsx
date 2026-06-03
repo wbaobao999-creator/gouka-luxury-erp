@@ -134,6 +134,19 @@ function makeAutoTitle(form) {
     .join(" ");
 }
 
+function makePlatformTitle(form, platform) {
+  const base = makeAutoTitle(form);
+  if (platform === "mercari") return `${base} 中古 正規品 送料無料`;
+  if (platform === "yahoo") return `${base} USED ブランド品 豪嘉株式会社`;
+  if (platform === "rakuten") return `${base} 中古ブランド品 GOUKA Luxury`;
+  return base;
+}
+
+function copyText(text) {
+  navigator.clipboard?.writeText(text);
+  alert("已复制标题");
+}
+
 function currentMonth() {
   return new Date().toISOString().slice(0, 7);
 }
@@ -340,7 +353,7 @@ function LoginPage({ onLogin }) {
     <div className="login-page">
       <form className="login-card" onSubmit={submit}>
         <div className="login-logo"><Lock size={28} /></div>
-        <h1>豪嘉ERP V5.1</h1>
+        <h1>豪嘉ERP V5.2</h1>
         <p>豪嘉株式会社内部管理系统</p>
         <p className="note">请输入公司内部账号登录。账号可向管理员确认，密码不在页面显示。</p>
 
@@ -410,12 +423,12 @@ function App() {
   }
 
   function exportBackup() {
-    const data = { version: "GOUKA-ERP-V5.11", exportedAt: new Date().toISOString(), items };
+    const data = { version: "GOUKA-ERP-V5.21", exportedAt: new Date().toISOString(), items };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `gouka_erp_v51_backup_${new Date().toISOString().slice(0,10)}.json`;
+    a.download = `gouka_erp_v52_backup_${new Date().toISOString().slice(0,10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -624,7 +637,7 @@ function App() {
           <Building2 size={24} />
           <div>
             <b>豪嘉株式会社</b>
-            <span>GOUKA Luxury ERP V5.1</span>
+            <span>GOUKA Luxury ERP V5.2</span>
           </div>
         </div>
 
@@ -640,7 +653,7 @@ function App() {
       <main>
         <header>
           <div>
-            <h1>二手奢侈品管理系统 V5.1</h1>
+            <h1>二手奢侈品管理系统 V5.2</h1>
             <p>自动保存・图片上传・状态筛选・古物台账锁定・EMS报关・利润计算・备份恢复</p>
           </div>
           <span className="pill">Auto Save · {isOwner ? "老板" : "员工"}</span>
@@ -707,6 +720,14 @@ function Dashboard({ totals, items, setTab, exportBackup }) {
   const activeStock = activeItems.length;
   const soldItems = items.filter((x) => x.status === "已售出");
   const month = currentMonth();
+  const today = new Date().toISOString().slice(0, 10);
+
+  const todayIn = items.filter((x) => (x.purchaseDate || "") === today);
+  const todaySold = items.filter((x) => (x.soldDate || "") === today || (x.status === "已售出" && !(x.soldDate)));
+  const todayPurchase = todayIn.reduce((a, x) => a + calcTax(x).costJpy, 0);
+  const todaySale = todaySold.reduce((a, x) => a + calcTax(x).saleJpy, 0);
+  const todayProfit = todaySold.reduce((a, x) => a + calcTax(x).profitExTax, 0);
+
   const monthIn = items.filter((x) => (x.purchaseDate || "").startsWith(month));
   const monthSold = items.filter((x) => (x.soldDate || "").startsWith(month) || (x.status === "已售出" && !(x.soldDate)));
   const monthSale = monthSold.reduce((a, x) => a + calcTax(x).saleJpy, 0);
@@ -720,23 +741,40 @@ function Dashboard({ totals, items, setTab, exportBackup }) {
   const todoListing = items.filter((x) => x.status === "已入库").length;
   const todoShipping = items.filter((x) => x.status === "已售出" && !String(x.soldMemo || "").includes("発送済")).length;
   const now = new Date();
-  const over90 = activeItems.filter((x) => {
-    if (!x.purchaseDate) return false;
+
+  function stockAgeDays(x) {
+    if (!x.purchaseDate) return 0;
     const d = new Date(x.purchaseDate);
-    if (Number.isNaN(d.getTime())) return false;
-    return (now - d) / (1000 * 60 * 60 * 24) >= 90;
-  }).length;
+    if (Number.isNaN(d.getTime())) return 0;
+    return Math.floor((now - d) / (1000 * 60 * 60 * 24));
+  }
+
+  const over30 = activeItems.filter((x) => stockAgeDays(x) >= 30).length;
+  const over60 = activeItems.filter((x) => stockAgeDays(x) >= 60).length;
+  const over90 = activeItems.filter((x) => stockAgeDays(x) >= 90).length;
 
   const brandMap = items.reduce((a, x) => {
     const k = x.brand || "未填写";
-    if (!a[k]) a[k] = { count: 0, value: 0 };
+    if (!a[k]) a[k] = { count: 0, value: 0, profit: 0 };
     a[k].count += Number(x.qty || 1);
     a[k].value += calcTax(x).costJpy;
+    a[k].profit += calcTax(x).profitExTax;
     return a;
   }, {});
   const brandRows = Object.entries(brandMap).sort((a,b)=>b[1].value-a[1].value).slice(0,6);
   const totalBrandValue = brandRows.reduce((a, [,v]) => a + v.value, 0) || 1;
   const maxBrandValue = Math.max(1, ...brandRows.map(([,v])=>v.value));
+  const brandProfitRows = Object.entries(brandMap).sort((a,b)=>b[1].profit-a[1].profit).slice(0,5);
+
+  const supplierMap = items.reduce((a, x) => {
+    const k = x.source || "未填写";
+    if (!a[k]) a[k] = { count: 0, cost: 0, profit: 0 };
+    a[k].count += Number(x.qty || 1);
+    a[k].cost += calcTax(x).costJpy;
+    a[k].profit += calcTax(x).profitExTax;
+    return a;
+  }, {});
+  const supplierRows = Object.entries(supplierMap).sort((a,b)=>b[1].profit-a[1].profit).slice(0,5);
 
   const defaultCashflow = { rentIncome: 1320000, loanPayment: 450000, companyReserve: 30000000, memo: "房租现金流作为长期定投与公司安全垫参考" };
   const [cashflow, setCashflow] = useState(() => {
@@ -770,9 +808,9 @@ function Dashboard({ totals, items, setTab, exportBackup }) {
     <section className="v3-dashboard">
       <div className="v3-hero">
         <div>
-          <span className="v3-kicker">GOUKA ERP V5.1</span>
-          <h1>老板驾驶舱</h1>
-          <p>库存、现金流、利润、待办、品牌价值集中显示。老板打开第一页就能判断今天该做什么。</p>
+          <span className="v3-kicker">GOUKA ERP V5.2</span>
+          <h1>经营驾驶舱</h1>
+          <p>今日经营、库存预警、品牌利润、供应商利润集中显示。老板打开第一页就知道该赚钱、该出品、该清库存。</p>
           <div className="v3-hero-actions">
             <button onClick={() => setTab("add")}>新增商品</button>
             <button onClick={() => setTab("inventory")}>查看库存</button>
@@ -794,10 +832,17 @@ function Dashboard({ totals, items, setTab, exportBackup }) {
       </div>
 
       <div className="v3-money-grid">
+        <div className="v3-money-card"><p>今日采购额</p><h2>{jpy(todayPurchase)}</h2><small>今日新增 {todayIn.length} 件</small></div>
+        <div className="v3-money-card"><p>今日销售额</p><h2>{jpy(todaySale)}</h2><small>今日售出 {todaySold.length} 件</small></div>
+        <div className="v3-money-card"><p>今日净利润</p><h2>{jpy(todayProfit)}</h2><small>已扣真实成本</small></div>
+        <div className="v3-money-card highlight"><p>消费税差额参考</p><h2>{jpy(totals.taxBalance)}</h2><small>正式申告交由税理士确认</small></div>
+      </div>
+
+      <div className="v3-money-grid">
         <div className="v3-money-card"><p>本月入库</p><h2>{monthIn.length} 件</h2><small>{month}</small></div>
         <div className="v3-money-card"><p>本月销售额</p><h2>{jpy(monthSale)}</h2><small>按销售日期统计</small></div>
         <div className="v3-money-card"><p>本月净利润</p><h2>{jpy(monthProfit)}</h2><small>已扣真实成本</small></div>
-        <div className="v3-money-card highlight"><p>消费税差额参考</p><h2>{jpy(totals.taxBalance)}</h2><small>正式申告交由税理士确认</small></div>
+        <div className="v3-money-card highlight"><p>库存预警</p><h2>{over90} 件</h2><small>90天以上库存</small></div>
       </div>
 
       <div className="v3-layout">
@@ -809,7 +854,6 @@ function Dashboard({ totals, items, setTab, exportBackup }) {
             </div>
             <button onClick={() => { setCashflowDraft(cashflow); setCashflowEdit(true); }}>编辑现金流</button>
           </div>
-
           {cashflowEdit ? (
             <div className="formgrid" style={{gridTemplateColumns:"repeat(2,1fr)"}}>
               <Input label="月房租收入 JPY" type="number" value={cashflowDraft.rentIncome} onChange={(v) => setCashflowDraft({ ...cashflowDraft, rentIncome: v })} />
@@ -833,14 +877,34 @@ function Dashboard({ totals, items, setTab, exportBackup }) {
             </>
           )}
         </div>
-
         <div className="v3-panel">
           <div className="v3-panel-title"><div><h2>待办中心</h2><p>每天打开系统先看这里</p></div></div>
           <div className="v3-tax-list">
             <div><span>待报关</span><b>{todoCustoms} 件</b></div>
             <div><span>待出品</span><b>{todoListing} 件</b></div>
             <div><span>待发货确认</span><b>{todoShipping} 件</b></div>
+            <div><span>库存超30天</span><b>{over30} 件</b></div>
+            <div><span>库存超60天</span><b>{over60} 件</b></div>
             <div><span>库存超90天</span><b>{over90} 件</b></div>
+          </div>
+        </div>
+      </div>
+
+      <div className="v3-layout">
+        <div className="v3-panel">
+          <div className="v3-panel-title"><div><h2>品牌利润排行</h2><p>按净利润排序</p></div></div>
+          <div className="v3-tax-list">
+            {brandProfitRows.map(([brand, data]) => (
+              <div key={brand}><span>{brand}</span><b>{jpy(data.profit)}</b></div>
+            ))}
+          </div>
+        </div>
+        <div className="v3-panel">
+          <div className="v3-panel-title"><div><h2>供应商利润排行</h2><p>知道哪个来源最赚钱</p></div></div>
+          <div className="v3-tax-list">
+            {supplierRows.map(([supplier, data]) => (
+              <div key={supplier}><span>{supplier}</span><b>{jpy(data.profit)}</b></div>
+            ))}
           </div>
         </div>
       </div>
@@ -859,7 +923,6 @@ function Dashboard({ totals, items, setTab, exportBackup }) {
             )) : <p className="note">暂无商品，先录入第一件商品。</p>}
           </div>
         </div>
-
         <div className="v3-panel">
           <div className="v3-panel-title"><div><h2>品牌价值占比</h2><p>按库存成本金额统计，不再只看件数</p></div></div>
           <div className="v3-bars">
@@ -880,14 +943,14 @@ function Dashboard({ totals, items, setTab, exportBackup }) {
           </div>
         </div>
       </div>
-
       <div className="panel wide">
         <h2>经营提醒</h2>
-        <p>V5.1已强化老板看板：库存成本、预计销售、净利润、待办、现金流、品牌价值占比集中显示。重要数据请每周导出JSON备份。</p>
+        <p>V5.2新增今日经营、库存预警、品牌利润排行、供应商利润排行。下一阶段可接Supabase，实现多电脑同步和图片云存储。</p>
       </div>
     </section>
   );
 }
+
 
 function Card({ icon, title, value }) {
   return (
@@ -991,6 +1054,11 @@ function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, 
           <p className="note">
             利润率：{(preview.margin || 0).toFixed(1)}%　销售消费税参考：{jpy(preview.outputTax)}　进项消费税参考：{jpy(preview.inputTax)}
           </p>
+          <div className="action-row">
+            <button className="ghost" type="button" onClick={() => copyText(makePlatformTitle(form, "mercari"))}>复制Mercari标题</button>
+            <button className="ghost" type="button" onClick={() => copyText(makePlatformTitle(form, "yahoo"))}>复制Yahoo标题</button>
+            <button className="ghost" type="button" onClick={() => copyText(makePlatformTitle(form, "rakuten"))}>复制乐天标题</button>
+          </div>
         </div>
 
         {form.status === "已售出" && (
@@ -1433,7 +1501,7 @@ function BackupPanel({ items, exportBackup, importBackup }) {
   return (
     <div className="panel">
       <h2><Database size={20} /> 数据备份 / 恢复</h2>
-      <p className="note">当前系统数据保存在本机浏览器。V5.1备份会包含商品、字典、供应商、现金流。换电脑、清理浏览器、重装系统前，一定要先导出备份。</p>
+      <p className="note">当前系统数据保存在本机浏览器。V5.2备份会包含商品、字典、供应商、现金流。换电脑、清理浏览器、重装系统前，一定要先导出备份。</p>
 
       <div className="grid4" style={{marginTop:"16px"}}>
         <Card icon={<Package />} title="当前商品记录" value={`${items.length} 件`} />
@@ -1519,7 +1587,7 @@ function SupplierPanel({ suppliers, setSuppliers, downloadCSV }) {
     <div className="panel">
       <h2><Building2 size={20} /> 供应商管理</h2>
       <p className="note">
-        V5.1新增：供应商独立管理。录入商品选择供应商后，会自动带出地址与备注，减少员工重复输入。
+        V5.2新增：供应商独立管理。录入商品选择供应商后，会自动带出地址与备注，减少员工重复输入。
       </p>
 
       <div className="formgrid">
@@ -1620,7 +1688,7 @@ function DictionaryPanel({ dictionaries, setDictionaries }) {
     <div className="panel">
       <h2><Database size={20} /> 字典管理</h2>
       <p className="note">
-        V5.1开始，品牌、商品名、材质、颜色、产地、来源、平台都可以在这里维护。
+        V5.2开始，品牌、商品名、材质、颜色、产地、来源、平台都可以在这里维护。
         每行一个选项，保存后会自动出现在商品录入下拉菜单中。
       </p>
 
@@ -1674,7 +1742,7 @@ function DictionaryPanel({ dictionaries, setDictionaries }) {
       </div>
 
       <div className="panel" style={{ marginTop: "18px", background: "#f8fafc" }}>
-        <h3>V5.1说明</h3>
+        <h3>V5.2说明</h3>
         <p>这一步先实现本地可维护字典。下一阶段可以接 Supabase，把字典、库存、图片全部云端化。</p>
       </div>
     </div>
