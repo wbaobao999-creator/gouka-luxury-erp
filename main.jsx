@@ -380,7 +380,7 @@ function LoginPage({ onLogin }) {
     <div className="login-page">
       <form className="login-card" onSubmit={submit}>
         <div className="login-logo"><Lock size={28} /></div>
-        <h1>豪嘉ERP V6.0</h1>
+        <h1>豪嘉ERP V6.6</h1>
         <p>豪嘉株式会社内部管理系统</p>
         <p className="note">请输入公司内部账号登录。账号可向管理员确认，密码不在页面显示。</p>
 
@@ -450,12 +450,12 @@ function App() {
   }
 
   function exportBackup() {
-    const data = { version: "GOUKA-ERP-V6.01", exportedAt: new Date().toISOString(), items };
+    const data = { version: "GOUKA-ERP-V6.61", exportedAt: new Date().toISOString(), items };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `gouka_erp_v60_backup_${new Date().toISOString().slice(0,10)}.json`;
+    a.download = `gouka_erp_v66_backup_${new Date().toISOString().slice(0,10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -545,7 +545,7 @@ function App() {
                 customsFeeJpy: Number(form.customsFeeJpy || 0),
                 platformFeeJpy: Number(form.platformFeeJpy || 0),
                 otherCostJpy: Number(form.otherCostJpy || 0),
-                images: form.images || [],
+                images: draft.images || form.images || [],
                 soldDate: form.soldDate || "",
                 soldPlatform: form.soldPlatform || "",
                 soldPriceJpy: Number(form.soldPriceJpy || 0),
@@ -691,6 +691,7 @@ function App() {
     ["dashboard", "控制台"],
     ["add", editingId ? "编辑商品" : "商品录入"],
     ["ai", "AI录入助手"],
+    ["aiChat", "豪嘉AI助理"],
     ["inventory", "库存管理"],
     ["ledger", "古物台账"],
     ["customs", "EMS报关"],
@@ -709,7 +710,7 @@ function App() {
           <Building2 size={24} />
           <div>
             <b>豪嘉株式会社</b>
-            <span>GOUKA Luxury ERP V6.0</span>
+            <span>GOUKA Luxury ERP V6.6</span>
           </div>
         </div>
 
@@ -725,7 +726,7 @@ function App() {
       <main>
         <header>
           <div>
-            <h1>二手奢侈品管理系统 V6.0</h1>
+            <h1>二手奢侈品管理系统 V6.6</h1>
             <p>自动保存・图片上传・状态筛选・古物台账锁定・EMS报关・利润计算・备份恢复</p>
           </div>
           <span className="pill">Auto Save · {isOwner ? "老板" : "员工"}</span>
@@ -733,6 +734,7 @@ function App() {
 
         {tab === "dashboard" && <Dashboard totals={totals} items={items} setTab={setTab} exportBackup={exportBackup} />}
         {tab === "ai" && <AiAssistant onApplyDraft={applyAiDraft} dictionaries={dictionaries} suppliers={suppliers} />}
+        {tab === "aiChat" && <AiChatAssistant items={items} suppliers={suppliers} dictionaries={dictionaries} setTab={setTab} />}
         {tab === "add" && (
           <AddForm
             form={form}
@@ -881,7 +883,7 @@ function Dashboard({ totals, items, setTab, exportBackup }) {
     <section className="v3-dashboard">
       <div className="v3-hero">
         <div>
-          <span className="v3-kicker">GOUKA ERP V6.0</span>
+          <span className="v3-kicker">GOUKA ERP V6.6</span>
           <h1>经营驾驶舱</h1>
           <p>今日经营、库存预警、品牌利润、供应商利润集中显示。老板打开第一页就知道该赚钱、该出品、该清库存。</p>
           <div className="v3-hero-actions">
@@ -1018,7 +1020,7 @@ function Dashboard({ totals, items, setTab, exportBackup }) {
       </div>
       <div className="panel wide">
         <h2>经营提醒</h2>
-        <p>V6.0新增今日经营、库存预警、品牌利润排行、供应商利润排行。下一阶段可接Supabase，实现多电脑同步和图片云存储。</p>
+        <p>V6.6新增今日经营、库存预警、品牌利润排行、供应商利润排行。下一阶段可接Supabase，实现多电脑同步和图片云存储。</p>
       </div>
     </section>
   );
@@ -1585,7 +1587,7 @@ function BackupPanel({ items, exportBackup, importBackup }) {
   return (
     <div className="panel">
       <h2><Database size={20} /> 数据备份 / 恢复</h2>
-      <p className="note">当前系统数据保存在本机浏览器。V6.0备份会包含商品、字典、供应商、现金流。换电脑、清理浏览器、重装系统前，一定要先导出备份。</p>
+      <p className="note">当前系统数据保存在本机浏览器。V6.6备份会包含商品、字典、供应商、现金流。换电脑、清理浏览器、重装系统前，一定要先导出备份。</p>
 
       <div className="grid4" style={{marginTop:"16px"}}>
         <Card icon={<Package />} title="当前商品记录" value={`${items.length} 件`} />
@@ -1680,14 +1682,167 @@ function parseAiText(raw, dictionaries, suppliers) {
   return draft;
 }
 
+
+function buildAiBusinessStats(items, suppliers) {
+  const today = new Date().toISOString().slice(0, 10);
+  const month = currentMonth();
+  const active = items.filter((x) => x.status !== "已售出" && x.status !== "退货");
+  const sold = items.filter((x) => x.status === "已售出");
+  const todayIn = items.filter((x) => (x.purchaseDate || "") === today);
+  const todaySold = items.filter((x) => (x.soldDate || "") === today || (x.status === "已售出" && !x.soldDate));
+  const monthIn = items.filter((x) => (x.purchaseDate || "").startsWith(month));
+  const monthSold = items.filter((x) => (x.soldDate || "").startsWith(month) || (x.status === "已售出" && !x.soldDate));
+  const totalCost = items.reduce((a, x) => a + calcTax(x).costJpy, 0);
+  const totalSale = items.reduce((a, x) => a + calcTax(x).saleJpy, 0);
+  const totalProfit = items.reduce((a, x) => a + calcTax(x).profitExTax, 0);
+  const todaySale = todaySold.reduce((a, x) => a + calcTax(x).saleJpy, 0);
+  const todayProfit = todaySold.reduce((a, x) => a + calcTax(x).profitExTax, 0);
+  const monthSale = monthSold.reduce((a, x) => a + calcTax(x).saleJpy, 0);
+  const monthProfit = monthSold.reduce((a, x) => a + calcTax(x).profitExTax, 0);
+  const now = new Date();
+  function ageDays(x) {
+    if (!x.purchaseDate) return 0;
+    const d = new Date(x.purchaseDate);
+    if (Number.isNaN(d.getTime())) return 0;
+    return Math.floor((now - d) / (1000 * 60 * 60 * 24));
+  }
+  const over30 = active.filter((x) => ageDays(x) >= 30);
+  const over60 = active.filter((x) => ageDays(x) >= 60);
+  const over90 = active.filter((x) => ageDays(x) >= 90);
+  const brandMap = items.reduce((a, x) => {
+    const k = x.brand || "未填写";
+    if (!a[k]) a[k] = { count: 0, cost: 0, sale: 0, profit: 0 };
+    a[k].count += Number(x.qty || 1);
+    a[k].cost += calcTax(x).costJpy;
+    a[k].sale += calcTax(x).saleJpy;
+    a[k].profit += calcTax(x).profitExTax;
+    return a;
+  }, {});
+  const supplierMap = items.reduce((a, x) => {
+    const k = x.source || "未填写";
+    if (!a[k]) a[k] = { count: 0, cost: 0, profit: 0 };
+    a[k].count += Number(x.qty || 1);
+    a[k].cost += calcTax(x).costJpy;
+    a[k].profit += calcTax(x).profitExTax;
+    return a;
+  }, {});
+  return {
+    today, month, active, sold, todayIn, todaySold, monthIn, monthSold,
+    totalCost, totalSale, totalProfit, todaySale, todayProfit, monthSale, monthProfit,
+    over30, over60, over90,
+    brandProfit: Object.entries(brandMap).sort((a,b)=>b[1].profit-a[1].profit).slice(0,5),
+    supplierProfit: Object.entries(supplierMap).sort((a,b)=>b[1].profit-a[1].profit).slice(0,5),
+    todoCustoms: items.filter((x) => x.status === "报关准备"),
+    todoListing: items.filter((x) => x.status === "已入库"),
+    todoShipping: items.filter((x) => x.status === "已售出" && !String(x.soldMemo || "").includes("発送済"))
+  };
+}
+
+function answerAiQuestion(question, items, suppliers, dictionaries) {
+  const q = String(question || "").toLowerCase();
+  const s = buildAiBusinessStats(items, suppliers);
+  if (!question.trim()) return "你可以问：今天赚了多少钱、库存总成本、哪些货超过90天、哪个品牌最赚钱、哪个供应商最赚钱。";
+  if (q.includes("今天") || q.includes("今日")) return [`今日经营：`,`今日新增入库：${s.todayIn.length} 件`,`今日销售额：${jpy(s.todaySale)}`,`今日净利润参考：${jpy(s.todayProfit)}`,`今日售出：${s.todaySold.length} 件`].join("\n");
+  if (q.includes("本月") || q.includes("这个月")) return [`本月经营（${s.month}）：`,`本月入库：${s.monthIn.length} 件`,`本月销售额：${jpy(s.monthSale)}`,`本月净利润参考：${jpy(s.monthProfit)}`,`本月售出：${s.monthSold.length} 件`].join("\n");
+  if (q.includes("库存") || q.includes("成本") || q.includes("总成本")) return [`库存概况：`,`当前库存：${s.active.length} 件`,`已售商品：${s.sold.length} 件`,`库存总成本参考：${jpy(s.totalCost)}`,`预计销售总额：${jpy(s.totalSale)}`,`预计净利润参考：${jpy(s.totalProfit)}`].join("\n");
+  if (q.includes("90") || q.includes("60") || q.includes("30") || q.includes("压货") || q.includes("超龄")) {
+    const list = s.over90.slice(0, 8).map((x) => `- ${x.id} ${x.brand} ${x.item} / ${x.purchaseDate}`).join("\n");
+    return [`库存预警：`,`超过30天：${s.over30.length} 件`,`超过60天：${s.over60.length} 件`,`超过90天：${s.over90.length} 件`, s.over90.length ? `\n90天以上前几件：\n${list}` : `目前没有90天以上库存。`].join("\n");
+  }
+  if (q.includes("品牌") || q.includes("哪个牌") || q.includes("最赚钱")) return `品牌利润排行：\n${s.brandProfit.map(([b,d],i)=>`${i+1}. ${b}：利润 ${jpy(d.profit)} / ${d.count} 件`).join("\n") || "暂无数据"}`;
+  if (q.includes("供应商") || q.includes("来源") || q.includes("哪里进货")) return `供应商利润排行：\n${s.supplierProfit.map(([n,d],i)=>`${i+1}. ${n}：利润 ${jpy(d.profit)} / ${d.count} 件`).join("\n") || "暂无数据"}`;
+  if (q.includes("待办") || q.includes("该做什么") || q.includes("下一步")) return [`今日待办建议：`,`待报关：${s.todoCustoms.length} 件`,`待出品：${s.todoListing.length} 件`,`待发货确认：${s.todoShipping.length} 件`,`库存90天以上：${s.over90.length} 件`, s.todoListing.length ? `建议优先处理：把已入库商品尽快出品。` : `当前出品压力不大。`].join("\n");
+  if (q.includes("标题") || q.includes("mercari") || q.includes("yahoo") || q.includes("乐天")) {
+    const sample = items[0] || {};
+    return [`示例标题：`,`Mercari：${makePlatformTitle(sample, "mercari")}`,`Yahoo：${makePlatformTitle(sample, "yahoo")}`,`乐天：${makePlatformTitle(sample, "rakuten")}`].join("\n");
+  }
+  const brandHit = (dictionaries.brands || []).find((b) => q.includes(String(b).toLowerCase()));
+  if (brandHit) {
+    const arr = items.filter((x) => x.brand === brandHit);
+    const cost = arr.reduce((a,x)=>a+calcTax(x).costJpy,0);
+    const sale = arr.reduce((a,x)=>a+calcTax(x).saleJpy,0);
+    const profit = arr.reduce((a,x)=>a+calcTax(x).profitExTax,0);
+    return [`${brandHit} 概况：`,`记录数量：${arr.length} 件`,`成本参考：${jpy(cost)}`,`预计销售：${jpy(sale)}`,`预计利润：${jpy(profit)}`].join("\n");
+  }
+  return [`我现在能回答ERP经营数据问题。你可以这样问：`,`今天赚了多少钱？`,`本月销售额多少？`,`哪些货超过90天？`,`哪个品牌最赚钱？`,`哪个供应商利润最高？`,`现在库存总成本多少？`].join("\n");
+}
+
+function AiChatAssistant({ items, suppliers, dictionaries, setTab }) {
+  const [messages, setMessages] = useState([{ role: "assistant", text: "我是豪嘉AI助理。你可以问我：今天赚了多少钱、库存总成本、哪个品牌最赚钱、哪些货超过90天。" }]);
+  const [input, setInput] = useState("");
+  function ask(text) {
+    const q = text.trim();
+    if (!q) return;
+    const answer = answerAiQuestion(q, items, suppliers, dictionaries);
+    setMessages((prev) => [...prev, { role: "user", text: q }, { role: "assistant", text: answer }]);
+    setInput("");
+  }
+  const quick = ["今天赚了多少钱？", "本月销售额多少？", "库存总成本多少？", "哪些货超过90天？", "哪个品牌最赚钱？", "哪个供应商利润最高？", "今天该做什么？"];
+  return (
+    <div className="panel">
+      <h2>🤖 豪嘉AI助理 V6.6</h2>
+      <p className="note">本地AI经营助理：读取ERP本地数据，不上传外部服务器。可回答库存、利润、待办、品牌、供应商、超龄库存等问题。</p>
+      <div className="grid4" style={{marginBottom:"16px"}}>
+        <Card icon={<Package />} title="当前库存" value={`${items.filter(x => x.status !== "已售出" && x.status !== "退货").length} 件`} />
+        <Card icon={<Calculator />} title="记录总数" value={`${items.length} 件`} />
+        <Card icon={<Building2 />} title="供应商" value={`${suppliers.length} 个`} />
+        <Card icon={<Database />} title="模式" value="本地AI" />
+      </div>
+      <div className="action-row" style={{flexWrap:"wrap"}}>{quick.map((q)=><button key={q} className="ghost" onClick={()=>ask(q)}>{q}</button>)}</div>
+      <div className="panel" style={{background:"#f8fafc", marginTop:"16px", maxHeight:"460px", overflow:"auto"}}>
+        {messages.map((m,i)=><div key={i} style={{margin:"10px 0", padding:"12px 14px", borderRadius:"14px", background:m.role==="user" ? "#dbeafe" : "#fff", border:"1px solid #e5e7eb", whiteSpace:"pre-wrap"}}><b>{m.role==="user" ? "你" : "豪嘉AI"}：</b><div style={{marginTop:"6px"}}>{m.text}</div></div>)}
+      </div>
+      <div className="action-row" style={{marginTop:"14px"}}>
+        <input style={{flex:1}} value={input} onChange={(e)=>setInput(e.target.value)} onKeyDown={(e)=>{ if(e.key==="Enter") ask(input); }} placeholder="问我：今天赚了多少钱？哪个品牌最赚钱？" />
+        <button className="primary" onClick={()=>ask(input)}>发送</button>
+        <button className="ghost" onClick={()=>setMessages([{ role:"assistant", text:"对话已清空。继续问我ERP经营数据吧。" }])}>清空</button>
+      </div>
+      <div className="action-row" style={{marginTop:"10px"}}>
+        <button className="ghost" onClick={()=>setTab("ai")}>去AI录入助手</button>
+        <button className="ghost" onClick={()=>setTab("dashboard")}>回控制台</button>
+      </div>
+    </div>
+  );
+}
+
+
 function AiAssistant({ onApplyDraft, dictionaries, suppliers }) {
   const [mode, setMode] = useState("purchase");
   const [rawText, setRawText] = useState("");
   const [draft, setDraft] = useState(null);
+  const [uploadedImages, setUploadedImages] = useState([]);
+  const [fileNotes, setFileNotes] = useState("");
+
+  function readImages(files) {
+    const selected = Array.from(files || []).filter((f) => f.type.startsWith("image/")).slice(0, 3);
+    if (!selected.length) return;
+
+    Promise.all(
+      selected.map((file) => new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve({ name: file.name, src: reader.result });
+        reader.readAsDataURL(file);
+      }))
+    ).then((imgs) => {
+      setUploadedImages([...(uploadedImages || []), ...imgs].slice(0, 3));
+    });
+  }
+
+  function removeUploadedImage(index) {
+    setUploadedImages(uploadedImages.filter((_, i) => i !== index));
+  }
 
   function analyze() {
-    if (!rawText.trim()) return alert("请先粘贴发票、拍卖截图文字、采购清单文字。");
-    const next = parseAiText(rawText, dictionaries, suppliers);
+    if (!rawText.trim() && !uploadedImages.length) {
+      return alert("请先粘贴文字，或上传图片后补充识别文字。");
+    }
+
+    const imageHint = uploadedImages.length
+      ? `\n图片文件：${uploadedImages.map((x) => x.name).join(" / ")}`
+      : "";
+
+    const next = parseAiText(`${rawText}\n${fileNotes}${imageHint}`, dictionaries, suppliers);
+
     if (mode === "sale") {
       next.status = "已售出";
       next.soldDate = new Date().toISOString().slice(0, 10);
@@ -1695,6 +1850,10 @@ function AiAssistant({ onApplyDraft, dictionaries, suppliers }) {
       next.soldPriceJpy = next.saleJpy;
       next.memo = "AI识别销售草稿，请人工确认";
     }
+
+    next.images = uploadedImages.map((x) => x.src);
+    next.memo = next.memo || "AI识别草稿，请人工确认后入库";
+
     setDraft(next);
   }
 
@@ -1702,12 +1861,20 @@ function AiAssistant({ onApplyDraft, dictionaries, suppliers }) {
     setDraft({ ...draft, [k]: v });
   }
 
+  function applyDraft() {
+    if (!draft) return;
+    onApplyDraft({
+      ...draft,
+      images: uploadedImages.map((x) => x.src)
+    });
+  }
+
   return (
     <div className="panel">
-      <h2>🤖 AI录入助手 V6.0</h2>
+      <h2>🤖 AI录入助手 V6.6</h2>
       <p className="note">
-        先做安全的“AI识别草稿”：粘贴发票、采购清单、拍卖成交内容后，系统自动提取品牌、商品、金额、币种、来源。
-        确认无误后再写入商品录入页。
+        V6.6新增图片上传通道。可以上传商品图、发票图、拍卖截图并预览；识别文字仍需粘贴或人工补充。
+        确认后图片会一起带入商品录入页。
       </p>
 
       <div className="action-row">
@@ -1715,10 +1882,44 @@ function AiAssistant({ onApplyDraft, dictionaries, suppliers }) {
         <button className={mode === "sale" ? "primary" : "ghost"} onClick={() => setMode("sale")}>识别销售</button>
       </div>
 
+      <label
+        className="full"
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => { e.preventDefault(); readImages(e.dataTransfer.files); }}
+        style={{ display:"block", marginTop:"16px", border:"1px dashed #94a3b8", borderRadius:"14px", padding:"16px", background:"#f8fafc" }}
+      >
+        上传图片（最多3张，可拖拽商品图/发票图/拍卖截图到这里）
+        <input type="file" accept="image/*" multiple onChange={(e) => readImages(e.target.files)} />
+      </label>
+
+      {!!uploadedImages.length && (
+        <div className="image-row" style={{ marginTop:"12px" }}>
+          {uploadedImages.map((img, i) => (
+            <div className="image-box" key={i}>
+              <img src={img.src} alt={img.name} />
+              <button type="button" onClick={() => removeUploadedImage(i)}>
+                <X size={14} /> 移除
+              </button>
+              <small>{img.name}</small>
+            </div>
+          ))}
+        </div>
+      )}
+
       <label className="full" style={{display:"block", marginTop:"16px"}}>
-        粘贴内容
+        图片/文件备注
         <textarea
-          rows={12}
+          rows={3}
+          value={fileNotes}
+          onChange={(e) => setFileNotes(e.target.value)}
+          placeholder="例如：这张图是CHANEL发票，采购金额11500 CNY，供应商中国供应商A"
+        />
+      </label>
+
+      <label className="full" style={{display:"block", marginTop:"16px"}}>
+        粘贴识别文字 / 发票文字 / 拍卖成交内容
+        <textarea
+          rows={10}
           value={rawText}
           onChange={(e) => setRawText(e.target.value)}
           placeholder={"例：CHANEL Classic Flap Bag Lambskin Black France 采购金额 11500 CNY 来源 中国供应商A EMS 预计售价 350000 JPY"}
@@ -1727,12 +1928,21 @@ function AiAssistant({ onApplyDraft, dictionaries, suppliers }) {
 
       <div className="action-row">
         <button className="primary" onClick={analyze}>AI识别生成草稿</button>
-        <button className="ghost" onClick={() => { setRawText(""); setDraft(null); }}>清空</button>
+        <button className="ghost" onClick={() => { setRawText(""); setDraft(null); setUploadedImages([]); setFileNotes(""); }}>清空</button>
       </div>
 
       {draft && (
         <div className="panel" style={{marginTop:"20px", background:"#f8fafc"}}>
           <h3>识别草稿，请人工确认</h3>
+
+          {!!uploadedImages.length && (
+            <div className="image-row" style={{ marginBottom:"14px" }}>
+              {uploadedImages.map((img, i) => (
+                <img key={i} className="thumb" style={{ width: 88, height: 88 }} src={img.src} alt={img.name} />
+              ))}
+            </div>
+          )}
+
           <div className="formgrid">
             <Input label="日期" type="date" value={draft.purchaseDate || ""} onChange={(v)=>setDraftValue("purchaseDate", v)} />
             <SelectWithOther label="品牌" value={draft.brand || ""} onChange={(v)=>setDraftValue("brand", v)} options={dictionaries.brands} />
@@ -1753,15 +1963,22 @@ function AiAssistant({ onApplyDraft, dictionaries, suppliers }) {
             <Card icon={<Calculator />} title="采购换算JPY" value={jpy(amountToJpy(draft.purchaseAmount, draft.purchaseCurrency, draft.purchaseRateToJpy))} />
             <Card icon={<Calculator />} title="预计售价JPY" value={jpy(draft.saleJpy)} />
             <Card icon={<Calculator />} title="预计利润" value={jpy(Number(draft.saleJpy || 0) - amountToJpy(draft.purchaseAmount, draft.purchaseCurrency, draft.purchaseRateToJpy))} />
-            <Card icon={<FileText />} title="写入方式" value="确认后入库" />
+            <Card icon={<FileText />} title="图片数量" value={`${uploadedImages.length} 张`} />
           </div>
 
           <div className="action-row">
-            <button className="primary" onClick={() => onApplyDraft(draft)}>确认，填入商品录入页</button>
+            <button className="primary" onClick={applyDraft}>确认，填入商品录入页</button>
             <button className="ghost" onClick={() => copyText(JSON.stringify(draft, null, 2))}>复制草稿JSON</button>
           </div>
         </div>
       )}
+
+      <div className="panel" style={{ marginTop:"18px", background:"#fff7ed" }}>
+        <h3>说明</h3>
+        <p className="note">
+          当前版本已支持上传和带图入库；真正“自动读图识别文字/识别包款”需要下一步接 OpenAI Vision 或 OCR 服务。
+        </p>
+      </div>
     </div>
   );
 }
@@ -1830,7 +2047,7 @@ function SupplierPanel({ suppliers, setSuppliers, downloadCSV }) {
     <div className="panel">
       <h2><Building2 size={20} /> 供应商管理</h2>
       <p className="note">
-        V6.0新增：供应商独立管理。录入商品选择供应商后，会自动带出地址与备注，减少员工重复输入。
+        V6.6新增：供应商独立管理。录入商品选择供应商后，会自动带出地址与备注，减少员工重复输入。
       </p>
 
       <div className="formgrid">
@@ -1931,7 +2148,7 @@ function DictionaryPanel({ dictionaries, setDictionaries }) {
     <div className="panel">
       <h2><Database size={20} /> 字典管理</h2>
       <p className="note">
-        V6.0开始，品牌、商品名、材质、颜色、产地、来源、平台都可以在这里维护。
+        V6.6开始，品牌、商品名、材质、颜色、产地、来源、平台都可以在这里维护。
         每行一个选项，保存后会自动出现在商品录入下拉菜单中。
       </p>
 
@@ -1985,7 +2202,7 @@ function DictionaryPanel({ dictionaries, setDictionaries }) {
       </div>
 
       <div className="panel" style={{ marginTop: "18px", background: "#f8fafc" }}>
-        <h3>V6.0说明</h3>
+        <h3>V6.6说明</h3>
         <p>这一步先实现本地可维护字典。下一阶段可以接 Supabase，把字典、库存、图片全部云端化。</p>
       </div>
     </div>
