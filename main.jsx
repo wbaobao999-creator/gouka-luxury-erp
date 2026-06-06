@@ -380,7 +380,7 @@ function LoginPage({ onLogin }) {
     <div className="login-page">
       <form className="login-card" onSubmit={submit}>
         <div className="login-logo"><Lock size={28} /></div>
-        <h1>豪嘉ERP V6.6</h1>
+        <h1>豪嘉ERP V6.61</h1>
         <p>豪嘉株式会社内部管理系统</p>
         <p className="note">请输入公司内部账号登录。账号可向管理员确认，密码不在页面显示。</p>
 
@@ -450,12 +450,12 @@ function App() {
   }
 
   function exportBackup() {
-    const data = { version: "GOUKA-ERP-V6.61", exportedAt: new Date().toISOString(), items };
+    const data = { version: "GOUKA-ERP-V6.6111", exportedAt: new Date().toISOString(), items };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `gouka_erp_v66_backup_${new Date().toISOString().slice(0,10)}.json`;
+    a.download = `gouka_erp_v661_backup_${new Date().toISOString().slice(0,10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -521,7 +521,13 @@ function App() {
   }
 
   function saveItem() {
-    if (!form.brand || !form.item) return alert("请填写品牌和商品名");
+    const safeForm = {
+      ...form,
+      brand: form.brand || "未识别品牌",
+      item: form.item || "未识别商品",
+      productTitle: form.productTitle || makeAutoTitle(form) || `${form.brand || "未识别品牌"} ${form.item || "未识别商品"}`,
+      images: Array.isArray(form.images) ? form.images : []
+    };
 
     if (editingId) {
       setItems(
@@ -529,17 +535,17 @@ function App() {
           x.id === editingId
             ? addHistory({
                 ...x,
-                ...form,
-                productTitle: form.productTitle || makeAutoTitle(form),
+                ...safeForm,
+                productTitle: safeForm.productTitle || makeAutoTitle(safeForm),
                 qty: Number(form.qty || 1),
-                purchaseCurrency: form.purchaseCurrency || "CNY",
-                purchaseCny: Number(form.purchaseCny || 0),
-                purchaseRateToJpy: Number(form.purchaseRateToJpy || defaultRateFor(form.purchaseCurrency || "CNY")),
-                declaredCurrency: form.declaredCurrency || form.purchaseCurrency || "CNY",
-                declaredCny: Number(form.declaredCny || form.purchaseCny || 0),
-                declaredRateToJpy: Number(form.declaredRateToJpy || defaultRateFor(form.declaredCurrency || form.purchaseCurrency || "CNY")),
-                rate: Number(form.purchaseRateToJpy || form.rate || 0),
-                saleJpy: Number(form.saleJpy || 0),
+                purchaseCurrency: safeForm.purchaseCurrency || "CNY",
+                purchaseCny: Number(safeForm.purchaseCny || 0),
+                purchaseRateToJpy: Number(safeForm.purchaseRateToJpy || defaultRateFor(safeForm.purchaseCurrency || "CNY")),
+                declaredCurrency: safeForm.declaredCurrency || safeForm.purchaseCurrency || "CNY",
+                declaredCny: Number(safeForm.declaredCny || safeForm.purchaseCny || 0),
+                declaredRateToJpy: Number(safeForm.declaredRateToJpy || defaultRateFor(safeForm.declaredCurrency || safeForm.purchaseCurrency || "CNY")),
+                rate: Number(safeForm.purchaseRateToJpy || safeForm.rate || 0),
+                saleJpy: Number(safeForm.saleJpy || 0),
                 shippingJpy: Number(form.shippingJpy || 0),
                 dutyJpy: Number(form.dutyJpy || 0),
                 customsFeeJpy: Number(form.customsFeeJpy || 0),
@@ -557,32 +563,32 @@ function App() {
       alert("商品已更新");
     } else {
       const next = {
-        ...form,
+        ...safeForm,
         id: makeNextId(items),
         ledgerStatus: "有效",
         ledgerVoidReason: "",
         ledgerUpdatedAt: new Date().toISOString(),
-        productTitle: form.productTitle || makeAutoTitle(form),
+        productTitle: safeForm.productTitle || makeAutoTitle(safeForm),
         ledgerHistory: [{ date: new Date().toISOString(), user: session?.username || "gouka", action: "创建商品并生成古物台账" }],
         qty: Number(form.qty || 1),
-        purchaseCurrency: form.purchaseCurrency || "CNY",
-        purchaseCny: Number(form.purchaseCny || 0),
-        purchaseRateToJpy: Number(form.purchaseRateToJpy || defaultRateFor(form.purchaseCurrency || "CNY")),
-        declaredCurrency: form.declaredCurrency || form.purchaseCurrency || "CNY",
-        declaredCny: Number(form.declaredCny || form.purchaseCny || 0),
-        declaredRateToJpy: Number(form.declaredRateToJpy || defaultRateFor(form.declaredCurrency || form.purchaseCurrency || "CNY")),
-        rate: Number(form.purchaseRateToJpy || form.rate || 0),
-        saleJpy: Number(form.saleJpy || 0),
-        shippingJpy: Number(form.shippingJpy || 0),
-        dutyJpy: Number(form.dutyJpy || 0),
-        customsFeeJpy: Number(form.customsFeeJpy || 0),
-        platformFeeJpy: Number(form.platformFeeJpy || 0),
-        otherCostJpy: Number(form.otherCostJpy || 0),
-        images: form.images || [],
-        soldDate: form.soldDate || "",
-        soldPlatform: form.soldPlatform || "",
-        soldPriceJpy: Number(form.soldPriceJpy || 0),
-        soldMemo: form.soldMemo || ""
+        purchaseCurrency: safeForm.purchaseCurrency || "CNY",
+        purchaseCny: Number(safeForm.purchaseCny || 0),
+        purchaseRateToJpy: Number(safeForm.purchaseRateToJpy || defaultRateFor(safeForm.purchaseCurrency || "CNY")),
+        declaredCurrency: safeForm.declaredCurrency || safeForm.purchaseCurrency || "CNY",
+        declaredCny: Number(safeForm.declaredCny || safeForm.purchaseCny || 0),
+        declaredRateToJpy: Number(safeForm.declaredRateToJpy || defaultRateFor(safeForm.declaredCurrency || safeForm.purchaseCurrency || "CNY")),
+        rate: Number(safeForm.purchaseRateToJpy || safeForm.rate || 0),
+        saleJpy: Number(safeForm.saleJpy || 0),
+        shippingJpy: Number(safeForm.shippingJpy || 0),
+        dutyJpy: Number(safeForm.dutyJpy || 0),
+        customsFeeJpy: Number(safeForm.customsFeeJpy || 0),
+        platformFeeJpy: Number(safeForm.platformFeeJpy || 0),
+        otherCostJpy: Number(safeForm.otherCostJpy || 0),
+        images: safeForm.images || [],
+        soldDate: safeForm.soldDate || "",
+        soldPlatform: safeForm.soldPlatform || "",
+        soldPriceJpy: Number(safeForm.soldPriceJpy || 0),
+        soldMemo: safeForm.soldMemo || ""
       };
       setItems([next, ...items]);
       alert("商品已添加");
@@ -629,7 +635,7 @@ function App() {
           })
       )
     ).then((imgs) => {
-      setForm({ ...form, images: [...(form.images || []), ...imgs].slice(0, 3) });
+      setForm((prev) => ({ ...prev, images: [...(prev.images || []), ...imgs].slice(0, 3) }));
     });
   }
 
@@ -710,7 +716,7 @@ function App() {
           <Building2 size={24} />
           <div>
             <b>豪嘉株式会社</b>
-            <span>GOUKA Luxury ERP V6.6</span>
+            <span>GOUKA Luxury ERP V6.61</span>
           </div>
         </div>
 
@@ -726,7 +732,7 @@ function App() {
       <main>
         <header>
           <div>
-            <h1>二手奢侈品管理系统 V6.6</h1>
+            <h1>二手奢侈品管理系统 V6.61</h1>
             <p>自动保存・图片上传・状态筛选・古物台账锁定・EMS报关・利润计算・备份恢复</p>
           </div>
           <span className="pill">Auto Save · {isOwner ? "老板" : "员工"}</span>
@@ -883,7 +889,7 @@ function Dashboard({ totals, items, setTab, exportBackup }) {
     <section className="v3-dashboard">
       <div className="v3-hero">
         <div>
-          <span className="v3-kicker">GOUKA ERP V6.6</span>
+          <span className="v3-kicker">GOUKA ERP V6.61</span>
           <h1>经营驾驶舱</h1>
           <p>今日经营、库存预警、品牌利润、供应商利润集中显示。老板打开第一页就知道该赚钱、该出品、该清库存。</p>
           <div className="v3-hero-actions">
@@ -1020,7 +1026,7 @@ function Dashboard({ totals, items, setTab, exportBackup }) {
       </div>
       <div className="panel wide">
         <h2>经营提醒</h2>
-        <p>V6.6新增今日经营、库存预警、品牌利润排行、供应商利润排行。下一阶段可接Supabase，实现多电脑同步和图片云存储。</p>
+        <p>V6.61新增今日经营、库存预警、品牌利润排行、供应商利润排行。下一阶段可接Supabase，实现多电脑同步和图片云存储。</p>
       </div>
     </section>
   );
@@ -1187,11 +1193,11 @@ function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, 
       </div>
 
       <div className="action-row">
-        <button className="primary" onClick={saveItem}>
+        <button type="button" className="primary" onClick={saveItem}>
           <Save size={16} /> {editingId ? "保存修改" : "添加到库存"}
         </button>
         {editingId && (
-          <button className="ghost" onClick={resetForm}>
+          <button type="button" className="ghost" onClick={resetForm}>
             取消编辑
           </button>
         )}
@@ -1587,7 +1593,7 @@ function BackupPanel({ items, exportBackup, importBackup }) {
   return (
     <div className="panel">
       <h2><Database size={20} /> 数据备份 / 恢复</h2>
-      <p className="note">当前系统数据保存在本机浏览器。V6.6备份会包含商品、字典、供应商、现金流。换电脑、清理浏览器、重装系统前，一定要先导出备份。</p>
+      <p className="note">当前系统数据保存在本机浏览器。V6.61备份会包含商品、字典、供应商、现金流。换电脑、清理浏览器、重装系统前，一定要先导出备份。</p>
 
       <div className="grid4" style={{marginTop:"16px"}}>
         <Card icon={<Package />} title="当前商品记录" value={`${items.length} 件`} />
@@ -1780,7 +1786,7 @@ function AiChatAssistant({ items, suppliers, dictionaries, setTab }) {
   const quick = ["今天赚了多少钱？", "本月销售额多少？", "库存总成本多少？", "哪些货超过90天？", "哪个品牌最赚钱？", "哪个供应商利润最高？", "今天该做什么？"];
   return (
     <div className="panel">
-      <h2>🤖 豪嘉AI助理 V6.6</h2>
+      <h2>🤖 豪嘉AI助理 V6.61</h2>
       <p className="note">本地AI经营助理：读取ERP本地数据，不上传外部服务器。可回答库存、利润、待办、品牌、供应商、超龄库存等问题。</p>
       <div className="grid4" style={{marginBottom:"16px"}}>
         <Card icon={<Package />} title="当前库存" value={`${items.filter(x => x.status !== "已售出" && x.status !== "退货").length} 件`} />
@@ -1871,9 +1877,9 @@ function AiAssistant({ onApplyDraft, dictionaries, suppliers }) {
 
   return (
     <div className="panel">
-      <h2>🤖 AI录入助手 V6.6</h2>
+      <h2>🤖 AI录入助手 V6.61</h2>
       <p className="note">
-        V6.6新增图片上传通道。可以上传商品图、发票图、拍卖截图并预览；识别文字仍需粘贴或人工补充。
+        V6.61新增图片上传通道。可以上传商品图、发票图、拍卖截图并预览；识别文字仍需粘贴或人工补充。
         确认后图片会一起带入商品录入页。
       </p>
 
@@ -2047,7 +2053,7 @@ function SupplierPanel({ suppliers, setSuppliers, downloadCSV }) {
     <div className="panel">
       <h2><Building2 size={20} /> 供应商管理</h2>
       <p className="note">
-        V6.6新增：供应商独立管理。录入商品选择供应商后，会自动带出地址与备注，减少员工重复输入。
+        V6.61新增：供应商独立管理。录入商品选择供应商后，会自动带出地址与备注，减少员工重复输入。
       </p>
 
       <div className="formgrid">
@@ -2148,7 +2154,7 @@ function DictionaryPanel({ dictionaries, setDictionaries }) {
     <div className="panel">
       <h2><Database size={20} /> 字典管理</h2>
       <p className="note">
-        V6.6开始，品牌、商品名、材质、颜色、产地、来源、平台都可以在这里维护。
+        V6.61开始，品牌、商品名、材质、颜色、产地、来源、平台都可以在这里维护。
         每行一个选项，保存后会自动出现在商品录入下拉菜单中。
       </p>
 
@@ -2202,7 +2208,7 @@ function DictionaryPanel({ dictionaries, setDictionaries }) {
       </div>
 
       <div className="panel" style={{ marginTop: "18px", background: "#f8fafc" }}>
-        <h3>V6.6说明</h3>
+        <h3>V6.61说明</h3>
         <p>这一步先实现本地可维护字典。下一阶段可以接 Supabase，把字典、库存、图片全部云端化。</p>
       </div>
     </div>
