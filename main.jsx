@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { Package, FileText, Calculator, Search, Plus, Building2, Download, Edit3, Trash2, ImagePlus, Save, X, Lock, Database, Upload } from "lucide-react";
 import "./style.css";
@@ -412,35 +412,46 @@ function LoginPage({ onLogin }) {
   const [username, setUsername] = useState("gouka");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
-  const passwordRef = React.useRef(null);
+  const passwordRef = useRef(null);
 
-  React.useEffect(() => {
-    // 页面打开后自动把光标放到密码框，避免第一次回车只是在切换焦点。
+  useEffect(() => {
+    // 打开登录页后直接让密码框获得焦点，避免第一次回车只是切换输入框。
     setTimeout(() => passwordRef.current?.focus(), 80);
   }, []);
 
-  function submit(e) {
-    if (e) e.preventDefault();
-    const cleanUsername = String(username || "").trim();
-    const user = USERS[cleanUsername];
+  function doLogin() {
+    const u = String(username || "").trim();
+    const p = String(password || "").trim();
+    const user = USERS[u];
 
-    if (user && password === user.password) {
-      const loginData = { username: cleanUsername, role: user.role, name: user.name, loginAt: new Date().toISOString() };
-      localStorage.setItem(LOGIN_KEY, JSON.stringify(loginData));
-      onLogin(user.role, loginData);
+    if (user && p === user.password) {
+      localStorage.setItem(LOGIN_KEY, JSON.stringify({ username: u, role: user.role, name: user.name }));
+      onLogin(user.role, u, user.name);
     } else {
       setError("账号或密码错误");
-      setTimeout(() => passwordRef.current?.focus(), 50);
+      setTimeout(() => passwordRef.current?.focus(), 30);
+    }
+  }
+
+  function submit(e) {
+    e?.preventDefault?.();
+    doLogin();
+  }
+
+  function handleEnter(e) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      doLogin();
     }
   }
 
   return (
-    <div className="login-page">
+    <div className="login-page" onKeyDown={handleEnter}>
       <form className="login-card" onSubmit={submit}>
         <div className="login-logo"><Lock size={28} /></div>
-        <h1>豪嘉ERP V6.6554</h1>
+        <h1>豪嘉ERP V6.6555</h1>
         <p>豪嘉株式会社内部管理系统</p>
-        <p className="note">账号已自动填好。输入密码后按一次 Enter 即可登录。</p>
+        <p className="note">老板账号已自动填写。输入密码后按一次回车即可登录。</p>
 
         <label>
           账号
@@ -459,9 +470,7 @@ function LoginPage({ onLogin }) {
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") submit(e);
-            }}
+            onKeyDown={handleEnter}
             placeholder="请输入密码"
             autoComplete="current-password"
           />
@@ -515,7 +524,7 @@ function App() {
   }, [deleteLogs]);
 
   if (!isLoggedIn) {
-    return <LoginPage onLogin={(role, loginData) => { setSession(loginData || { username: "gouka", role, name: "老板账号" }); setIsLoggedIn(true); }} />;
+    return <LoginPage onLogin={(role, username = "gouka", name = "老板账号") => { setSession({ username, role, name }); setIsLoggedIn(true); }} />;
   }
 
   const role = session?.role || "owner";
@@ -528,12 +537,12 @@ function App() {
   }
 
   function exportBackup() {
-    const data = { version: "GOUKA-ERP-V6.6554", exportedAt: new Date().toISOString(), items };
+    const data = { version: "GOUKA-ERP-V6.6555", exportedAt: new Date().toISOString(), items };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `gouka_erp_v6554_backup_${new Date().toISOString().slice(0,10)}.json`;
+    a.download = `gouka_erp_v665_backup_${new Date().toISOString().slice(0,10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -792,7 +801,7 @@ function App() {
           <Building2 size={24} />
           <div>
             <b>豪嘉株式会社</b>
-            <span>GOUKA Luxury ERP V6.6554</span>
+            <span>GOUKA Luxury ERP V6.6555</span>
           </div>
         </div>
 
@@ -808,7 +817,7 @@ function App() {
       <main>
         <header>
           <div>
-            <h1>二手奢侈品管理系统 V6.6554</h1>
+            <h1>二手奢侈品管理系统 V6.6555</h1>
             <p>自动保存・图片上传・状态筛选・古物台账锁定・EMS报关・利润计算・备份恢复</p>
           </div>
           <span className="pill">Auto Save · {isOwner ? "老板" : "员工"}</span>
@@ -965,7 +974,7 @@ function Dashboard({ totals, items, setTab, exportBackup }) {
     <section className="v3-dashboard">
       <div className="v3-hero">
         <div>
-          <span className="v3-kicker">GOUKA ERP V6.6554</span>
+          <span className="v3-kicker">GOUKA ERP V6.6555</span>
           <h1>经营驾驶舱</h1>
           <p>今日经营、库存预警、品牌利润、供应商利润集中显示。老板打开第一页就知道该赚钱、该出品、该清库存。</p>
           <div className="v3-hero-actions">
@@ -1102,7 +1111,7 @@ function Dashboard({ totals, items, setTab, exportBackup }) {
       </div>
       <div className="panel wide">
         <h2>经营提醒</h2>
-        <p>V6.6554新增今日经营、库存预警、品牌利润排行、供应商利润排行。下一阶段可接Supabase，实现多电脑同步和图片云存储。</p>
+        <p>V6.6555新增今日经营、库存预警、品牌利润排行、供应商利润排行。下一阶段可接Supabase，实现多电脑同步和图片云存储。</p>
       </div>
     </section>
   );
@@ -1674,7 +1683,7 @@ function BackupPanel({ items, exportBackup, importBackup }) {
   return (
     <div className="panel">
       <h2><Database size={20} /> 数据备份 / 恢复</h2>
-      <p className="note">当前系统数据保存在本机浏览器。V6.6554备份会包含商品、字典、供应商、现金流。换电脑、清理浏览器、重装系统前，一定要先导出备份。</p>
+      <p className="note">当前系统数据保存在本机浏览器。V6.6555备份会包含商品、字典、供应商、现金流。换电脑、清理浏览器、重装系统前，一定要先导出备份。</p>
 
       <div className="grid4" style={{marginTop:"16px"}}>
         <Card icon={<Package />} title="当前商品记录" value={`${items.length} 件`} />
@@ -1867,7 +1876,7 @@ function AiChatAssistant({ items, suppliers, dictionaries, setTab }) {
   const quick = ["今天赚了多少钱？", "本月销售额多少？", "库存总成本多少？", "哪些货超过90天？", "哪个品牌最赚钱？", "哪个供应商利润最高？", "今天该做什么？"];
   return (
     <div className="panel">
-      <h2>🤖 豪嘉AI助理 V6.6554</h2>
+      <h2>🤖 豪嘉AI助理 V6.6555</h2>
       <p className="note">本地AI经营助理：读取ERP本地数据，不上传外部服务器。可回答库存、利润、待办、品牌、供应商、超龄库存等问题。</p>
       <div className="grid4" style={{marginBottom:"16px"}}>
         <Card icon={<Package />} title="当前库存" value={`${items.filter(x => x.status !== "已售出" && x.status !== "退货").length} 件`} />
@@ -1958,9 +1967,9 @@ function AiAssistant({ onApplyDraft, dictionaries, suppliers }) {
 
   return (
     <div className="panel">
-      <h2>🤖 AI录入助手 V6.6554</h2>
+      <h2>🤖 AI录入助手 V6.6555</h2>
       <p className="note">
-        V6.6554新增图片上传通道。可以上传商品图、发票图、拍卖截图并预览；识别文字仍需粘贴或人工补充。
+        V6.6555新增图片上传通道。可以上传商品图、发票图、拍卖截图并预览；识别文字仍需粘贴或人工补充。
         确认后图片会一起带入商品录入页。
       </p>
 
@@ -2157,7 +2166,7 @@ function SupplierPanel({ suppliers, setSuppliers, downloadCSV }) {
     <div className="panel">
       <h2><Building2 size={20} /> 供应商管理</h2>
       <p className="note">
-        V6.6554新增：供应商独立管理。录入商品选择供应商后，会自动带出地址与备注，减少员工重复输入。
+        V6.6555新增：供应商独立管理。录入商品选择供应商后，会自动带出地址与备注，减少员工重复输入。
       </p>
 
       <div className="formgrid">
@@ -2258,7 +2267,7 @@ function DictionaryPanel({ dictionaries, setDictionaries }) {
     <div className="panel">
       <h2><Database size={20} /> 字典管理</h2>
       <p className="note">
-        V6.6554开始，品牌、商品名、材质、颜色、产地、来源、平台都可以在这里维护。
+        V6.6555开始，品牌、商品名、材质、颜色、产地、来源、平台都可以在这里维护。
         每行一个选项，保存后会自动出现在商品录入下拉菜单中。
       </p>
 
@@ -2312,7 +2321,7 @@ function DictionaryPanel({ dictionaries, setDictionaries }) {
       </div>
 
       <div className="panel" style={{ marginTop: "18px", background: "#f8fafc" }}>
-        <h3>V6.6554说明</h3>
+        <h3>V6.6555说明</h3>
         <p>这一步先实现本地可维护字典。下一阶段可以接 Supabase，把字典、库存、图片全部云端化。</p>
       </div>
     </div>
@@ -2432,12 +2441,54 @@ function SelectWithOther({ label, value, onChange, options, placeholder = "" }) 
 }
 
 
-const rootElement = document.getElementById("root");
 
-if (rootElement) {
-  // 先显示一个加载提示，避免首次打开时白屏。
-  rootElement.innerHTML = '<div style="padding:32px;font-family:Arial, sans-serif;color:#0f172a;">豪嘉ERP 正在加载...</div>';
-  createRoot(rootElement).render(<App />);
-} else {
-  console.error("Root element #root not found");
+class GoukaErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+  componentDidCatch(error, info) {
+    console.error("GOUKA ERP render error", error, info);
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{ padding: 32, fontFamily: "system-ui, sans-serif" }}>
+          <h2>系统加载出错</h2>
+          <p>可以先点下面按钮清理登录缓存后重新进入。</p>
+          <pre style={{ whiteSpace: "pre-wrap", background: "#f1f5f9", padding: 12, borderRadius: 8 }}>
+            {String(this.state.error?.message || this.state.error)}
+          </pre>
+          <button
+            style={{ padding: "10px 18px", borderRadius: 8, border: 0, background: "#2563eb", color: "white", fontWeight: 700 }}
+            onClick={() => {
+              localStorage.removeItem(LOGIN_KEY);
+              window.location.reload();
+            }}
+          >
+            清理登录缓存并刷新
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
 }
+
+function mountGoukaApp() {
+  const rootEl = document.getElementById("root");
+  if (!rootEl) {
+    document.body.innerHTML = "<div style='padding:32px;font-family:system-ui'>找不到 root 容器，请检查 index.html</div>";
+    return;
+  }
+  createRoot(rootEl).render(
+    <GoukaErrorBoundary>
+      <App />
+    </GoukaErrorBoundary>
+  );
+}
+
+mountGoukaApp();
