@@ -412,41 +412,35 @@ function LoginPage({ onLogin }) {
   const [username, setUsername] = useState("gouka");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
-  const passwordInputRef = React.useRef(null);
+  const passwordRef = React.useRef(null);
 
   React.useEffect(() => {
-    passwordInputRef.current?.focus();
+    // 页面打开后自动把光标放到密码框，避免第一次回车只是在切换焦点。
+    setTimeout(() => passwordRef.current?.focus(), 80);
   }, []);
 
   function submit(e) {
     if (e) e.preventDefault();
-
     const cleanUsername = String(username || "").trim();
     const user = USERS[cleanUsername];
 
     if (user && password === user.password) {
-      const loginData = { username: cleanUsername, role: user.role, name: user.name };
+      const loginData = { username: cleanUsername, role: user.role, name: user.name, loginAt: new Date().toISOString() };
       localStorage.setItem(LOGIN_KEY, JSON.stringify(loginData));
-      onLogin(user.role);
+      onLogin(user.role, loginData);
     } else {
       setError("账号或密码错误");
-    }
-  }
-
-  function handleEnterLogin(e) {
-    if (e.key === "Enter" && !e.nativeEvent?.isComposing) {
-      e.preventDefault();
-      submit();
+      setTimeout(() => passwordRef.current?.focus(), 50);
     }
   }
 
   return (
     <div className="login-page">
-      <form className="login-card" onSubmit={submit} onKeyDown={handleEnterLogin}>
+      <form className="login-card" onSubmit={submit}>
         <div className="login-logo"><Lock size={28} /></div>
         <h1>豪嘉ERP V6.6554</h1>
         <p>豪嘉株式会社内部管理系统</p>
-        <p className="note">老板账号已自动填入。输入密码后按一次回车即可登录。</p>
+        <p className="note">账号已自动填好。输入密码后按一次 Enter 即可登录。</p>
 
         <label>
           账号
@@ -461,10 +455,13 @@ function LoginPage({ onLogin }) {
         <label>
           密码
           <input
-            ref={passwordInputRef}
+            ref={passwordRef}
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") submit(e);
+            }}
             placeholder="请输入密码"
             autoComplete="current-password"
           />
@@ -518,7 +515,7 @@ function App() {
   }, [deleteLogs]);
 
   if (!isLoggedIn) {
-    return <LoginPage onLogin={(role) => { setSession({ username: "gouka", role, name: "老板账号" }); setIsLoggedIn(true); }} />;
+    return <LoginPage onLogin={(role, loginData) => { setSession(loginData || { username: "gouka", role, name: "老板账号" }); setIsLoggedIn(true); }} />;
   }
 
   const role = session?.role || "owner";
@@ -536,7 +533,7 @@ function App() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `gouka_erp_v665_backup_${new Date().toISOString().slice(0,10)}.json`;
+    a.download = `gouka_erp_v6554_backup_${new Date().toISOString().slice(0,10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -2435,4 +2432,12 @@ function SelectWithOther({ label, value, onChange, options, placeholder = "" }) 
 }
 
 
-createRoot(document.getElementById("root")).render(<App />);
+const rootElement = document.getElementById("root");
+
+if (rootElement) {
+  // 先显示一个加载提示，避免首次打开时白屏。
+  rootElement.innerHTML = '<div style="padding:32px;font-family:Arial, sans-serif;color:#0f172a;">豪嘉ERP 正在加载...</div>';
+  createRoot(rootElement).render(<App />);
+} else {
+  console.error("Root element #root not found");
+}
