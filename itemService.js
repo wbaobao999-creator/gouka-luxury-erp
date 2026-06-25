@@ -6,7 +6,11 @@ export async function getItems() {
     .select("*")
     .order("created_at", { ascending: false });
 
-  if (error) throw error;
+  if (error) {
+    console.error(error);
+    return [];
+  }
+
   return data || [];
 }
 
@@ -18,6 +22,7 @@ export async function addItem(item) {
     .single();
 
   if (error) throw error;
+
   return data;
 }
 
@@ -30,6 +35,7 @@ export async function updateItem(id, item) {
     .single();
 
   if (error) throw error;
+
   return data;
 }
 
