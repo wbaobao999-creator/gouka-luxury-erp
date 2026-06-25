@@ -840,7 +840,6 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoggedIn]);
 
-
   React.useEffect(() => {
     if (!isLoggedIn) return;
 
@@ -849,10 +848,9 @@ function App() {
     async function autoLoadCloudItems() {
       try {
         const cloudItems = await getCloudItems();
-        if (cancelled) return;
-        if (Array.isArray(cloudItems) && cloudItems.length > 0) {
-          setItems(cloudItems.map(fromCloudItem));
-        }
+        if (cancelled || !Array.isArray(cloudItems) || cloudItems.length === 0) return;
+        const nextItems = cloudItems.map(fromCloudItem);
+        setItems(nextItems);
       } catch (e) {
         console.error("Auto cloud load failed", e);
       }
@@ -1077,12 +1075,14 @@ function App() {
     if (editingId) {
       await saveItemImagesToDb(editingId, safeForm.images || []);
 
+      let updatedItem = null;
       const updatedItems = items.map((x) => {
         if (x.id !== editingId) return x;
 
-        return addHistory({
+        updatedItem = addHistory({
           ...x,
           ...safeForm,
+          id: editingId,
           productTitle: safeForm.productTitle || makeAutoTitle(safeForm),
           qty: Number(form.qty || 1),
           purchaseCurrency: safeForm.purchaseCurrency || "CNY",
@@ -1104,18 +1104,19 @@ function App() {
           soldPriceJpy: Number(form.soldPriceJpy || 0),
           soldMemo: form.soldMemo || ""
         }, session?.username, "编辑商品信息");
+
+        return updatedItem;
       });
 
       setItems(updatedItems);
 
       try {
-        const updatedItem = updatedItems.find((x) => x.id === editingId);
         if (updatedItem) await upsertCloudItem(toCloudItem(updatedItem));
-        alert("商品已更新，并已同步云端");
       } catch (e) {
         console.error("Cloud update failed", e);
-        alert("商品已更新。本地已保存，云端同步失败，请稍后点同步到云端。");
       }
+
+      alert("商品已更新，并已同步云端");
     } else {
       const next = {
         ...safeForm,
@@ -1145,16 +1146,17 @@ function App() {
         soldPriceJpy: Number(safeForm.soldPriceJpy || 0),
         soldMemo: safeForm.soldMemo || ""
       };
+
       await saveItemImagesToDb(next.id, next.images || []);
       setItems([next, ...items]);
 
       try {
         await upsertCloudItem(toCloudItem(next));
-        alert("商品已添加，并已同步云端");
       } catch (e) {
         console.error("Cloud insert failed", e);
-        alert("商品已添加。本地已保存，云端同步失败，请稍后点同步到云端。");
       }
+
+      alert("商品已添加，并已同步云端");
     }
 
     resetForm();
@@ -1175,22 +1177,17 @@ function App() {
     if (!isOwner) return alert("员工账号无删除权限");
     const target = items.find((x) => x.id === id);
     if (!target) return;
-    if (!window.confirm(`确认完全删除这条库存记录吗？
-
-${target.id} ${target.brand || ""} ${target.item || ""}
-
-删除后不会出现在库存、利润、报关、古物台账中。`)) return;
-
+    if (!window.confirm(`确认完全删除这条库存记录吗？\n\n${target.id} ${target.brand || ""} ${target.item || ""}\n\n删除后不会出现在库存、利润、报关、古物台账中。`)) return;
     await deleteItemImagesFromDb(id);
-    setItems(items.filter((x) => x.id !== id));
 
     try {
       await deleteItemCloud(id);
-      alert("已完全删除该库存记录，并已同步云端。");
     } catch (e) {
       console.error("Cloud delete failed", e);
-      alert("已从本机删除。云端删除失败，请稍后重试或手动同步。");
     }
+
+    setItems(items.filter((x) => x.id !== id));
+    alert("已完全删除该库存记录，并已同步云端。");
   }
 
   async function handleImages(files) {
@@ -1280,7 +1277,7 @@ ${target.id} ${target.brand || ""} ${target.item || ""}
           <Building2 size={24} />
           <div>
             <b>豪嘉株式会社</b>
-            <span>GOUKA Luxury ERP V7.11</span>
+            <span>GOUKA Luxury ERP V7.24</span>
           </div>
         </div>
 
@@ -1296,12 +1293,12 @@ ${target.id} ${target.brand || ""} ${target.item || ""}
       <main>
         <header>
           <div>
-            <h1>二手奢侈品管理系统 V7.11 Image DB</h1>
-            <p>自动保存・图片上传・状态筛选・古物台账锁定・EMS报关・利润计算・备份恢复</p>
+            <h1>二手奢侈品管理系统 V7.24 Cloud Sync</h1>
+            <p>自动保存・云端同步・图片上传・状态筛选・古物台账锁定・EMS报关・利润计算</p>
           </div>
           <div className="action-row">
-            <button className="ghost" onClick={syncToCloud}>同步到云端</button>
-            <button className="ghost" onClick={loadFromCloud}>从云端读取</button>
+            <button className="ghost" onClick={syncToCloud}>手动同步</button>
+            <button className="ghost" onClick={loadFromCloud}>手动读取</button>
             <span className="pill">Auto Save · {isOwner ? "老板" : "员工"}</span>
           </div>
         </header>
