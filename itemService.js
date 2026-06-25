@@ -21,9 +21,7 @@ export async function getItems() {
 export async function upsertCloudItem(item) {
   const { data, error } = await supabase
     .from("items")
-    .upsert([item], {
-      onConflict: "product_no"
-    })
+    .upsert([item], { onConflict: "product_no" })
     .select()
     .single();
 
@@ -40,26 +38,14 @@ export async function addItem(item) {
 }
 
 export async function updateItem(id, item) {
-  const { data, error } = await supabase
-    .from("items")
-    .update(item)
-    .eq("id", id)
-    .select()
-    .single();
-
-  if (error) {
-    console.error("Cloud update failed:", error);
-    throw error;
-  }
-
-  return data;
+  return upsertCloudItem(item);
 }
 
-export async function deleteItemCloud(id) {
+export async function deleteItemCloud(productNo) {
   const { error } = await supabase
     .from("items")
     .delete()
-    .eq("id", id);
+    .eq("product_no", productNo);
 
   if (error) {
     console.error("Cloud delete failed:", error);
