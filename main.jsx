@@ -328,11 +328,99 @@ function currentMonth() {
 
 const IMAGE_MAX_WIDTH = 1200;
 const IMAGE_MAX_HEIGHT = 1200;
-const IMAGE_TARGET_BYTES = 220 * 1024;
-const IMAGE_MIN_QUALITY = 0.45;
-const IMAGE_START_QUALITY = 0.72;
+const IMAGE_TARGET_BYTES = 180 * 1024;
+const IMAGE_MIN_QUALITY = 0.42;
+const IMAGE_START_QUALITY = 0.68;
+const IMAGE_DB_NAME = "gouka_erp_image_db_v711";
+const IMAGE_DB_STORE = "item_images";
 
 let storageAlerted = false;
+
+function stripImagesForStorage(items) {
+  return (items || []).map((x) => ({
+    ...x,
+    images: [],
+    imageCount: Array.isArray(x.images) ? x.images.length : Number(x.imageCount || 0)
+  }));
+}
+
+function openImageDb() {
+  return new Promise((resolve, reject) => {
+    if (!window.indexedDB) return reject(new Error("IndexedDB not supported"));
+    const req = window.indexedDB.open(IMAGE_DB_NAME, 1);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(IMAGE_DB_STORE)) {
+        db.createObjectStore(IMAGE_DB_STORE, { keyPath: "itemId" });
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function saveItemImagesToDb(itemId, images) {
+  if (!itemId) return false;
+  try {
+    const db = await openImageDb();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(IMAGE_DB_STORE, "readwrite");
+      const store = tx.objectStore(IMAGE_DB_STORE);
+      store.put({ itemId, images: Array.isArray(images) ? images : [], updatedAt: new Date().toISOString() });
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+    return true;
+  } catch (err) {
+    console.error("图片保存到IndexedDB失败", err);
+    alert("图片保存失败：浏览器图片数据库不可用。商品文字仍可保存。请先导出备份。 ");
+    return false;
+  }
+}
+
+async function loadItemImagesFromDb(itemId) {
+  if (!itemId) return [];
+  try {
+    const db = await openImageDb();
+    const result = await new Promise((resolve, reject) => {
+      const tx = db.transaction(IMAGE_DB_STORE, "readonly");
+      const store = tx.objectStore(IMAGE_DB_STORE);
+      const req = store.get(itemId);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    db.close();
+    return Array.isArray(result?.images) ? result.images : [];
+  } catch (err) {
+    console.error("读取图片失败", err);
+    return [];
+  }
+}
+
+async function deleteItemImagesFromDb(itemId) {
+  if (!itemId) return;
+  try {
+    const db = await openImageDb();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(IMAGE_DB_STORE, "readwrite");
+      tx.objectStore(IMAGE_DB_STORE).delete(itemId);
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  } catch (err) {
+    console.error("删除图片失败", err);
+  }
+}
+
+async function hydrateItemsWithImages(items) {
+  const arr = await Promise.all((items || []).map(async (x) => {
+    const images = Array.isArray(x.images) && x.images.length ? x.images : await loadItemImagesFromDb(x.id);
+    return { ...x, images, imageCount: images.length || Number(x.imageCount || 0) };
+  }));
+  return arr;
+}
 
 function bytesOfText(text) {
   try {
@@ -360,7 +448,7 @@ function safeLocalSet(key, value, label = "数据") {
       storageAlerted = true;
       alert(
         `⚠️ ${label}保存失败：浏览器本地容量可能已满。\n\n` +
-        `请立刻导出备份JSON，并减少/删除部分图片。\n` +
+        `请立刻导出备份JSON。V7.11已把图片转入IndexedDB，文字数据仍会尽量保存。\n` +
         `系统不会白屏，但这次修改可能没有永久保存。`
       );
     }
@@ -581,7 +669,9 @@ function normalizeItem(x) {
     otherCostJpy: x.otherCostJpy || 0,
     customsBatchId: x.customsBatchId || "",
     productTitle: x.productTitle || makeAutoTitle(x),
-    ...x
+    imageCount: Number(x.imageCount || (Array.isArray(x.images) ? x.images.length : 0)),
+    ...x,
+    images: Array.isArray(x.images) ? x.images : []
   };
 }
 
@@ -718,7 +808,7 @@ function App() {
   const [previewScale, setPreviewScale] = useState(1);
 
   React.useEffect(() => {
-    safeLocalSet(STORAGE_KEY, items, "商品数据");
+    safeLocalSet(STORAGE_KEY, stripImagesForStorage(items), "商品文字数据");
   }, [items]);
 
   React.useEffect(() => {
@@ -737,6 +827,18 @@ function App() {
     safeLocalSet(CUSTOMS_BATCH_KEY, customsBatches, "报关批次数据");
   }, [customsBatches]);
 
+  React.useEffect(() => {
+    let cancelled = false;
+    hydrateItemsWithImages(items).then((hydrated) => {
+      if (cancelled) return;
+      const changed = hydrated.some((x, i) => (x.images || []).length !== (items[i]?.images || []).length);
+      if (changed) setItems(hydrated);
+    });
+    return () => { cancelled = true; };
+    // 只在登录后初次进入时补图，避免录入时反复重刷。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoggedIn]);
+
   if (!isLoggedIn) {
     return <LoginPage onLogin={(role) => { setSession({ username: "gouka", role, name: "老板账号" }); setIsLoggedIn(true); }} />;
   }
@@ -752,12 +854,12 @@ function App() {
   }
 
   function exportBackup() {
-    const data = { version: "GOUKA-ERP-V7.10-STABLE", exportedAt: new Date().toISOString(), items, customsBatches, dictionaries, suppliers, deleteLogs };
+    const data = { version: "GOUKA-ERP-V7.11-IMAGE-DB", exportedAt: new Date().toISOString(), items, customsBatches, dictionaries, suppliers, deleteLogs };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `gouka_erp_v710_stable_backup_${new Date().toISOString().slice(0,10)}.json`;
+    a.download = `gouka_erp_v711_image_db_backup_${new Date().toISOString().slice(0,10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -765,13 +867,15 @@ function App() {
   function importBackup(file) {
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = () => {
+    reader.onload = async () => {
       try {
         const parsed = JSON.parse(reader.result);
         const nextItems = Array.isArray(parsed) ? parsed : parsed.items;
         if (!Array.isArray(nextItems)) throw new Error("bad file");
         if (window.confirm(`确定导入 ${nextItems.length} 条商品数据吗？当前数据会被覆盖。`)) {
-          setItems(nextItems.map(normalizeItem));
+          const normalizedItems = nextItems.map(normalizeItem);
+          await Promise.all(normalizedItems.map((item) => saveItemImagesToDb(item.id, item.images || [])));
+          setItems(normalizedItems);
           if (parsed.dictionaries) setDictionaries({ ...DEFAULT_DICTIONARIES, ...parsed.dictionaries });
           if (Array.isArray(parsed.suppliers)) setSuppliers(parsed.suppliers);
           if (Array.isArray(parsed.deleteLogs)) setDeleteLogs(parsed.deleteLogs);
@@ -827,7 +931,7 @@ function App() {
     setEditingId(null);
   }
 
-  function saveItem() {
+  async function saveItem() {
     const safeForm = {
       ...form,
       brand: form.brand || "未识别品牌",
@@ -837,6 +941,7 @@ function App() {
     };
 
     if (editingId) {
+      await saveItemImagesToDb(editingId, safeForm.images || []);
       setItems(
         items.map((x) =>
           x.id === editingId
@@ -897,6 +1002,7 @@ function App() {
         soldPriceJpy: Number(safeForm.soldPriceJpy || 0),
         soldMemo: safeForm.soldMemo || ""
       };
+      await saveItemImagesToDb(next.id, next.images || []);
       setItems([next, ...items]);
       alert("商品已添加");
     }
@@ -915,11 +1021,12 @@ function App() {
     setTab("add");
   }
 
-  function deleteItem(id) {
+  async function deleteItem(id) {
     if (!isOwner) return alert("员工账号无删除权限");
     const target = items.find((x) => x.id === id);
     if (!target) return;
     if (!window.confirm(`确认完全删除这条库存记录吗？\n\n${target.id} ${target.brand || ""} ${target.item || ""}\n\n删除后不会出现在库存、利润、报关、古物台账中。`)) return;
+    await deleteItemImagesFromDb(id);
     setItems(items.filter((x) => x.id !== id));
     alert("已完全删除该库存记录。");
   }
@@ -1011,7 +1118,7 @@ function App() {
           <Building2 size={24} />
           <div>
             <b>豪嘉株式会社</b>
-            <span>GOUKA Luxury ERP V7.10 Stable</span>
+            <span>GOUKA Luxury ERP V7.11</span>
           </div>
         </div>
 
@@ -1027,7 +1134,7 @@ function App() {
       <main>
         <header>
           <div>
-            <h1>二手奢侈品管理系统 V7.10 Stable</h1>
+            <h1>二手奢侈品管理系统 V7.11 Image DB</h1>
             <p>自动保存・图片上传・状态筛选・古物台账锁定・EMS报关・利润计算・备份恢复</p>
           </div>
           <span className="pill">Auto Save · {isOwner ? "老板" : "员工"}</span>
@@ -1186,7 +1293,7 @@ function Dashboard({ totals, items, setTab, exportBackup }) {
     <section className="v3-dashboard">
       <div className="v3-hero">
         <div>
-          <span className="v3-kicker">GOUKA ERP V7.10 Stable</span>
+          <span className="v3-kicker">GOUKA ERP V7.11 Image DB</span>
           <h1>经营驾驶舱</h1>
           <p>今日经营、库存预警、品牌利润、供应商利润集中显示。老板打开第一页就知道该赚钱、该出品、该清库存。</p>
           <div className="v3-hero-actions">
@@ -1323,7 +1430,7 @@ function Dashboard({ totals, items, setTab, exportBackup }) {
       </div>
       <div className="panel wide">
         <h2>经营提醒</h2>
-        <p>V7.0新增今日经营、库存预警、品牌利润排行、供应商利润排行。下一阶段可接Supabase，实现多电脑同步和图片云存储。</p>
+        <p>V7.11新增今日经营、库存预警、品牌利润排行、供应商利润排行。V7.11已把图片从localStorage拆到IndexedDB，几十件录入更稳定；下一阶段可接Supabase，实现多电脑同步和图片云存储。</p>
       </div>
     </section>
   );
@@ -1998,7 +2105,7 @@ function BackupPanel({ items, exportBackup, importBackup }) {
   return (
     <div className="panel">
       <h2><Database size={20} /> 数据备份 / 恢复</h2>
-      <p className="note">当前系统数据保存在本机浏览器。V7.0备份会包含商品、字典、供应商、现金流。换电脑、清理浏览器、重装系统前，一定要先导出备份。</p>
+      <p className="note">当前系统文字数据保存在本机浏览器，图片保存在浏览器IndexedDB图片库。V7.11备份会包含商品、图片、字典、供应商、报关批次、现金流。换电脑、清理浏览器、重装系统前，一定要先导出备份。</p>
 
       <div className="grid4" style={{marginTop:"16px"}}>
         <Card icon={<Package />} title="当前商品记录" value={`${items.length} 件`} />
