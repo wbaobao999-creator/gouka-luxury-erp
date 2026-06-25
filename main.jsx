@@ -12,7 +12,7 @@ const SUPPLIER_KEY = "gouka_erp_v51_suppliers";
 const DELETE_LOG_KEY = "gouka_erp_v663_delete_logs";
 const CUSTOMS_BATCH_KEY = "gouka_erp_v7_customs_batches";
 const USERS = {
-  gouka: { password: "777888", role: "owner", name: "老板账号" }
+  gouka: { password: "931205", role: "owner", name: "老板账号" }
 };
 const TAX_RATE = 0.10;
 const CURRENCY_OPTIONS = ["CNY", "USD", "HKD", "EUR", "JPY"];
@@ -849,8 +849,7 @@ function App() {
       try {
         const cloudItems = await getCloudItems();
         if (cancelled || !Array.isArray(cloudItems) || cloudItems.length === 0) return;
-        const baseItems = cloudItems.map(fromCloudItem);
-        const nextItems = await hydrateItemsWithImages(baseItems);
+        const nextItems = cloudItems.map(fromCloudItem);
         setItems(nextItems);
       } catch (e) {
         console.error("Auto cloud load failed", e);
