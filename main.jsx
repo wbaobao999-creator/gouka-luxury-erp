@@ -222,6 +222,7 @@ const emptyForm = {
   saleJpy: "",
   shippingJpy: "",
   dutyJpy: "",
+  importConsumptionTaxJpy: "",
   customsFeeJpy: "",
   platformFeeJpy: "",
   otherCostJpy: "",
@@ -259,6 +260,7 @@ const seedItems = [
     saleJpy: 285000,
     shippingJpy: 0,
     dutyJpy: 0,
+    importConsumptionTaxJpy: 0,
     customsFeeJpy: 0,
     platformFeeJpy: 0,
     otherCostJpy: 0,
@@ -294,6 +296,7 @@ const seedItems = [
     saleJpy: 430000,
     shippingJpy: 0,
     dutyJpy: 0,
+    importConsumptionTaxJpy: 0,
     customsFeeJpy: 0,
     platformFeeJpy: 0,
     otherCostJpy: 0,
@@ -334,6 +337,7 @@ function normalizeItem(x) {
     declaredRateToJpy: x.declaredRateToJpy || x.rate || defaultRateFor(x.declaredCurrency || "CNY"),
     shippingJpy: x.shippingJpy || 0,
     dutyJpy: x.dutyJpy || 0,
+    importConsumptionTaxJpy: x.importConsumptionTaxJpy || 0,
     customsFeeJpy: x.customsFeeJpy || 0,
     platformFeeJpy: x.platformFeeJpy || 0,
     otherCostJpy: x.otherCostJpy || 0,
@@ -397,7 +401,9 @@ function calcTax(x) {
   const extraCostJpy = sumExtraCosts(x);
   const costJpy = baseCostJpy + extraCostJpy;
   const declaredJpy = declaredSmart.value;
-  const inputTax = declaredJpy * TAX_RATE;
+  const importTaxActual = Number(x.importConsumptionTaxJpy || 0);
+  const inputTax = importTaxActual > 0 ? importTaxActual : declaredJpy * TAX_RATE;
+  const inputTaxMode = importTaxActual > 0 ? "实际进口消费税" : "申报金额估算";
   const outputTax = saleJpy * TAX_RATE / (1 + TAX_RATE);
   const saleExTax = saleJpy - outputTax;
   const grossProfit = saleJpy - costJpy;
@@ -405,7 +411,7 @@ function calcTax(x) {
   const profitExTax = saleExTax - costJpy;
   const margin = saleJpy ? grossProfit / saleJpy * 100 : 0;
   const warnings = [baseSmart.warning, declaredSmart.warning].filter(Boolean);
-  return { baseCostJpy, extraCostJpy, costJpy, declaredJpy, inputTax, saleJpy, outputTax, saleExTax, grossProfit, taxBalance, profitExTax, margin, warnings };
+  return { baseCostJpy, extraCostJpy, costJpy, declaredJpy, importTaxActual, inputTax, inputTaxMode, saleJpy, outputTax, saleExTax, grossProfit, taxBalance, profitExTax, margin, warnings };
 }
 
 function LoginPage({ onLogin }) {
@@ -428,7 +434,7 @@ function LoginPage({ onLogin }) {
     <div className="login-page">
       <form className="login-card" onSubmit={submit}>
         <div className="login-logo"><Lock size={28} /></div>
-        <h1>豪嘉ERP V6.6556</h1>
+        <h1>豪嘉ERP V6.6557</h1>
         <p>豪嘉株式会社内部管理系统</p>
         <p className="note">请输入公司内部账号登录。账号可向管理员确认，密码不在页面显示。</p>
 
@@ -503,7 +509,7 @@ function App() {
   }
 
   function exportBackup() {
-    const data = { version: "GOUKA-ERP-V6.6556", exportedAt: new Date().toISOString(), items };
+    const data = { version: "GOUKA-ERP-V6.6557", exportedAt: new Date().toISOString(), items };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -602,6 +608,7 @@ function App() {
                 saleJpy: Number(safeForm.saleJpy || 0),
                 shippingJpy: Number(form.shippingJpy || 0),
                 dutyJpy: Number(form.dutyJpy || 0),
+                importConsumptionTaxJpy: Number(form.importConsumptionTaxJpy || 0),
                 customsFeeJpy: Number(form.customsFeeJpy || 0),
                 platformFeeJpy: Number(form.platformFeeJpy || 0),
                 otherCostJpy: Number(form.otherCostJpy || 0),
@@ -635,6 +642,7 @@ function App() {
         saleJpy: Number(safeForm.saleJpy || 0),
         shippingJpy: Number(safeForm.shippingJpy || 0),
         dutyJpy: Number(safeForm.dutyJpy || 0),
+        importConsumptionTaxJpy: Number(safeForm.importConsumptionTaxJpy || 0),
         customsFeeJpy: Number(safeForm.customsFeeJpy || 0),
         platformFeeJpy: Number(safeForm.platformFeeJpy || 0),
         otherCostJpy: Number(safeForm.otherCostJpy || 0),
@@ -767,7 +775,7 @@ function App() {
           <Building2 size={24} />
           <div>
             <b>豪嘉株式会社</b>
-            <span>GOUKA Luxury ERP V6.6556</span>
+            <span>GOUKA Luxury ERP V6.6557</span>
           </div>
         </div>
 
@@ -783,7 +791,7 @@ function App() {
       <main>
         <header>
           <div>
-            <h1>二手奢侈品管理系统 V6.6556</h1>
+            <h1>二手奢侈品管理系统 V6.6557</h1>
             <p>自动保存・图片上传・状态筛选・古物台账锁定・EMS报关・利润计算・备份恢复</p>
           </div>
           <span className="pill">Auto Save · {isOwner ? "老板" : "员工"}</span>
@@ -940,7 +948,7 @@ function Dashboard({ totals, items, setTab, exportBackup }) {
     <section className="v3-dashboard">
       <div className="v3-hero">
         <div>
-          <span className="v3-kicker">GOUKA ERP V6.6556</span>
+          <span className="v3-kicker">GOUKA ERP V6.6557</span>
           <h1>经营驾驶舱</h1>
           <p>今日经营、库存预警、品牌利润、供应商利润集中显示。老板打开第一页就知道该赚钱、该出品、该清库存。</p>
           <div className="v3-hero-actions">
@@ -1077,7 +1085,7 @@ function Dashboard({ totals, items, setTab, exportBackup }) {
       </div>
       <div className="panel wide">
         <h2>经营提醒</h2>
-        <p>V6.6556新增今日经营、库存预警、品牌利润排行、供应商利润排行。下一阶段可接Supabase，实现多电脑同步和图片云存储。</p>
+        <p>V6.6557新增今日经营、库存预警、品牌利润排行、供应商利润排行。下一阶段可接Supabase，实现多电脑同步和图片云存储。</p>
       </div>
     </section>
   );
@@ -1171,7 +1179,8 @@ function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, 
         <Input label="预计销售额 JPY（税込）" type="number" value={form.saleJpy} onChange={(v) => set("saleJpy", v)} />
 
         <Input label="EMS/国际运费 JPY" type="number" value={form.shippingJpy || ""} onChange={(v) => set("shippingJpy", v)} />
-        <Input label="关税 JPY" type="number" value={form.dutyJpy || ""} onChange={(v) => set("dutyJpy", v)} />
+        <Input label="关税 JPY（成本）" type="number" value={form.dutyJpy || ""} onChange={(v) => set("dutyJpy", v)} />
+        <Input label="进口消费税 JPY（报关实际缴纳・可抵扣）" type="number" value={form.importConsumptionTaxJpy || ""} onChange={(v) => set("importConsumptionTaxJpy", v)} />
         <Input label="报关代行费 JPY" type="number" value={form.customsFeeJpy || ""} onChange={(v) => set("customsFeeJpy", v)} />
         <Input label="拍卖/平台手续费 JPY" type="number" value={form.platformFeeJpy || ""} onChange={(v) => set("platformFeeJpy", v)} />
         <Input label="其他费用 JPY" type="number" value={form.otherCostJpy || ""} onChange={(v) => set("otherCostJpy", v)} />
@@ -1195,7 +1204,7 @@ function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, 
             <Card icon={<Calculator />} title="预计毛利" value={jpy(preview.grossProfit)} />
           </div>
           <p className="note">
-            采购换算：{jpy(preview.baseCostJpy)}　申报换算：{jpy(preview.declaredJpy)}　利润率：{(preview.margin || 0).toFixed(1)}%　销售消费税参考：{jpy(preview.outputTax)}　进项消费税参考：{jpy(preview.inputTax)}
+            采购换算：{jpy(preview.baseCostJpy)}　申报换算：{jpy(preview.declaredJpy)}　利润率：{(preview.margin || 0).toFixed(1)}%　销售消费税：{jpy(preview.outputTax)}　进项消费税：{jpy(preview.inputTax)}（{preview.inputTaxMode}）
           </p>
           {!!preview.warnings?.length && (
             <div className="note" style={{ color: "#b45309", background: "#fff7ed", padding: "10px", borderRadius: "10px" }}>
@@ -1270,12 +1279,12 @@ function StatusBadge({ status }) {
 function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, downloadCSV, editItem, deleteItem, isOwner, setPreviewImage, setPreviewScale }) {
   const [detailItem, setDetailItem] = useState(null);
   const headers = ["图片", "商品编号", "入库日期", "品牌", "商品名", "状态", "真实成本JPY", "预计售价JPY（税込）", "销售消费税", "税抜售价", "净利润", "利润率", "操作"];
-  const csvHeaders = ["商品编号", "入库日期", "品类", "品牌", "商品名", "材质", "颜色", "产地", "数量", "采购币种", "采购金额", "采购汇率", "申报币种", "申报金额", "申报汇率", "采购JPY", "附加成本JPY", "真实成本JPY", "进项消费税参考", "预计销售JPY税込", "销售消费税", "税抜售价", "净利润", "状态"];
+  const csvHeaders = ["商品编号", "入库日期", "品类", "品牌", "商品名", "材质", "颜色", "产地", "数量", "采购币种", "采购金额", "采购汇率", "申报币种", "申报金额", "申报汇率", "采购JPY", "附加成本JPY", "真实成本JPY", "进口消费税JPY", "进项消费税参考", "进项税计算方式", "预计销售JPY税込", "销售消费税", "税抜售价", "净利润", "状态"];
   const csvRows = [csvHeaders];
 
   items.forEach((x) => {
     const t = calcTax(x);
-    csvRows.push([x.id, x.purchaseDate, x.category, x.brand, x.item, x.material, x.color, x.origin, x.qty, x.purchaseCurrency || "CNY", x.purchaseCny, x.purchaseRateToJpy || x.rate, x.declaredCurrency || "CNY", x.declaredCny, x.declaredRateToJpy || x.rate, Math.round(t.baseCostJpy), Math.round(t.extraCostJpy), Math.round(t.costJpy), Math.round(t.inputTax), x.saleJpy, Math.round(t.outputTax), Math.round(t.saleExTax), Math.round(t.profitExTax), x.status]);
+    csvRows.push([x.id, x.purchaseDate, x.category, x.brand, x.item, x.material, x.color, x.origin, x.qty, x.purchaseCurrency || "CNY", x.purchaseCny, x.purchaseRateToJpy || x.rate, x.declaredCurrency || "CNY", x.declaredCny, x.declaredRateToJpy || x.rate, Math.round(t.baseCostJpy), Math.round(t.extraCostJpy), Math.round(t.costJpy), Math.round(Number(x.importConsumptionTaxJpy || 0)), Math.round(t.inputTax), t.inputTaxMode, x.saleJpy, Math.round(t.outputTax), Math.round(t.saleExTax), Math.round(t.profitExTax), x.status]);
   });
 
   const rows = items.map((x) => {
@@ -1334,6 +1343,7 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
               <Card icon={<Package />} title="商品编号" value={detailItem.id} />
               <Card icon={<FileText />} title="品类" value={detailItem.category} />
               <Card icon={<Calculator />} title="真实成本" value={jpy(calcTax(detailItem).costJpy)} />
+              <Card icon={<Calculator />} title="进口消费税" value={jpy(calcTax(detailItem).inputTax)} />
               <Card icon={<Calculator />} title="销售消费税" value={jpy(calcTax(detailItem).outputTax)} />
               <Card icon={<Calculator />} title="税抜售价" value={jpy(calcTax(detailItem).saleExTax)} />
               <Card icon={<Calculator />} title="净利润" value={jpy(calcTax(detailItem).profitExTax)} />
@@ -1344,7 +1354,7 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
             <p><b>来源：</b>{detailItem.source}</p>
             <p><b>供应商地址：</b>{detailItem.address}</p>
             <p><b>平台/运输：</b>{detailItem.platform}</p>
-            <p><b>费用：</b>运费 {jpy(detailItem.shippingJpy)} / 关税 {jpy(detailItem.dutyJpy)} / 报关 {jpy(detailItem.customsFeeJpy)} / 手续费 {jpy(detailItem.platformFeeJpy)} / 其他 {jpy(detailItem.otherCostJpy)}</p>
+            <p><b>费用：</b>运费 {jpy(detailItem.shippingJpy)} / 关税 {jpy(detailItem.dutyJpy)} / 进口消费税 {jpy(detailItem.importConsumptionTaxJpy)} / 报关 {jpy(detailItem.customsFeeJpy)} / 手续费 {jpy(detailItem.platformFeeJpy)} / 其他 {jpy(detailItem.otherCostJpy)}</p>
             <p><b>备注：</b>{detailItem.memo}</p>
           </div>
         </div>
@@ -1515,10 +1525,10 @@ function Ledger({ items, setItems, isOwner, downloadCSV }) {
 
 
 function Customs({ items, downloadCSV }) {
-  const headers = ["No.", "Brand", "Item", "Material", "Color", "Specification", "Qty", "Country of Origin", "Declared Currency", "Declared Value", "Declared Value (JPY)", "Import Tax 10% Ref", "Remarks"];
+  const headers = ["No.", "Brand", "Item", "Material", "Color", "Specification", "Qty", "Country of Origin", "Declared Currency", "Declared Value", "Declared Value (JPY)", "Customs Duty JPY", "Import Consumption Tax JPY", "Input Tax Calc", "Remarks"];
   const rows = items.map((x, i) => {
     const t = calcTax(x);
-    return [i + 1, x.brand, x.item, x.material, x.color, x.category, x.qty, x.origin, x.declaredCurrency || "CNY", x.declaredCny, Math.round(t.declaredJpy), Math.round(t.inputTax), "Used luxury goods / Non-CITES material"];
+    return [i + 1, x.brand, x.item, x.material, x.color, x.category, x.qty, x.origin, x.declaredCurrency || "CNY", x.declaredCny, Math.round(t.declaredJpy), Math.round(Number(x.dutyJpy || 0)), Math.round(t.inputTax), t.inputTaxMode, "Used luxury goods / Non-CITES material"];
   });
   const totalQty = items.reduce((a, x) => a + Number(x.qty || 0), 0);
   const totalValue = items.reduce((a, x) => a + calcTax(x).declaredJpy, 0);
@@ -1536,11 +1546,11 @@ function Customs({ items, downloadCSV }) {
 }
 
 function Profit({ items }) {
-  const headers = ["商品编号", "品牌", "商品名", "基础成本JPY", "附加成本JPY", "真实成本JPY", "销售JPY（税込）", "销售不含税", "销售消费税", "预计毛利", "不含税利润参考", "利润率"];
+  const headers = ["商品编号", "品牌", "商品名", "基础成本JPY", "附加成本JPY", "真实成本JPY", "进口消费税JPY", "销售JPY（税込）", "销售不含税", "销售消费税", "预计毛利", "不含税利润参考", "利润率"];
   const rows = items.map((x) => {
     const t = calcTax(x);
     const margin = t.saleExTax ? ((t.profitExTax / t.saleExTax) * 100).toFixed(1) + "%" : "";
-    return [x.id, x.brand, x.item, Math.round(t.baseCostJpy), Math.round(t.extraCostJpy), Math.round(t.costJpy), x.saleJpy, Math.round(t.saleExTax), Math.round(t.outputTax), Math.round(t.grossProfit), Math.round(t.profitExTax), margin];
+    return [x.id, x.brand, x.item, Math.round(t.baseCostJpy), Math.round(t.extraCostJpy), Math.round(t.costJpy), Math.round(t.inputTax), x.saleJpy, Math.round(t.saleExTax), Math.round(t.outputTax), Math.round(t.grossProfit), Math.round(t.profitExTax), margin];
   });
 
   return (
@@ -1554,18 +1564,18 @@ function Profit({ items }) {
 }
 
 function TaxReport({ items, totals, downloadCSV }) {
-  const headers = ["商品编号", "品牌", "商品名", "申报JPY", "进项消费税参考", "销售JPY（税込）", "销售不含税", "销售消费税", "消费税差额参考", "检查提示"];
+  const headers = ["商品编号", "品牌", "商品名", "申报JPY", "进口消费税JPY", "进项消费税参考", "进项税计算方式", "销售JPY（税込）", "销售不含税", "销售消费税", "消费税差额参考"];
   const rows = items.map((x) => {
     const t = calcTax(x);
-    return [x.id, x.brand, x.item, Math.round(t.declaredJpy), Math.round(t.inputTax), Math.round(t.saleJpy), Math.round(t.saleExTax), Math.round(t.outputTax), Math.round(t.taxBalance)];
+    return [x.id, x.brand, x.item, Math.round(t.declaredJpy), Math.round(Number(x.importConsumptionTaxJpy || 0)), Math.round(t.inputTax), t.inputTaxMode, Math.round(t.saleJpy), Math.round(t.saleExTax), Math.round(t.outputTax), Math.round(t.taxBalance)];
   });
 
-  const csv = [headers, ...rows, [], ["合计", "", "", "", Math.round(totals.inputTax), Math.round(totals.sale), "", Math.round(totals.outputTax), Math.round(totals.taxBalance)]];
+  const csv = [headers, ...rows, [], ["合计", "", "", "", "", Math.round(totals.inputTax), "", Math.round(totals.sale), "", Math.round(totals.outputTax), Math.round(totals.taxBalance)]];
 
   return (
     <div className="panel">
       <Toolbar title="消费税参考表" onDownload={() => downloadCSV(csv, "gouka_consumption_tax_reference.csv")} />
-      <p className="note">课税事业者参考：销售消费税按含税销售额倒算 10/110，进项消费税按申报JPY × 10% 参考。实际申告请交由税理士确认。</p>
+      <p className="note">课税事业者参考：销售消费税按含税销售额倒算 10/110；进项消费税优先使用报关时实际缴纳的进口消费税，未填写时按申报JPY × 10% 估算。实际申告请交由税理士确认。</p>
       <Table headers={headers} rows={rows} />
       <h3>合计</h3>
       <p>销售消费税参考：{jpy(totals.outputTax)}</p>
@@ -1649,7 +1659,7 @@ function BackupPanel({ items, exportBackup, importBackup }) {
   return (
     <div className="panel">
       <h2><Database size={20} /> 数据备份 / 恢复</h2>
-      <p className="note">当前系统数据保存在本机浏览器。V6.6556备份会包含商品、字典、供应商、现金流。换电脑、清理浏览器、重装系统前，一定要先导出备份。</p>
+      <p className="note">当前系统数据保存在本机浏览器。V6.6557备份会包含商品、字典、供应商、现金流。换电脑、清理浏览器、重装系统前，一定要先导出备份。</p>
 
       <div className="grid4" style={{marginTop:"16px"}}>
         <Card icon={<Package />} title="当前商品记录" value={`${items.length} 件`} />
@@ -1842,7 +1852,7 @@ function AiChatAssistant({ items, suppliers, dictionaries, setTab }) {
   const quick = ["今天赚了多少钱？", "本月销售额多少？", "库存总成本多少？", "哪些货超过90天？", "哪个品牌最赚钱？", "哪个供应商利润最高？", "今天该做什么？"];
   return (
     <div className="panel">
-      <h2>🤖 豪嘉AI助理 V6.6556</h2>
+      <h2>🤖 豪嘉AI助理 V6.6557</h2>
       <p className="note">本地AI经营助理：读取ERP本地数据，不上传外部服务器。可回答库存、利润、待办、品牌、供应商、超龄库存等问题。</p>
       <div className="grid4" style={{marginBottom:"16px"}}>
         <Card icon={<Package />} title="当前库存" value={`${items.filter(x => x.status !== "已售出" && x.status !== "退货").length} 件`} />
@@ -1933,9 +1943,9 @@ function AiAssistant({ onApplyDraft, dictionaries, suppliers }) {
 
   return (
     <div className="panel">
-      <h2>🤖 AI录入助手 V6.6556</h2>
+      <h2>🤖 AI录入助手 V6.6557</h2>
       <p className="note">
-        V6.6556新增图片上传通道。可以上传商品图、发票图、拍卖截图并预览；识别文字仍需粘贴或人工补充。
+        V6.6557新增图片上传通道。可以上传商品图、发票图、拍卖截图并预览；识别文字仍需粘贴或人工补充。
         确认后图片会一起带入商品录入页。
       </p>
 
@@ -2132,7 +2142,7 @@ function SupplierPanel({ suppliers, setSuppliers, downloadCSV }) {
     <div className="panel">
       <h2><Building2 size={20} /> 供应商管理</h2>
       <p className="note">
-        V6.6556新增：供应商独立管理。录入商品选择供应商后，会自动带出地址与备注，减少员工重复输入。
+        V6.6557新增：供应商独立管理。录入商品选择供应商后，会自动带出地址与备注，减少员工重复输入。
       </p>
 
       <div className="formgrid">
@@ -2233,7 +2243,7 @@ function DictionaryPanel({ dictionaries, setDictionaries }) {
     <div className="panel">
       <h2><Database size={20} /> 字典管理</h2>
       <p className="note">
-        V6.6556开始，品牌、商品名、材质、颜色、产地、来源、平台都可以在这里维护。
+        V6.6557开始，品牌、商品名、材质、颜色、产地、来源、平台都可以在这里维护。
         每行一个选项，保存后会自动出现在商品录入下拉菜单中。
       </p>
 
@@ -2287,7 +2297,7 @@ function DictionaryPanel({ dictionaries, setDictionaries }) {
       </div>
 
       <div className="panel" style={{ marginTop: "18px", background: "#f8fafc" }}>
-        <h3>V6.6556说明</h3>
+        <h3>V6.6557说明</h3>
         <p>这一步先实现本地可维护字典。下一阶段可以接 Supabase，把字典、库存、图片全部云端化。</p>
       </div>
     </div>
