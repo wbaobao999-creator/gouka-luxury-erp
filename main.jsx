@@ -2,7 +2,7 @@ import React, { useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Package, FileText, Calculator, Search, Plus, Building2, Download, Edit3, Trash2, ImagePlus, Save, X, Lock, Database, Upload } from "lucide-react";
 import "./style.css";
-import { getCloudItems, upsertCloudItem, deleteItemCloud } from "./itemService.js";
+import { getCloudItems, upsertCloudItem, deleteItemCloud, uploadItemImages } from "./itemService.js";
 
 const STORAGE_KEY = "gouka_erp_v2_items";
 const LOGIN_KEY = "gouka_erp_login";
@@ -645,9 +645,9 @@ const seedItems = [
 function loadItems() {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
-    return (saved ? JSON.parse(saved) : seedItems).map(normalizeItem);
+    return (saved ? JSON.parse(saved) : []).map(normalizeItem);
   } catch {
-    return seedItems;
+    return [];
   }
 }
 
@@ -849,7 +849,8 @@ function App() {
       try {
         const cloudItems = await getCloudItems();
         if (cancelled || !Array.isArray(cloudItems) || cloudItems.length === 0) return;
-        const nextItems = cloudItems.map(fromCloudItem);
+        const baseItems = cloudItems.map(fromCloudItem);
+        const nextItems = await hydrateItemsWithImages(baseItems);
         setItems(nextItems);
       } catch (e) {
         console.error("Auto cloud load failed", e);
@@ -953,7 +954,8 @@ function App() {
       sold_price_jpy: Number(x.soldPriceJpy || 0),
       sold_memo: x.soldMemo || "",
       ledger_status: x.ledgerStatus || "VALID",
-      ledger_void_reason: x.ledgerVoidReason || ""
+      ledger_void_reason: x.ledgerVoidReason || "",
+      cloud_images: Array.isArray(x.images) ? x.images.filter((img) => String(img || "").startsWith("http")) : []
     };
   }
 
@@ -992,7 +994,7 @@ function App() {
       soldPlatform: x.sold_platform || "",
       soldPriceJpy: x.sold_price_jpy || 0,
       soldMemo: x.sold_memo || "",
-      images: []
+      images: Array.isArray(x.cloud_images) ? x.cloud_images : []
     });
   }
 
@@ -1000,7 +1002,8 @@ function App() {
     try {
       if (!window.confirm(`同步 ${items.length} 件商品到云端吗？`)) return;
       for (const item of items) {
-        await upsertCloudItem(toCloudItem(item));
+        const cloudImages = await uploadItemImages(item.id, item.images || []);
+        await upsertCloudItem(toCloudItem({ ...item, images: cloudImages }));
       }
       alert("已同步到云端。另一台电脑请点击“从云端读取”。");
     } catch (e) {
@@ -1012,7 +1015,8 @@ function App() {
   async function loadFromCloud() {
     try {
       const cloudItems = await getCloudItems();
-      const nextItems = cloudItems.map(fromCloudItem);
+      const baseItems = cloudItems.map(fromCloudItem);
+      const nextItems = await hydrateItemsWithImages(baseItems);
       if (!window.confirm(`从云端读取 ${nextItems.length} 件商品，并覆盖当前浏览器库存吗？`)) return;
       setItems(nextItems);
       alert(`已从云端读取 ${nextItems.length} 件商品。`);
@@ -1073,6 +1077,8 @@ function App() {
     };
 
     if (editingId) {
+      const cloudImages = await uploadItemImages(editingId, safeForm.images || []);
+      safeForm.images = cloudImages.length ? cloudImages : safeForm.images;
       await saveItemImagesToDb(editingId, safeForm.images || []);
 
       let updatedItem = null;
@@ -1147,11 +1153,13 @@ function App() {
         soldMemo: safeForm.soldMemo || ""
       };
 
-      await saveItemImagesToDb(next.id, next.images || []);
-      setItems([next, ...items]);
+      const cloudImages = await uploadItemImages(next.id, next.images || []);
+      const savedNext = { ...next, images: cloudImages.length ? cloudImages : next.images };
+      await saveItemImagesToDb(savedNext.id, savedNext.images || []);
+      setItems([savedNext, ...items]);
 
       try {
-        await upsertCloudItem(toCloudItem(next));
+        await upsertCloudItem(toCloudItem(savedNext));
       } catch (e) {
         console.error("Cloud insert failed", e);
       }
@@ -1277,7 +1285,7 @@ function App() {
           <Building2 size={24} />
           <div>
             <b>豪嘉株式会社</b>
-            <span>GOUKA Luxury ERP V7.24</span>
+            <span>GOUKA Luxury ERP V8.0</span>
           </div>
         </div>
 
@@ -1293,7 +1301,7 @@ function App() {
       <main>
         <header>
           <div>
-            <h1>二手奢侈品管理系统 V7.24 Cloud Sync</h1>
+            <h1>二手奢侈品管理系统 V8.0 Enterprise Stable</h1>
             <p>自动保存・云端同步・图片上传・状态筛选・古物台账锁定・EMS报关・利润计算</p>
           </div>
           <div className="action-row">
@@ -1593,7 +1601,7 @@ function Dashboard({ totals, items, setTab, exportBackup }) {
       </div>
       <div className="panel wide">
         <h2>经营提醒</h2>
-        <p>V7.11新增今日经营、库存预警、品牌利润排行、供应商利润排行。V7.11已把图片从localStorage拆到IndexedDB，几十件录入更稳定；下一阶段可接Supabase，实现多电脑同步和图片云存储。</p>
+        <p>V7.11新增今日经营、库存预警、品牌利润排行、供应商利润排行。V8.0已接入Supabase云端同步，库存与古物台账可读取云端图片；本地仍保留自动备份。</p>
       </div>
     </section>
   );
@@ -1938,6 +1946,7 @@ function Ledger({ items, setItems, isOwner, downloadCSV }) {
   });
 
   const headers = [
+    "图片",
     "No",
     "取引日",
     "商品番号",
@@ -1960,6 +1969,7 @@ function Ledger({ items, setItems, isOwner, downloadCSV }) {
   ];
 
   const rows = filteredItems.map((x, i) => [
+    x.images && x.images.length ? <img className="thumb" src={x.images[0]} alt={x.item} /> : "—",
     i + 1,
     x.purchaseDate,
     x.id,
