@@ -57,36 +57,100 @@ const BRAND_OPTIONS = [
 ];
 
 const ITEM_OPTIONS_BY_BRAND = {
-  "CHANEL": ["Classic Flap Bag", "Boy Chanel", "Chanel 19", "Chanel 22", "Coco Handle", "Gabrielle", "Wallet on Chain", "Vanity Bag", "Wallet", "其他"],
-  "HERMES": ["Birkin", "Kelly", "Constance", "Picotin", "Garden Party", "Evelyne", "Lindy", "Bolide", "Bearn Wallet", "其他"],
-  "Louis Vuitton": ["Neverfull", "Speedy", "Alma", "OnTheGo", "Keepall", "Pochette", "Noe", "Dauphine", "Wallet", "其他"],
-  "GUCCI": ["Dionysus", "Marmont", "Jackie", "Bamboo", "Ophidia", "Horsebit", "Wallet", "其他"],
-  "Dior": ["Lady Dior", "Book Tote", "Saddle Bag", "Dior Caro", "30 Montaigne", "Wallet", "其他"],
-  "Prada": ["Galleria", "Re-Edition", "Cleo", "Nylon Bag", "Wallet", "其他"],
-  "Fendi": ["Peekaboo", "Baguette", "By The Way", "Sunshine Shopper", "Wallet", "其他"],
-  "Celine": ["Luggage", "Belt Bag", "Triomphe", "Box", "Cab 平", "Wallet", "其他"],
-  "Bottega Veneta": ["Cassette", "Jodie", "Pouch", "Arco", "Wallet", "其他"],
-  "Balenciaga": ["City", "Hourglass", "Le Cagole", "Wallet", "其他"],
-  "Saint Laurent": ["Niki", "Loulou", "Kate", "Sac de Jour", "Wallet", "其他"],
-  "Cartier": ["LOVE Ring", "LOVE Bracelet", "Juste un Clou", "Trinity", "Tank Watch", "Santos", "其他"],
-  "BVLGARI": ["Serpenti", "B.zero1", "Divas' Dream", "Bvlgari Bvlgari", "其他"],
-  "Tiffany": ["T Smile", "T Wire", "Victoria", "Keys", "HardWear", "其他"],
-  "Van Cleef & Arpels": ["Alhambra", "Frivole", "Perlee", "其他"],
-  "Chopard": ["Happy Diamonds", "Ice Cube", "Happy Hearts", "其他"],
-  "Rolex": ["Submariner", "Datejust", "Daytona", "GMT-Master", "Oyster Perpetual", "其他"],
-  "OMEGA": ["Speedmaster", "Seamaster", "Constellation", "De Ville", "其他"]
+  "CHANEL": [
+    "Classic Flap Bag", "Mini Flap Bag", "Double Flap", "Boy Chanel", "Chanel 19", "Chanel 22",
+    "Coco Handle", "Gabrielle", "Wallet on Chain", "WOC", "Vanity Bag", "Business Affinity",
+    "Deauville", "Cambon", "GST", "PST", "Camera Bag", "Shopping Tote", "Backpack",
+    "Wallet", "Long Wallet", "Card Holder", "Key Case", "Brooch", "Earrings", "Necklace", "Bracelet", "其他"
+  ],
+  "HERMES": [
+    "Birkin", "Kelly", "Kelly Sellier", "Kelly Retourne", "Constance", "Picotin", "Garden Party",
+    "Evelyne", "Lindy", "Bolide", "Herbag", "Jypsiere", "Roulis", "Halzan", "24/24", "Verrou",
+    "Bearn Wallet", "Kelly Wallet", "Constance Wallet", "Silk Scarf", "Twilly", "Belt", "其他"
+  ],
+  "Louis Vuitton": [
+    "Neverfull", "Speedy", "Alma", "OnTheGo", "Keepall", "Pochette", "Pochette Accessoires", "Noe",
+    "Dauphine", "Capucines", "Twist", "Multi Pochette", "Felicie", "Metis", "Pochette Metis",
+    "Palm Springs", "Cluny", "Cannes", "Loop", "Boulogne", "Carryall", "Graceful", "Artsky", "Delightful",
+    "Montsouris", "Saumur", "Papillon", "Eva", "Favorite", "Turenne", "Trevi", "Montaigne", "Lockit",
+    "Wallet", "Zippy Wallet", "Victorine Wallet", "Sarah Wallet", "Card Holder", "Key Case", "Agenda", "其他"
+  ],
+  "GUCCI": [
+    "Dionysus", "Marmont", "GG Marmont", "Jackie", "Jackie 1961", "Bamboo", "Ophidia", "Horsebit",
+    "Soho", "Sylvie", "Padlock", "1955 Horsebit", "Belt Bag", "Tote Bag", "Wallet", "Card Holder", "其他"
+  ],
+  "Dior": [
+    "Lady Dior", "Book Tote", "Saddle Bag", "Dior Caro", "30 Montaigne", "Diorama", "Diorissimo",
+    "Bobby", "Camp", "Trotter", "Oblique", "Wallet", "Card Holder", "其他"
+  ],
+  "Prada": [
+    "Galleria", "Re-Edition", "Cleo", "Nylon Bag", "Tessuto", "Saffiano Tote", "Canapa", "Hobo Bag",
+    "Backpack", "Wallet", "Card Holder", "其他"
+  ],
+  "Fendi": [
+    "Peekaboo", "Baguette", "By The Way", "Sunshine Shopper", "Kan I", "Mama Baguette", "Spy Bag",
+    "Wallet", "Card Holder", "其他"
+  ],
+  "Celine": [
+    "Luggage", "Belt Bag", "Triomphe", "Box", "Cabas", "Phantom", "Classic Box", "Ava", "16 Bag",
+    "Trapeze", "Micro Luggage", "Nano Luggage", "Wallet", "Card Holder", "其他"
+  ],
+  "Bottega Veneta": [
+    "Cassette", "Jodie", "Pouch", "Arco", "Veneta", "Cabat", "Loop", "Intrecciato Wallet", "Card Holder", "其他"
+  ],
+  "Balenciaga": [
+    "City", "Hourglass", "Le Cagole", "Neo Classic", "Everyday", "Navy Cabas", "Wallet", "Card Holder", "其他"
+  ],
+  "Saint Laurent": [
+    "Niki", "Loulou", "Kate", "Sac de Jour", "Sunset", "College", "Cassandra", "Envelope", "Toy LouLou",
+    "Wallet", "Card Holder", "其他"
+  ],
+  "LOEWE": [
+    "Puzzle", "Hammock", "Gate", "Amazona", "Flamenco", "Barcelona", "Basket", "Wallet", "Card Holder", "其他"
+  ],
+  "Cartier": [
+    "LOVE Ring", "LOVE Bracelet", "Juste un Clou", "Trinity", "Tank Watch", "Santos", "Ballon Bleu",
+    "Panthere", "Pasha", "Must de Cartier", "Ring", "Necklace", "Bracelet", "Earrings", "其他"
+  ],
+  "BVLGARI": [
+    "Serpenti", "B.zero1", "Divas' Dream", "Bvlgari Bvlgari", "Save the Children", "Ring", "Necklace", "Bracelet", "Earrings", "Watch", "其他"
+  ],
+  "Tiffany": [
+    "T Smile", "T Wire", "Victoria", "Keys", "HardWear", "Atlas", "1837", "Open Heart", "Bean", "Ring", "Necklace", "Bracelet", "Earrings", "其他"
+  ],
+  "Van Cleef & Arpels": [
+    "Alhambra", "Vintage Alhambra", "Sweet Alhambra", "Magic Alhambra", "Frivole", "Perlee", "Lucky Alhambra", "Necklace", "Bracelet", "Ring", "Earrings", "其他"
+  ],
+  "Chopard": [
+    "Happy Diamonds", "Ice Cube", "Happy Hearts", "Mille Miglia", "Ring", "Necklace", "Bracelet", "Earrings", "Watch", "其他"
+  ],
+  "Rolex": [
+    "Submariner", "Datejust", "Daytona", "GMT-Master", "GMT-Master II", "Oyster Perpetual", "Explorer", "Explorer II",
+    "Sea-Dweller", "Yacht-Master", "Day-Date", "Air-King", "Milgauss", "其他"
+  ],
+  "OMEGA": [
+    "Speedmaster", "Seamaster", "Constellation", "De Ville", "Aqua Terra", "Planet Ocean", "Railmaster", "其他"
+  ]
 };
 
 const MATERIAL_OPTIONS = [
-  "Caviar Leather", "Lambskin Leather", "Calfskin Leather", "Coated Canvas", "Canvas",
-  "Togo Leather", "Epsom Leather", "Swift Leather", "Clemence Leather", "Box Leather",
-  "Monogram Canvas", "Damier Canvas", "Nylon", "Gold", "Pink Gold", "White Gold",
-  "Silver", "Platinum", "Diamond", "Ceramic", "其他"
+  "Caviar Leather", "Lambskin Leather", "Calfskin Leather", "Grained Calfskin", "Smooth Calfskin",
+  "Patent Leather", "Goatskin", "Sheepskin", "Taurillon Leather", "Vachetta Leather", "Nomade Leather",
+  "Togo Leather", "Epsom Leather", "Swift Leather", "Clemence Leather", "Box Leather", "Barenia Leather",
+  "Fjord Leather", "Chevre Leather", "Evercolor Leather", "Evergrain Leather",
+  "Exotic Leather", "Crocodile", "Alligator", "Lizard", "Ostrich", "Python",
+  "Coated Canvas", "Canvas", "Monogram Canvas", "Damier Canvas", "Damier Ebene", "Damier Azur",
+  "Epi Leather", "Taiga Leather", "GG Canvas", "Oblique Canvas", "Triomphe Canvas",
+  "Nylon", "Tessuto Nylon", "Denim", "Tweed", "Suede", "Velvet", "Satin", "Silk", "Wool", "Cashmere",
+  "Gold", "Yellow Gold", "Pink Gold", "Rose Gold", "White Gold", "Silver", "Sterling Silver",
+  "Platinum", "Diamond", "Pearl", "Ruby", "Sapphire", "Emerald", "Onyx", "Mother of Pearl",
+  "Ceramic", "Steel", "Stainless Steel", "Titanium", "Carbon", "PVC", "Plastic", "Resin", "其他"
 ];
 
 const COLOR_OPTIONS = [
-  "Black", "Brown", "White", "Beige", "Grey", "Blue", "Navy", "Red", "Pink",
-  "Green", "Yellow", "Orange", "Purple", "Gold", "Silver", "Multicolor", "其他"
+  "Black", "Brown", "Dark Brown", "Light Brown", "White", "Beige", "Ivory", "Cream", "Grey", "Etoupe", "Etain", "Taupe",
+  "Blue", "Navy", "Light Blue", "Red", "Bordeaux", "Wine", "Pink", "Rose", "Green", "Olive", "Yellow", "Orange",
+  "Purple", "Gold", "Silver", "Champagne", "Bronze", "Monogram", "Damier", "Multicolor", "Clear", "其他"
 ];
 
 const ORIGIN_OPTIONS = [
@@ -854,7 +918,7 @@ function App() {
           <Building2 size={24} />
           <div>
             <b>豪嘉株式会社</b>
-            <span>GOUKA Luxury ERP V7.0</span>
+            <span>GOUKA Luxury ERP V7.01</span>
           </div>
         </div>
 
@@ -870,7 +934,7 @@ function App() {
       <main>
         <header>
           <div>
-            <h1>二手奢侈品管理系统 V7.0</h1>
+            <h1>二手奢侈品管理系统 V7.01</h1>
             <p>自动保存・图片上传・状态筛选・古物台账锁定・EMS报关・利润计算・备份恢复</p>
           </div>
           <span className="pill">Auto Save · {isOwner ? "老板" : "员工"}</span>
@@ -1029,7 +1093,7 @@ function Dashboard({ totals, items, setTab, exportBackup }) {
     <section className="v3-dashboard">
       <div className="v3-hero">
         <div>
-          <span className="v3-kicker">GOUKA ERP V7.0</span>
+          <span className="v3-kicker">GOUKA ERP V7.01</span>
           <h1>经营驾驶舱</h1>
           <p>今日经营、库存预警、品牌利润、供应商利润集中显示。老板打开第一页就知道该赚钱、该出品、该清库存。</p>
           <div className="v3-hero-actions">
@@ -2563,9 +2627,15 @@ function Select({ label, value, onChange, options }) {
 
 
 function SelectWithOther({ label, value, onChange, options, placeholder = "" }) {
-  const isKnown = options.includes(value);
-  const selectValue = isKnown ? value : (value ? "其他" : "");
-  const showCustom = selectValue === "其他";
+  const safeOptions = Array.isArray(options) ? options : [];
+  const [customMode, setCustomMode] = useState(false);
+  const isKnown = safeOptions.includes(value);
+  const selectValue = customMode ? "其他" : (isKnown ? value : (value ? "其他" : ""));
+  const showCustom = customMode || (!isKnown && !!value);
+
+  React.useEffect(() => {
+    if (value && safeOptions.includes(value)) setCustomMode(false);
+  }, [value, safeOptions.join("|")]);
 
   return (
     <label>
@@ -2575,22 +2645,26 @@ function SelectWithOther({ label, value, onChange, options, placeholder = "" }) 
         onChange={(e) => {
           const v = e.target.value;
           if (v === "其他") {
+            setCustomMode(true);
             onChange("");
           } else {
+            setCustomMode(false);
             onChange(v);
           }
         }}
       >
-        <option value="">{placeholder || "请选择"}</option>
-        {options.map((o) => (
+        <option value="">{placeholder || "请选择；找不到请选其他手动输入"}</option>
+        {safeOptions.map((o) => (
           <option key={o} value={o}>{o}</option>
         ))}
+        {!safeOptions.includes("其他") && <option value="其他">其他</option>}
       </select>
       {showCustom && (
         <input
           style={{ marginTop: "6px" }}
           value={value === "其他" ? "" : value}
-          placeholder="手动输入"
+          placeholder="这里可以手动输入"
+          autoFocus
           onChange={(e) => onChange(e.target.value)}
         />
       )}
