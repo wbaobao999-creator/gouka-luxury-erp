@@ -2,7 +2,7 @@ import React, { useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Package, FileText, Calculator, Search, Plus, Building2, Download, Edit3, Trash2, ImagePlus, Save, X, Lock, Database, Upload } from "lucide-react";
 import "./style.css";
-import { getCloudItems, upsertCloudItem } from "./itemService.js";
+import { getCloudItems, upsertCloudItem, deleteCloudItemByProductNo } from "./itemService.js";
 
 const STORAGE_KEY = "gouka_erp_v2_items";
 const LOGIN_KEY = "gouka_erp_login";
@@ -807,6 +807,7 @@ function App() {
   const [editingId, setEditingId] = useState(null);
   const [previewImage, setPreviewImage] = useState(null);
   const [previewScale, setPreviewScale] = useState(1);
+  const [cloudLoadedOnce, setCloudLoadedOnce] = useState(false);
 
   React.useEffect(() => {
     safeLocalSet(STORAGE_KEY, stripImagesForStorage(items), "商品文字数据");
@@ -839,6 +840,33 @@ function App() {
     // 只在登录后初次进入时补图，避免录入时反复重刷。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoggedIn]);
+
+  React.useEffect(() => {
+    if (!isLoggedIn || cloudLoadedOnce) return;
+
+    let cancelled = false;
+
+    async function autoLoadCloudItems() {
+      try {
+        const cloudItems = await getCloudItems();
+        if (cancelled) return;
+
+        if (Array.isArray(cloudItems) && cloudItems.length > 0) {
+          const nextItems = cloudItems.map(fromCloudItem);
+          setItems(nextItems);
+        }
+      } catch (e) {
+        console.error("Auto cloud load failed", e);
+      } finally {
+        if (!cancelled) setCloudLoadedOnce(true);
+      }
+    }
+
+    autoLoadCloudItems();
+
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoggedIn, cloudLoadedOnce]);
 
   if (!isLoggedIn) {
     return <LoginPage onLogin={(role) => { setSession({ username: "gouka", role, name: "老板账号" }); setIsLoggedIn(true); }} />;
@@ -998,6 +1026,17 @@ function App() {
     }
   }
 
+  async function syncOneItemToCloud(item) {
+    try {
+      await upsertCloudItem(toCloudItem(item));
+      return true;
+    } catch (e) {
+      console.error("Single item cloud sync failed", e);
+      alert("本地已保存，但云端同步失败：" + (e?.message || e));
+      return false;
+    }
+  }
+
   const filtered = useMemo(() => {
     const q = query.toLowerCase();
     return computedItems.filter((x) => {
@@ -1050,37 +1089,40 @@ function App() {
 
     if (editingId) {
       await saveItemImagesToDb(editingId, safeForm.images || []);
-      setItems(
-        items.map((x) =>
-          x.id === editingId
-            ? addHistory({
-                ...x,
-                ...safeForm,
-                productTitle: safeForm.productTitle || makeAutoTitle(safeForm),
-                qty: Number(form.qty || 1),
-                purchaseCurrency: safeForm.purchaseCurrency || "CNY",
-                purchaseCny: Number(safeForm.purchaseCny || 0),
-                purchaseRateToJpy: Number(safeForm.purchaseRateToJpy || defaultRateFor(safeForm.purchaseCurrency || "CNY")),
-                declaredCurrency: safeForm.declaredCurrency || safeForm.purchaseCurrency || "CNY",
-                declaredCny: Number(safeForm.declaredCny || safeForm.purchaseCny || 0),
-                declaredRateToJpy: Number(safeForm.declaredRateToJpy || defaultRateFor(safeForm.declaredCurrency || safeForm.purchaseCurrency || "CNY")),
-                rate: Number(safeForm.purchaseRateToJpy || safeForm.rate || 0),
-                saleJpy: Number(safeForm.saleJpy || 0),
-                shippingJpy: Number(form.shippingJpy || 0),
-                dutyJpy: Number(form.dutyJpy || 0),
-                customsFeeJpy: Number(form.customsFeeJpy || 0),
-                platformFeeJpy: Number(form.platformFeeJpy || 0),
-                otherCostJpy: Number(form.otherCostJpy || 0),
-                images: safeForm.images || [],
-                soldDate: form.soldDate || "",
-                soldPlatform: form.soldPlatform || "",
-                soldPriceJpy: Number(form.soldPriceJpy || 0),
-                soldMemo: form.soldMemo || ""
-              }, session?.username, "编辑商品信息")
-            : x
-        )
-      );
-      alert("商品已更新");
+
+      const updatedItems = items.map((x) => {
+        if (x.id !== editingId) return x;
+
+        return addHistory({
+          ...x,
+          ...safeForm,
+          productTitle: safeForm.productTitle || makeAutoTitle(safeForm),
+          qty: Number(form.qty || 1),
+          purchaseCurrency: safeForm.purchaseCurrency || "CNY",
+          purchaseCny: Number(safeForm.purchaseCny || 0),
+          purchaseRateToJpy: Number(safeForm.purchaseRateToJpy || defaultRateFor(safeForm.purchaseCurrency || "CNY")),
+          declaredCurrency: safeForm.declaredCurrency || safeForm.purchaseCurrency || "CNY",
+          declaredCny: Number(safeForm.declaredCny || safeForm.purchaseCny || 0),
+          declaredRateToJpy: Number(safeForm.declaredRateToJpy || defaultRateFor(safeForm.declaredCurrency || safeForm.purchaseCurrency || "CNY")),
+          rate: Number(safeForm.purchaseRateToJpy || safeForm.rate || 0),
+          saleJpy: Number(safeForm.saleJpy || 0),
+          shippingJpy: Number(form.shippingJpy || 0),
+          dutyJpy: Number(form.dutyJpy || 0),
+          customsFeeJpy: Number(form.customsFeeJpy || 0),
+          platformFeeJpy: Number(form.platformFeeJpy || 0),
+          otherCostJpy: Number(form.otherCostJpy || 0),
+          images: safeForm.images || [],
+          soldDate: form.soldDate || "",
+          soldPlatform: form.soldPlatform || "",
+          soldPriceJpy: Number(form.soldPriceJpy || 0),
+          soldMemo: form.soldMemo || ""
+        }, session?.username, "编辑商品信息");
+      });
+
+      const updatedItem = updatedItems.find((x) => x.id === editingId);
+      setItems(updatedItems);
+      if (updatedItem) await syncOneItemToCloud(updatedItem);
+      alert("商品已更新，并已同步云端");
     } else {
       const next = {
         ...safeForm,
@@ -1110,9 +1152,11 @@ function App() {
         soldPriceJpy: Number(safeForm.soldPriceJpy || 0),
         soldMemo: safeForm.soldMemo || ""
       };
+
       await saveItemImagesToDb(next.id, next.images || []);
       setItems([next, ...items]);
-      alert("商品已添加");
+      await syncOneItemToCloud(next);
+      alert("商品已添加，并已同步云端");
     }
 
     resetForm();
@@ -1136,7 +1180,14 @@ function App() {
     if (!window.confirm(`确认完全删除这条库存记录吗？\n\n${target.id} ${target.brand || ""} ${target.item || ""}\n\n删除后不会出现在库存、利润、报关、古物台账中。`)) return;
     await deleteItemImagesFromDb(id);
     setItems(items.filter((x) => x.id !== id));
-    alert("已完全删除该库存记录。");
+    try {
+      await deleteCloudItemByProductNo(id);
+    } catch (e) {
+      console.error("Cloud delete failed", e);
+      alert("本地已删除，但云端删除失败：" + (e?.message || e));
+      return;
+    }
+    alert("已完全删除该库存记录，并已同步云端。");
   }
 
   async function handleImages(files) {
@@ -1226,7 +1277,7 @@ function App() {
           <Building2 size={24} />
           <div>
             <b>豪嘉株式会社</b>
-            <span>GOUKA Luxury ERP V7.11</span>
+            <span>GOUKA Luxury ERP V7.21</span>
           </div>
         </div>
 
@@ -1242,7 +1293,7 @@ function App() {
       <main>
         <header>
           <div>
-            <h1>二手奢侈品管理系统 V7.11 Image DB</h1>
+            <h1>二手奢侈品管理系统 V7.21 Auto Cloud</h1>
             <p>自动保存・图片上传・状态筛选・古物台账锁定・EMS报关・利润计算・备份恢复</p>
           </div>
           <div className="action-row">
@@ -1405,7 +1456,7 @@ function Dashboard({ totals, items, setTab, exportBackup }) {
     <section className="v3-dashboard">
       <div className="v3-hero">
         <div>
-          <span className="v3-kicker">GOUKA ERP V7.11 Image DB</span>
+          <span className="v3-kicker">GOUKA ERP V7.21 Auto Cloud</span>
           <h1>经营驾驶舱</h1>
           <p>今日经营、库存预警、品牌利润、供应商利润集中显示。老板打开第一页就知道该赚钱、该出品、该清库存。</p>
           <div className="v3-hero-actions">
