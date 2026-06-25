@@ -2,11 +2,28 @@ import { supabase } from "./supabase.js";
 
 const IMAGE_BUCKET = "product-images";
 
+function safeFileExt(dataUrl) {
+  const m = String(dataUrl || "").match(/^data:image\/([a-zA-Z0-9+.-]+);base64,/);
+  const ext = (m?.[1] || "jpg").toLowerCase().replace("jpeg", "jpg");
+  return ["jpg", "png", "webp", "gif"].includes(ext) ? ext : "jpg";
+}
+
+function dataUrlToBlob(dataUrl) {
+  const parts = String(dataUrl || "").split(",");
+  if (parts.length < 2) throw new Error("Invalid image data");
+  const mime = parts[0].match(/:(.*?);/)?.[1] || "image/jpeg";
+  const bin = atob(parts[1]);
+  const len = bin.length;
+  const arr = new Uint8Array(len);
+  for (let i = 0; i < len; i += 1) arr[i] = bin.charCodeAt(i);
+  return new Blob([arr], { type: mime });
+}
+
 export async function getCloudItems() {
   const { data, error } = await supabase
     .from("items")
     .select("*")
-    .order("updated_at", { ascending: false });
+    .order("created_at", { ascending: false });
 
   if (error) {
     console.error("Load cloud items failed:", error);
@@ -21,14 +38,9 @@ export async function getItems() {
 }
 
 export async function upsertCloudItem(item) {
-  const payload = {
-    ...item,
-    updated_at: new Date().toISOString()
-  };
-
   const { data, error } = await supabase
     .from("items")
-    .upsert([payload], { onConflict: "product_no" })
+    .upsert([item], { onConflict: "product_no" })
     .select()
     .single();
 
@@ -44,8 +56,8 @@ export async function addItem(item) {
   return upsertCloudItem(item);
 }
 
-export async function updateItem(id, item) {
-  return upsertCloudItem(item);
+export async function updateItem(productNo, item) {
+  return upsertCloudItem({ ...item, product_no: item.product_no || productNo });
 }
 
 export async function deleteItemCloud(productNo) {
@@ -62,99 +74,41 @@ export async function deleteItemCloud(productNo) {
   return true;
 }
 
-export async function uploadProductImage(productNo, fileOrDataUrl, index = 0) {
-  if (!productNo || !fileOrDataUrl) return null;
+export async function uploadItemImages(productNo, images = []) {
+  const result = [];
+  const list = Array.isArray(images) ? images.slice(0, 3) : [];
 
-  const blob = await dataUrlToBlob(fileOrDataUrl);
-  const filePath = `${productNo}/${Date.now()}-${index}.jpg`;
-
-  const { error } = await supabase.storage
-    .from(IMAGE_BUCKET)
-    .upload(filePath, blob, {
-      contentType: "image/jpeg",
-      upsert: true
-    });
-
-  if (error) {
-    console.error("Image upload failed:", error);
-    throw error;
-  }
-
-  const { data } = supabase.storage
-    .from(IMAGE_BUCKET)
-    .getPublicUrl(filePath);
-
-  return data?.publicUrl || null;
-}
-
-export async function uploadProductImages(productNo, images = []) {
-  const urls = [];
-
-  for (let i = 0; i < images.length; i++) {
-    const img = images[i];
+  for (let i = 0; i < list.length; i += 1) {
+    const img = list[i];
     if (!img) continue;
 
-    if (typeof img === "string" && img.startsWith("http")) {
-      urls.push(img);
+    if (String(img).startsWith("http")) {
+      result.push(img);
       continue;
     }
 
-    const url = await uploadProductImage(productNo, img, i);
-    if (url) urls.push(url);
+    try {
+      const ext = safeFileExt(img);
+      const blob = dataUrlToBlob(img);
+      const safeNo = String(productNo || "item").replace(/[^a-zA-Z0-9_-]/g, "_");
+      const path = `${safeNo}/${Date.now()}_${i}.${ext}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from(IMAGE_BUCKET)
+        .upload(path, blob, {
+          cacheControl: "3600",
+          upsert: true,
+          contentType: blob.type || "image/jpeg"
+        });
+
+      if (uploadError) throw uploadError;
+
+      const { data } = supabase.storage.from(IMAGE_BUCKET).getPublicUrl(path);
+      if (data?.publicUrl) result.push(data.publicUrl);
+    } catch (e) {
+      console.error("Image upload failed:", e);
+    }
   }
 
-  return urls;
-}
-
-export async function deleteProductImages(productNo) {
-  if (!productNo) return true;
-
-  const { data, error } = await supabase.storage
-    .from(IMAGE_BUCKET)
-    .list(productNo);
-
-  if (error) {
-    console.error("List images failed:", error);
-    return false;
-  }
-
-  const paths = (data || []).map((x) => `${productNo}/${x.name}`);
-  if (!paths.length) return true;
-
-  const { error: removeError } = await supabase.storage
-    .from(IMAGE_BUCKET)
-    .remove(paths);
-
-  if (removeError) {
-    console.error("Delete images failed:", removeError);
-    return false;
-  }
-
-  return true;
-}
-
-async function dataUrlToBlob(dataUrl) {
-  if (dataUrl instanceof Blob) return dataUrl;
-
-  if (typeof dataUrl !== "string") {
-    throw new Error("Invalid image data");
-  }
-
-  if (dataUrl.startsWith("http")) {
-    const res = await fetch(dataUrl);
-    return await res.blob();
-  }
-
-  const arr = dataUrl.split(",");
-  const mimeMatch = arr[0].match(/:(.*?);/);
-  const mime = mimeMatch ? mimeMatch[1] : "image/jpeg";
-  const bstr = atob(arr[1]);
-  let n = bstr.length;
-  const u8arr = new Uint8Array(n);
-
-  while (n--) {
-    u8arr[n] = bstr.charCodeAt(n);
-  }
-
-  return new Blob([u8arr], { type: mime });
+  return result;
 }
