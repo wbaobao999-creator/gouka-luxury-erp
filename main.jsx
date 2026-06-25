@@ -2,7 +2,7 @@ import React, { useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Package, FileText, Calculator, Search, Plus, Building2, Download, Edit3, Trash2, ImagePlus, Save, X, Lock, Database, Upload } from "lucide-react";
 import "./style.css";
-import { getCloudItems, upsertCloudItem } from "./itemService.js";
+import { getCloudItems, upsertCloudItem, deleteItemCloud } from "./itemService.js";
 
 const STORAGE_KEY = "gouka_erp_v2_items";
 const LOGIN_KEY = "gouka_erp_login";
@@ -840,6 +840,32 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoggedIn]);
 
+
+  React.useEffect(() => {
+    if (!isLoggedIn) return;
+
+    let cancelled = false;
+
+    async function autoLoadCloudItems() {
+      try {
+        const cloudItems = await getCloudItems();
+        if (cancelled) return;
+        if (Array.isArray(cloudItems) && cloudItems.length > 0) {
+          setItems(cloudItems.map(fromCloudItem));
+        }
+      } catch (e) {
+        console.error("Auto cloud load failed", e);
+      }
+    }
+
+    autoLoadCloudItems();
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoggedIn]);
+
   if (!isLoggedIn) {
     return <LoginPage onLogin={(role) => { setSession({ username: "gouka", role, name: "老板账号" }); setIsLoggedIn(true); }} />;
   }
@@ -1050,37 +1076,46 @@ function App() {
 
     if (editingId) {
       await saveItemImagesToDb(editingId, safeForm.images || []);
-      setItems(
-        items.map((x) =>
-          x.id === editingId
-            ? addHistory({
-                ...x,
-                ...safeForm,
-                productTitle: safeForm.productTitle || makeAutoTitle(safeForm),
-                qty: Number(form.qty || 1),
-                purchaseCurrency: safeForm.purchaseCurrency || "CNY",
-                purchaseCny: Number(safeForm.purchaseCny || 0),
-                purchaseRateToJpy: Number(safeForm.purchaseRateToJpy || defaultRateFor(safeForm.purchaseCurrency || "CNY")),
-                declaredCurrency: safeForm.declaredCurrency || safeForm.purchaseCurrency || "CNY",
-                declaredCny: Number(safeForm.declaredCny || safeForm.purchaseCny || 0),
-                declaredRateToJpy: Number(safeForm.declaredRateToJpy || defaultRateFor(safeForm.declaredCurrency || safeForm.purchaseCurrency || "CNY")),
-                rate: Number(safeForm.purchaseRateToJpy || safeForm.rate || 0),
-                saleJpy: Number(safeForm.saleJpy || 0),
-                shippingJpy: Number(form.shippingJpy || 0),
-                dutyJpy: Number(form.dutyJpy || 0),
-                customsFeeJpy: Number(form.customsFeeJpy || 0),
-                platformFeeJpy: Number(form.platformFeeJpy || 0),
-                otherCostJpy: Number(form.otherCostJpy || 0),
-                images: safeForm.images || [],
-                soldDate: form.soldDate || "",
-                soldPlatform: form.soldPlatform || "",
-                soldPriceJpy: Number(form.soldPriceJpy || 0),
-                soldMemo: form.soldMemo || ""
-              }, session?.username, "编辑商品信息")
-            : x
-        )
-      );
-      alert("商品已更新");
+
+      const updatedItems = items.map((x) => {
+        if (x.id !== editingId) return x;
+
+        return addHistory({
+          ...x,
+          ...safeForm,
+          productTitle: safeForm.productTitle || makeAutoTitle(safeForm),
+          qty: Number(form.qty || 1),
+          purchaseCurrency: safeForm.purchaseCurrency || "CNY",
+          purchaseCny: Number(safeForm.purchaseCny || 0),
+          purchaseRateToJpy: Number(safeForm.purchaseRateToJpy || defaultRateFor(safeForm.purchaseCurrency || "CNY")),
+          declaredCurrency: safeForm.declaredCurrency || safeForm.purchaseCurrency || "CNY",
+          declaredCny: Number(safeForm.declaredCny || safeForm.purchaseCny || 0),
+          declaredRateToJpy: Number(safeForm.declaredRateToJpy || defaultRateFor(safeForm.declaredCurrency || safeForm.purchaseCurrency || "CNY")),
+          rate: Number(safeForm.purchaseRateToJpy || safeForm.rate || 0),
+          saleJpy: Number(safeForm.saleJpy || 0),
+          shippingJpy: Number(form.shippingJpy || 0),
+          dutyJpy: Number(form.dutyJpy || 0),
+          customsFeeJpy: Number(form.customsFeeJpy || 0),
+          platformFeeJpy: Number(form.platformFeeJpy || 0),
+          otherCostJpy: Number(form.otherCostJpy || 0),
+          images: safeForm.images || [],
+          soldDate: form.soldDate || "",
+          soldPlatform: form.soldPlatform || "",
+          soldPriceJpy: Number(form.soldPriceJpy || 0),
+          soldMemo: form.soldMemo || ""
+        }, session?.username, "编辑商品信息");
+      });
+
+      setItems(updatedItems);
+
+      try {
+        const updatedItem = updatedItems.find((x) => x.id === editingId);
+        if (updatedItem) await upsertCloudItem(toCloudItem(updatedItem));
+        alert("商品已更新，并已同步云端");
+      } catch (e) {
+        console.error("Cloud update failed", e);
+        alert("商品已更新。本地已保存，云端同步失败，请稍后点同步到云端。");
+      }
     } else {
       const next = {
         ...safeForm,
@@ -1112,7 +1147,14 @@ function App() {
       };
       await saveItemImagesToDb(next.id, next.images || []);
       setItems([next, ...items]);
-      alert("商品已添加");
+
+      try {
+        await upsertCloudItem(toCloudItem(next));
+        alert("商品已添加，并已同步云端");
+      } catch (e) {
+        console.error("Cloud insert failed", e);
+        alert("商品已添加。本地已保存，云端同步失败，请稍后点同步到云端。");
+      }
     }
 
     resetForm();
@@ -1133,10 +1175,22 @@ function App() {
     if (!isOwner) return alert("员工账号无删除权限");
     const target = items.find((x) => x.id === id);
     if (!target) return;
-    if (!window.confirm(`确认完全删除这条库存记录吗？\n\n${target.id} ${target.brand || ""} ${target.item || ""}\n\n删除后不会出现在库存、利润、报关、古物台账中。`)) return;
+    if (!window.confirm(`确认完全删除这条库存记录吗？
+
+${target.id} ${target.brand || ""} ${target.item || ""}
+
+删除后不会出现在库存、利润、报关、古物台账中。`)) return;
+
     await deleteItemImagesFromDb(id);
     setItems(items.filter((x) => x.id !== id));
-    alert("已完全删除该库存记录。");
+
+    try {
+      await deleteItemCloud(id);
+      alert("已完全删除该库存记录，并已同步云端。");
+    } catch (e) {
+      console.error("Cloud delete failed", e);
+      alert("已从本机删除。云端删除失败，请稍后重试或手动同步。");
+    }
   }
 
   async function handleImages(files) {
