@@ -2,7 +2,7 @@ import React, { useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Package, FileText, Calculator, Search, Plus, Building2, Download, Edit3, Trash2, ImagePlus, Save, X, Lock, Database, Upload } from "lucide-react";
 import "./style.css";
-import { getCloudItems, upsertCloudItem, deleteItemCloud, uploadItemImages } from "./itemService.js";
+import { getCloudItems, upsertCloudItem, deleteItemCloud, uploadItemImages, deleteProductImages } from "./itemService.js";
 
 const STORAGE_KEY = "gouka_erp_v2_items";
 const LOGIN_KEY = "gouka_erp_login";
@@ -918,6 +918,23 @@ function App() {
 
 
 
+  function safeCloudImages(value) {
+    if (Array.isArray(value)) return value.filter(Boolean);
+    if (typeof value === "string" && value.trim()) {
+      try {
+        const parsed = JSON.parse(value);
+        return Array.isArray(parsed) ? parsed.filter(Boolean) : [];
+      } catch {
+        return [];
+      }
+    }
+    return [];
+  }
+
+  function onlyCloudImages(images) {
+    return (Array.isArray(images) ? images : []).filter((img) => String(img || "").startsWith("http"));
+  }
+
   function toCloudItem(x) {
     return {
       product_no: x.id,
@@ -955,7 +972,7 @@ function App() {
       sold_memo: x.soldMemo || "",
       ledger_status: x.ledgerStatus || "VALID",
       ledger_void_reason: x.ledgerVoidReason || "",
-      cloud_images: Array.isArray(x.images) ? x.images.filter((img) => String(img || "").startsWith("http")) : []
+      cloud_images: onlyCloudImages(x.images)
     };
   }
 
@@ -994,7 +1011,7 @@ function App() {
       soldPlatform: x.sold_platform || "",
       soldPriceJpy: x.sold_price_jpy || 0,
       soldMemo: x.sold_memo || "",
-      images: Array.isArray(x.cloud_images) ? x.cloud_images : []
+      images: safeCloudImages(x.cloud_images)
     });
   }
 
@@ -1189,6 +1206,7 @@ function App() {
     await deleteItemImagesFromDb(id);
 
     try {
+      await deleteProductImages(id);
       await deleteItemCloud(id);
     } catch (e) {
       console.error("Cloud delete failed", e);
@@ -1263,8 +1281,6 @@ function App() {
   const menu = [
     ["dashboard", "控制台"],
     ["add", editingId ? "编辑商品" : "商品录入"],
-    ["ai", "AI录入助手"],
-    ["aiChat", "豪嘉AI助理"],
     ["inventory", "库存管理"],
     ["ledger", "古物台账"],
     ["customsBatch", "报关批次"],
@@ -1285,7 +1301,7 @@ function App() {
           <Building2 size={24} />
           <div>
             <b>豪嘉株式会社</b>
-            <span>GOUKA Luxury ERP V8.0</span>
+            <span>GOUKA Luxury ERP V8.03</span>
           </div>
         </div>
 
@@ -1301,7 +1317,7 @@ function App() {
       <main>
         <header>
           <div>
-            <h1>二手奢侈品管理系统 V8.0 Enterprise Stable</h1>
+            <h1>二手奢侈品管理系统 V8.03 Enterprise Stable</h1>
             <p>自动保存・云端同步・图片上传・状态筛选・古物台账锁定・EMS报关・利润计算</p>
           </div>
           <div className="action-row">
@@ -1351,6 +1367,7 @@ function App() {
         {tab === "sales" && <SalesReport items={computedItems} downloadCSV={downloadCSV} />}
         {tab === "suppliers" && <SupplierPanel suppliers={suppliers} setSuppliers={setSuppliers} downloadCSV={downloadCSV} />}
         {tab === "dictionary" && <DictionaryPanel dictionaries={dictionaries} setDictionaries={setDictionaries} />}
+        {tab === "deleteLogs" && <DeleteLogPanel deleteLogs={deleteLogs} downloadCSV={downloadCSV} />}
         {tab === "backup" && <BackupPanel items={items} exportBackup={exportBackup} importBackup={importBackup} />}
 
         {previewImage && (
@@ -1601,7 +1618,7 @@ function Dashboard({ totals, items, setTab, exportBackup }) {
       </div>
       <div className="panel wide">
         <h2>经营提醒</h2>
-        <p>V7.11新增今日经营、库存预警、品牌利润排行、供应商利润排行。V8.0已接入Supabase云端同步，库存与古物台账可读取云端图片；本地仍保留自动备份。</p>
+        <p>V7.11新增今日经营、库存预警、品牌利润排行、供应商利润排行。V8.03已接入Supabase云端同步，库存与古物台账可读取云端图片；本地仍保留自动备份。</p>
       </div>
     </section>
   );
@@ -2670,6 +2687,15 @@ function AiAssistant({ onApplyDraft, dictionaries, suppliers }) {
 }
 
 
+
+function formatDateTime(value) {
+  if (!value) return "";
+  try {
+    return new Date(value).toLocaleString();
+  } catch {
+    return String(value);
+  }
+}
 
 function DeleteLogPanel({ deleteLogs, downloadCSV }) {
   const headers = ["删除时间", "商品编号", "品牌", "商品名", "删除前状态", "删除人", "删除原因"];
