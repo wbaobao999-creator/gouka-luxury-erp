@@ -18,19 +18,23 @@ function safeFileExt(dataUrl) {
 
 function dataUrlToBlob(dataUrl) {
   const parts = String(dataUrl || "").split(",");
-  if (parts.length < 2) throw new Error("Invalid image data");
+  if (parts.length < 2) throw new Error("Invalid image");
 
   const mime = parts[0].match(/:(.*?);/)?.[1] || "image/jpeg";
   const bin = atob(parts[1]);
   const len = bin.length;
   const arr = new Uint8Array(len);
 
-  for (let i = 0; i < len; i += 1) {
+  for (let i = 0; i < len; i++) {
     arr[i] = bin.charCodeAt(i);
   }
 
   return new Blob([arr], { type: mime });
 }
+
+/* ===========================
+   商品
+=========================== */
 
 export async function getCloudItems() {
   const { data, error } = await supabase
@@ -39,7 +43,7 @@ export async function getCloudItems() {
     .order("created_at", { ascending: false });
 
   if (error) {
-    console.error("Load cloud items failed:", error);
+    console.error(error);
     return [];
   }
 
@@ -58,14 +62,13 @@ export async function upsertCloudItem(item) {
 
   const { data, error } = await supabase
     .from("items")
-    .upsert([payload], { onConflict: "product_no" })
+    .upsert([payload], {
+      onConflict: "product_no"
+    })
     .select()
     .single();
 
-  if (error) {
-    console.error("Cloud save failed:", error);
-    throw error;
-  }
+  if (error) throw error;
 
   return data;
 }
@@ -87,20 +90,23 @@ export async function deleteItemCloud(productNo) {
     .delete()
     .eq("product_no", productNo);
 
-  if (error) {
-    console.error("Cloud delete failed:", error);
-    throw error;
-  }
+  if (error) throw error;
 
   return true;
 }
 
-export async function uploadItemImages(productNo, images = []) {
-  const result = [];
-  const list = Array.isArray(images) ? images.slice(0, 3) : [];
+/* ===========================
+   图片上传
+=========================== */
 
-  for (let i = 0; i < list.length; i += 1) {
-    const img = list[i];
+export async function uploadItemImages(productNo, images = []) {
+
+  const result = [];
+
+  for (let i = 0; i < images.length; i++) {
+
+    const img = images[i];
+
     if (!img) continue;
 
     if (isHttpUrl(img)) {
@@ -108,66 +114,79 @@ export async function uploadItemImages(productNo, images = []) {
       continue;
     }
 
-    if (!isDataUrl(img)) {
-      continue;
-    }
+    if (!isDataUrl(img)) continue;
 
     try {
+
       const ext = safeFileExt(img);
+
       const blob = dataUrlToBlob(img);
-      const safeNo = String(productNo || "item").replace(/[^a-zA-Z0-9_-]/g, "_");
-      const path = `${safeNo}/${Date.now()}_${i}.${ext}`;
 
-      const { error: uploadError } = await supabase.storage
-        .from(IMAGE_BUCKET)
-        .upload(path, blob, {
-          cacheControl: "3600",
-          upsert: true,
-          contentType: blob.type || "image/jpeg"
-        });
+      const path =
+        `${String(productNo).replace(/[^a-zA-Z0-9_-]/g,"_")}/${Date.now()}_${i}.${ext}`;
 
-      if (uploadError) throw uploadError;
+      const { error } =
+        await supabase.storage
+          .from(IMAGE_BUCKET)
+          .upload(path, blob, {
+            cacheControl: "3600",
+            upsert: true
+          });
 
-      const { data } = supabase.storage
-        .from(IMAGE_BUCKET)
-        .getPublicUrl(path);
+      if (error) throw error;
 
-      if (data?.publicUrl) {
+      const { data } =
+        supabase.storage
+          .from(IMAGE_BUCKET)
+          .getPublicUrl(path);
+
+      if (data?.publicUrl)
         result.push(data.publicUrl);
-      }
+
     } catch (e) {
-      console.error("Image upload failed:", e);
+
+      console.error(e);
+
     }
+
   }
 
   return result;
+
 }
 
+/* ===========================
+   删除图片
+=========================== */
+
 export async function deleteItemImagesCloud(productNo) {
-  if (!productNo) return true;
 
-  const safeNo = String(productNo || "item").replace(/[^a-zA-Z0-9_-]/g, "_");
+  const folder =
+    String(productNo).replace(/[^a-zA-Z0-9_-]/g,"_");
 
-  const { data, error } = await supabase.storage
-    .from(IMAGE_BUCKET)
-    .list(safeNo);
+  const { data } =
+    await supabase.storage
+      .from(IMAGE_BUCKET)
+      .list(folder);
 
-  if (error) {
-    console.error("List cloud images failed:", error);
-    return false;
-  }
+  if (!data?.length)
+    return true;
 
-  const paths = (data || []).map((x) => `${safeNo}/${x.name}`);
-  if (!paths.length) return true;
+  const paths =
+    data.map(x => `${folder}/${x.name}`);
 
-  const { error: removeError } = await supabase.storage
+  await supabase.storage
     .from(IMAGE_BUCKET)
     .remove(paths);
 
-  if (removeError) {
-    console.error("Delete cloud images failed:", removeError);
-    return false;
-  }
-
   return true;
+
+}
+
+/* ===========================
+   兼容旧版本
+=========================== */
+
+export async function deleteProductImages(productNo) {
+  return deleteItemImagesCloud(productNo);
 }
