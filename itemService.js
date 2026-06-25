@@ -7,7 +7,7 @@ export async function getCloudItems() {
     .order("created_at", { ascending: false });
 
   if (error) {
-    console.error(error);
+    console.error("Load cloud items failed:", error);
     return [];
   }
 
@@ -21,11 +21,17 @@ export async function getItems() {
 export async function upsertCloudItem(item) {
   const { data, error } = await supabase
     .from("items")
-    .upsert([item], { onConflict: "product_no" })
+    .upsert([item], {
+      onConflict: "product_no"
+    })
     .select()
     .single();
 
-  if (error) throw error;
+  if (error) {
+    console.error("Cloud save failed:", error);
+    throw error;
+  }
+
   return data;
 }
 
@@ -41,7 +47,11 @@ export async function updateItem(id, item) {
     .select()
     .single();
 
-  if (error) throw error;
+  if (error) {
+    console.error("Cloud update failed:", error);
+    throw error;
+  }
+
   return data;
 }
 
@@ -51,5 +61,10 @@ export async function deleteItemCloud(id) {
     .delete()
     .eq("id", id);
 
-  if (error) throw error;
+  if (error) {
+    console.error("Cloud delete failed:", error);
+    throw error;
+  }
+
+  return true;
 }
