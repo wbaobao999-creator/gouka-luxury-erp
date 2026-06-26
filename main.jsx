@@ -17,6 +17,8 @@ const USERS = {
 const TAX_RATE = 0.10;
 const CURRENCY_OPTIONS = ["CNY", "USD", "HKD", "EUR", "JPY"];
 const DEFAULT_JPY_RATES = { CNY: 21.8, USD: 157, HKD: 20.1, EUR: 170, JPY: 1 };
+const WORKFLOW_STATUSES = ["采购中", "运输中", "已入库", "待出品", "已出品", "已售出", "已发货", "报关准备", "保留", "退货"];
+const LISTING_PLATFORMS = ["Mercari", "Yahoo", "楽天", "店铺", "NBAA", "OBA", "ECO Ring", "JBA", "AUCNET", "Star Buyers", "其他"];
 
 function defaultRateFor(currency) {
   return DEFAULT_JPY_RATES[currency] || 1;
@@ -164,6 +166,8 @@ const SOURCE_OPTIONS = [
 ];
 
 const PLATFORM_OPTIONS = [
+  "Mercari", "Yahoo", "楽天", "店铺",
+  "NBAA", "OBA", "ECO Ring", "JBA", "AUCNET", "Star Buyers",
   "EMS", "DHL", "FedEx", "UPS", "SF Express", "Yamato", "佐川急便", "日本郵便",
   "手提搬入", "船运", "空运", "其他"
 ];
@@ -699,6 +703,10 @@ function cny(n) {
   return "CNY " + money(Number(n || 0));
 }
 
+function isSoldStatus(status) {
+  return status === "已售出" || status === "已发货";
+}
+
 function makeNextId(items) {
   const d = new Date();
   const ym = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}`;
@@ -1063,7 +1071,7 @@ function App() {
         if (!x.customsBatchId || !batchIdsWithActualTax.has(x.customsBatchId)) a.inputTax += t.inputTax;
         a.outputTax += t.outputTax;
         a.profitExTax += t.profitExTax;
-        if (x.status === "已售出") {
+        if (isSoldStatus(x.status)) {
           a.soldCount += Number(x.qty || 0);
           a.soldAmount += Number(x.soldPriceJpy || x.saleJpy || 0);
           a.soldProfit += t.profitExTax;
@@ -1214,6 +1222,25 @@ function App() {
     alert("已完全删除该库存记录，并已同步云端。");
   }
 
+  async function updateListingItem(id, patch, actionText = "出品管理更新") {
+    const target = items.find((x) => x.id === id);
+    if (!target) return;
+
+    const nextItem = addHistory({
+      ...target,
+      ...patch
+    }, session?.username || "gouka", actionText);
+
+    setItems((prev) => prev.map((x) => x.id === id ? nextItem : x));
+
+    try {
+      await upsertCloudItem(toCloudItem(nextItem));
+    } catch (e) {
+      console.error("Listing cloud update failed", e);
+      alert("出品状态已在本机更新，但云端同步失败：" + (e?.message || e));
+    }
+  }
+
   async function handleImages(files) {
     const remain = Math.max(0, 3 - ((form.images || []).length));
     if (remain <= 0) return alert("每件商品最多保存3张图片。请先删除旧图片。");
@@ -1354,7 +1381,7 @@ function App() {
       <div class="pdf-header">
         <div>
           <h1>商品资料 PDF</h1>
-          <p>Product Sheet / GOUKA Luxury ERP V9.01</p>
+          <p>Product Sheet / GOUKA Luxury ERP V9.03</p>
         </div>
         <div class="company">
           <b>豪嘉株式会社</b><br />
@@ -1454,22 +1481,10 @@ function App() {
     openPdfWindow(`${label}_${new Date().toISOString().slice(0,10)}`, body);
   }
 
-  function exportLedgerPdf(targetItems = null, label = "古物台帳") {
-    const arr = Array.isArray(targetItems) ? targetItems : (computedItems || []);
-    if (!arr.length) {
-      alert("没有可导出的古物台账。请先勾选商品或调整日期范围。 ");
-      return;
-    }
-
-    const sum = arr.reduce((a, x) => {
-      a.qty += Number(x.qty || 1);
-      a.purchase += Number(x.purchaseCny || 0);
-      a.withImages += x.images?.length ? 1 : 0;
-      return a;
-    }, { qty: 0, purchase: 0, withImages: 0 });
-
+  function exportLedgerPdf() {
+    const arr = computedItems || [];
     const rows = arr.map((x, i) => `<tr>
-      <td>${pdfImageHtml(x, 70)}</td>
+      <td>${pdfImageHtml(x, 40)}</td>
       <td>${i + 1}</td>
       <td>${htmlEscape(x.purchaseDate)}</td>
       <td>${htmlEscape(x.id)}</td>
@@ -1478,52 +1493,19 @@ function App() {
       <td>${htmlEscape(x.item)}</td>
       <td>${htmlEscape((x.material || "") + " / " + (x.color || "") + " / " + (x.origin || ""))}</td>
       <td>${htmlEscape(x.qty)}</td>
-      <td class="right">${htmlEscape(x.purchaseCny)}</td>
-      <td>${htmlEscape(x.purchaseCurrency || "CNY")}</td>
+      <td>${htmlEscape(x.purchaseCny)} ${htmlEscape(x.purchaseCurrency || "CNY")}</td>
       <td>${htmlEscape(x.source)}</td>
       <td>${htmlEscape(x.address)}</td>
       <td>${htmlEscape(x.idCheck)}</td>
-      <td>${htmlEscape(x.memo || "")}</td>
       <td>${htmlEscape(x.ledgerStatus || "有效")}</td>
     </tr>`).join("");
 
     const body = `
-      ${companyPdfHeader(label, "Kobutsu Ledger / 古物台帳")}
-      <div class="section"><h2>台帳概要</h2><div class="summary-grid">
-        <div class="field"><small>台帳件数</small><b>${arr.length} 件</b></div>
-        <div class="field"><small>数量合計</small><b>${sum.qty} 点</b></div>
-        <div class="field"><small>仕入金額合計</small><b>CNY ${money(sum.purchase)}</b></div>
-        <div class="field"><small>画像あり</small><b>${sum.withImages} 件</b></div>
-      </div></div>
-      <div class="section">
-        <h2>古物台帳明細</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>画像</th>
-              <th>No</th>
-              <th>取引日</th>
-              <th>商品番号</th>
-              <th>区分</th>
-              <th>ブランド</th>
-              <th>商品名</th>
-              <th>特徴</th>
-              <th>数量</th>
-              <th>仕入金額</th>
-              <th>通貨</th>
-              <th>相手方</th>
-              <th>住所</th>
-              <th>本人確認</th>
-              <th>備考</th>
-              <th>状態</th>
-            </tr>
-          </thead>
-          <tbody>${rows}</tbody>
-        </table>
-      </div>
-      <div class="footer">GOUKA Luxury ERP Enterprise / 古物台帳は税理士確認用の社内資料です。物理削除ではなく、更正・作废履歴を保管してください。</div>
+      <div class="pdf-header"><div><h1>古物台账 PDF</h1><p>Kobutsu Ledger</p></div><div class="company"><b>豪嘉株式会社</b><br/>${new Date().toLocaleString()}</div></div>
+      <div class="section"><table><thead><tr><th>图</th><th>No</th><th>取引日</th><th>商品番号</th><th>区分</th><th>品牌</th><th>商品名</th><th>特徴</th><th>数量</th><th>金额</th><th>相手方</th><th>住所</th><th>本人確認</th><th>状态</th></tr></thead><tbody>${rows}</tbody></table></div>
+      <div class="footer">古物台账不建议物理删除。更正/作废请保留履历。</div>
     `;
-    openPdfWindow(`${label}_${new Date().toISOString().slice(0,10)}`, body);
+    openPdfWindow("古物台账_PDF", body);
   }
 
   function exportCustomsPdf() {
@@ -1588,6 +1570,7 @@ function App() {
     ["customs", "EMS报关"],
     ["profit", "利润分析"],
     ["tax", "消费税参考"],
+    ["listing", "出品管理"],
     ["sales", "销售记录"],
     ["pdf", "PDF导出"],
     ["suppliers", "供应商管理"],
@@ -1603,7 +1586,7 @@ function App() {
           <Building2 size={24} />
           <div>
             <b>豪嘉株式会社</b>
-            <span>GOUKA Luxury ERP V9.01</span>
+            <span>GOUKA Luxury ERP V9.03</span>
           </div>
         </div>
 
@@ -1619,7 +1602,7 @@ function App() {
       <main>
         <header>
           <div>
-            <h1>二手奢侈品管理系统 V9.01 Enterprise PDF</h1>
+            <h1>二手奢侈品管理系统 V9.03 Listing Management</h1>
             <p>自动保存・云端同步・图片上传・状态筛选・古物台账锁定・EMS报关・利润计算</p>
           </div>
           <div className="action-row">
@@ -1667,6 +1650,7 @@ function App() {
         {tab === "customs" && <Customs items={filtered} customsBatches={customsBatches} downloadCSV={downloadCSV} />}
         {tab === "profit" && <Profit items={filtered} />}
         {tab === "tax" && <TaxReport items={filtered} totals={totals} customsBatches={customsBatches} downloadCSV={downloadCSV} />}
+        {tab === "listing" && <ListingManagement items={computedItems} updateListingItem={updateListingItem} editItem={editItem} setPreviewImage={setPreviewImage} setPreviewScale={setPreviewScale} />}
         {tab === "sales" && <SalesReport items={computedItems} downloadCSV={downloadCSV} />}
         {tab === "pdf" && <PdfExportPanel items={computedItems} totals={totals} exportInventoryPdf={exportInventoryPdf} exportLedgerPdf={exportLedgerPdf} exportCustomsPdf={exportCustomsPdf} exportItemPdf={exportItemPdf} />}
         {tab === "suppliers" && <SupplierPanel suppliers={suppliers} setSuppliers={setSuppliers} downloadCSV={downloadCSV} />}
@@ -1693,20 +1677,20 @@ function App() {
 
 function Dashboard({ totals, items, setTab, exportBackup }) {
   const withImages = items.filter((x) => x.images && x.images.length).length;
-  const activeItems = items.filter((x) => x.status !== "已售出" && x.status !== "退货");
+  const activeItems = items.filter((x) => !isSoldStatus(x.status) && x.status !== "退货");
   const activeStock = activeItems.length;
-  const soldItems = items.filter((x) => x.status === "已售出");
+  const soldItems = items.filter((x) => isSoldStatus(x.status));
   const month = currentMonth();
   const today = new Date().toISOString().slice(0, 10);
 
   const todayIn = items.filter((x) => (x.purchaseDate || "") === today);
-  const todaySold = items.filter((x) => (x.soldDate || "") === today || (x.status === "已售出" && !(x.soldDate)));
+  const todaySold = items.filter((x) => (x.soldDate || "") === today || (isSoldStatus(x.status) && !(x.soldDate)));
   const todayPurchase = todayIn.reduce((a, x) => a + calcTax(x).costJpy, 0);
   const todaySale = todaySold.reduce((a, x) => a + calcTax(x).saleJpy, 0);
   const todayProfit = todaySold.reduce((a, x) => a + calcTax(x).profitExTax, 0);
 
   const monthIn = items.filter((x) => (x.purchaseDate || "").startsWith(month));
-  const monthSold = items.filter((x) => (x.soldDate || "").startsWith(month) || (x.status === "已售出" && !(x.soldDate)));
+  const monthSold = items.filter((x) => (x.soldDate || "").startsWith(month) || (isSoldStatus(x.status) && !(x.soldDate)));
   const monthSale = monthSold.reduce((a, x) => a + calcTax(x).saleJpy, 0);
   const monthProfit = monthSold.reduce((a, x) => a + calcTax(x).profitExTax, 0);
   const recent = items.slice(0, 5);
@@ -1716,7 +1700,7 @@ function Dashboard({ totals, items, setTab, exportBackup }) {
 
   const todoCustoms = items.filter((x) => x.status === "报关准备").length;
   const todoListing = items.filter((x) => x.status === "已入库").length;
-  const todoShipping = items.filter((x) => x.status === "已售出" && !String(x.soldMemo || "").includes("発送済")).length;
+  const todoShipping = items.filter((x) => isSoldStatus(x.status) && !String(x.soldMemo || "").includes("発送済")).length;
   const now = new Date();
 
   function stockAgeDays(x) {
@@ -1922,7 +1906,7 @@ function Dashboard({ totals, items, setTab, exportBackup }) {
       </div>
       <div className="panel wide">
         <h2>经营提醒</h2>
-        <p>V7.11新增今日经营、库存预警、品牌利润排行、供应商利润排行。V9.01已接入企业版PDF模板、Supabase云端同步与云端图片；本地仍保留自动备份。</p>
+        <p>V7.11新增今日经营、库存预警、品牌利润排行、供应商利润排行。V9.03已接入出品管理、企业版PDF模板、Supabase云端同步与云端图片；本地仍保留自动备份。</p>
       </div>
     </section>
   );
@@ -2027,7 +2011,7 @@ function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, 
 
         <SelectWithOther label="本人确认方式" value={form.idCheck} onChange={(v) => set("idCheck", v)} options={dictionaries.idChecks} placeholder="选择或输入确认方式" />
 
-        <Select label="状态" value={form.status} onChange={(v) => set("status", v)} options={["采购中", "运输中", "已入库", "报关准备", "出品中", "已售出", "保留", "退货"]} />
+        <Select label="状态" value={form.status} onChange={(v) => set("status", v)} options={WORKFLOW_STATUSES} />
 
         <SelectWithOther label="平台 / 运输方式" value={form.platform} onChange={(v) => set("platform", v)} options={dictionaries.platforms} placeholder="选择或输入平台" />
 
@@ -2056,7 +2040,7 @@ function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, 
           </div>
         </div>
 
-        {form.status === "已售出" && (
+        {isSoldStatus(form.status) && (
           <>
             <Input label="销售日期" type="date" value={form.soldDate || ""} onChange={(v) => set("soldDate", v)} />
             <Input label="销售平台" value={form.soldPlatform || ""} onChange={(v) => set("soldPlatform", v)} placeholder="EcoRing / Mercari / 店铺 / 其他" />
@@ -2116,7 +2100,7 @@ function StatusBadge({ status }) {
 
 function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, downloadCSV, editItem, deleteItem, isOwner, setPreviewImage, setPreviewScale, exportItemPdf }) {
   const [detailItem, setDetailItem] = useState(null);
-  const headers = ["图片", "商品编号", "入库日期", "品牌", "商品名", "状态", "报关批次", "真实成本JPY", "预计售价JPY（税込）", "销售消费税", "税抜售价", "净利润", "利润率", "操作"];
+  const headers = ["图片", "商品编号", "入库日期", "品牌", "商品名", "状态", "平台", "报关批次", "真实成本JPY", "预计售价JPY（税込）", "销售消费税", "税抜售价", "净利润", "利润率", "操作"];
   const csvHeaders = ["商品编号", "入库日期", "品类", "品牌", "商品名", "材质", "颜色", "产地", "数量", "采购币种", "采购金额", "采购汇率", "申报币种", "申报金额", "申报汇率", "采购JPY", "附加成本JPY", "真实成本JPY", "报关批次", "进项消费税估算", "预计销售JPY税込", "销售消费税", "税抜售价", "净利润", "状态"];
   const csvRows = [csvHeaders];
 
@@ -2134,6 +2118,7 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
       x.brand,
       x.item,
       <StatusBadge status={x.status} />,
+      x.platform || "—",
       x.customsBatchId || "—",
       Math.round(t.costJpy),
       x.saleJpy,
@@ -2528,11 +2513,161 @@ function TaxReport({ items, totals, customsBatches, downloadCSV }) {
 }
 
 
+
+function ListingManagement({ items, updateListingItem, editItem, setPreviewImage, setPreviewScale }) {
+  const [query, setQuery] = useState("");
+  const [platformFilter, setPlatformFilter] = useState("全部");
+  const [editingPlatformId, setEditingPlatformId] = useState(null);
+  const [platformDraft, setPlatformDraft] = useState({ platform: "", customPlatform: "", saleJpy: "", soldPriceJpy: "" });
+
+  const q = query.toLowerCase();
+  const kanbanStatuses = ["已入库", "待出品", "已出品", "已售出", "已发货"];
+  const platforms = ["全部", ...LISTING_PLATFORMS];
+
+  const filteredItems = (items || []).filter((x) => {
+    const text = [x.id, x.brand, x.item, x.material, x.color, x.platform, x.status, x.memo].join(" ").toLowerCase();
+    const matchText = !q || text.includes(q);
+    const matchPlatform = platformFilter === "全部" || x.platform === platformFilter;
+    return matchText && matchPlatform;
+  });
+
+  function itemsByStatus(status) {
+    return filteredItems.filter((x) => x.status === status);
+  }
+
+  function openPlatformEditor(item) {
+    setEditingPlatformId(item.id);
+    setPlatformDraft({
+      platform: LISTING_PLATFORMS.includes(item.platform) ? item.platform : (item.platform ? "其他" : ""),
+      customPlatform: LISTING_PLATFORMS.includes(item.platform) ? "" : (item.platform || ""),
+      saleJpy: item.saleJpy || "",
+      soldPriceJpy: item.soldPriceJpy || ""
+    });
+  }
+
+  async function savePlatform(item) {
+    const platform = platformDraft.platform === "其他" ? platformDraft.customPlatform : platformDraft.platform;
+    await updateListingItem(item.id, {
+      platform: platform || item.platform || "",
+      saleJpy: Number(platformDraft.saleJpy || item.saleJpy || 0),
+      soldPriceJpy: Number(platformDraft.soldPriceJpy || item.soldPriceJpy || 0)
+    }, "出品平台/价格更新");
+    setEditingPlatformId(null);
+  }
+
+  async function moveStatus(item, nextStatus) {
+    const patch = { status: nextStatus };
+    if (nextStatus === "已售出") {
+      patch.soldDate = item.soldDate || new Date().toISOString().slice(0, 10);
+      patch.soldPlatform = item.soldPlatform || item.platform || "";
+      patch.soldPriceJpy = Number(item.soldPriceJpy || item.saleJpy || 0);
+    }
+    if (nextStatus === "已发货") {
+      patch.soldDate = item.soldDate || new Date().toISOString().slice(0, 10);
+      patch.soldPlatform = item.soldPlatform || item.platform || "";
+      patch.soldPriceJpy = Number(item.soldPriceJpy || item.saleJpy || 0);
+      patch.soldMemo = String(item.soldMemo || "").includes("発送済") ? item.soldMemo : `${item.soldMemo || ""} 発送済`.trim();
+    }
+    await updateListingItem(item.id, patch, `出品状态变更：${item.status || "未设置"} → ${nextStatus}`);
+  }
+
+  const counts = kanbanStatuses.reduce((a, st) => ({ ...a, [st]: itemsByStatus(st).length }), {});
+
+  return (
+    <div className="panel">
+      <h2><Package size={20} /> 出品管理</h2>
+      <p className="note">把商品从「已入库 → 待出品 → 已出品 → 已售出 → 已发货」按流程管理。平台支持 Mercari / Yahoo / 楽天 / 店铺 / NBAA / OBA / ECO Ring，也可以手动输入。</p>
+
+      <div className="grid4" style={{marginBottom:"16px"}}>
+        <Card icon={<Package />} title="已入库" value={`${counts["已入库"] || 0} 件`} />
+        <Card icon={<FileText />} title="待出品" value={`${counts["待出品"] || 0} 件`} />
+        <Card icon={<Upload />} title="已出品" value={`${counts["已出品"] || 0} 件`} />
+        <Card icon={<Calculator />} title="已售/已发货" value={`${(counts["已售出"] || 0) + (counts["已发货"] || 0)} 件`} />
+      </div>
+
+      <div className="toolbar" style={{marginBottom:"16px"}}>
+        <h2>流程看板</h2>
+        <div className="toolbar-right">
+          <div className="search">
+            <Search size={16} />
+            <input placeholder="搜索编号 / 品牌 / 商品 / 平台" value={query} onChange={(e) => setQuery(e.target.value)} />
+          </div>
+          <select value={platformFilter} onChange={(e) => setPlatformFilter(e.target.value)}>
+            {platforms.map((p) => <option key={p}>{p}</option>)}
+          </select>
+          <button onClick={() => { setQuery(""); setPlatformFilter("全部"); }}>清除</button>
+        </div>
+      </div>
+
+      <div style={{display:"grid", gridTemplateColumns:"repeat(5, minmax(220px, 1fr))", gap:"12px", alignItems:"start", overflowX:"auto", paddingBottom:"8px"}}>
+        {kanbanStatuses.map((status, idx) => (
+          <div key={status} style={{background:"#f8fafc", border:"1px solid #e5e7eb", borderRadius:"16px", padding:"12px", minHeight:"420px"}}>
+            <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"10px"}}>
+              <b>{idx + 1}. {status}</b>
+              <span className="pill">{itemsByStatus(status).length} 件</span>
+            </div>
+            <div style={{display:"flex", flexDirection:"column", gap:"10px"}}>
+              {itemsByStatus(status).map((item) => {
+                const t = calcTax(item);
+                const nextStatus = status === "已入库" ? "待出品" : status === "待出品" ? "已出品" : status === "已出品" ? "已售出" : status === "已售出" ? "已发货" : "";
+                return (
+                  <div key={item.id} style={{background:"#fff", border:"1px solid #e5e7eb", borderRadius:"14px", padding:"10px", boxShadow:"0 8px 18px rgba(15,23,42,.05)"}}>
+                    <div style={{display:"flex", gap:"10px", alignItems:"flex-start"}}>
+                      <div style={{width:"62px", height:"62px", borderRadius:"12px", background:"#eef2ff", overflow:"hidden", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0}}>
+                        {item.images?.[0] ? <img src={item.images[0]} alt={item.item} style={{width:"100%", height:"100%", objectFit:"cover", cursor:"pointer"}} onClick={() => { setPreviewScale(1); setPreviewImage(item.images[0]); }} /> : "📦"}
+                      </div>
+                      <div style={{minWidth:0}}>
+                        <b style={{display:"block", fontSize:"13px", lineHeight:1.35}}>{item.brand} {item.item}</b>
+                        <small style={{color:"#64748b"}}>{item.id}</small>
+                        <div style={{marginTop:"5px"}}><StatusBadge status={item.status} /></div>
+                      </div>
+                    </div>
+
+                    <div style={{fontSize:"12px", color:"#475569", marginTop:"10px", lineHeight:1.6}}>
+                      <div><b>平台：</b>{item.platform || "未设置"}</div>
+                      <div><b>预计价：</b>{jpy(item.saleJpy)}</div>
+                      <div><b>成交价：</b>{jpy(item.soldPriceJpy || 0)}</div>
+                      <div><b>参考利润：</b>{jpy(t.profitExTax)}</div>
+                    </div>
+
+                    {editingPlatformId === item.id ? (
+                      <div style={{marginTop:"10px", display:"grid", gap:"8px"}}>
+                        <select value={platformDraft.platform} onChange={(e) => setPlatformDraft({ ...platformDraft, platform: e.target.value })}>
+                          <option value="">选择平台</option>
+                          {LISTING_PLATFORMS.map((p) => <option key={p}>{p}</option>)}
+                        </select>
+                        {platformDraft.platform === "其他" && <input value={platformDraft.customPlatform} onChange={(e) => setPlatformDraft({ ...platformDraft, customPlatform: e.target.value })} placeholder="手动输入平台 / 拍卖会 / 客户" />}
+                        <input type="number" value={platformDraft.saleJpy} onChange={(e) => setPlatformDraft({ ...platformDraft, saleJpy: e.target.value })} placeholder="预计出品价 JPY" />
+                        <input type="number" value={platformDraft.soldPriceJpy} onChange={(e) => setPlatformDraft({ ...platformDraft, soldPriceJpy: e.target.value })} placeholder="实际成交价 JPY" />
+                        <div className="action-row">
+                          <button className="primary" onClick={() => savePlatform(item)}>保存</button>
+                          <button className="ghost" onClick={() => setEditingPlatformId(null)}>取消</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="action-row" style={{marginTop:"10px", flexWrap:"wrap"}}>
+                        <button className="ghost" onClick={() => openPlatformEditor(item)}>平台/价格</button>
+                        {nextStatus && <button className="primary" onClick={() => moveStatus(item, nextStatus)}>移到{nextStatus}</button>}
+                        <button className="edit" onClick={() => editItem(item)}>编辑</button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+              {!itemsByStatus(status).length && <p className="note">暂无商品</p>}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function SalesReport({ items, downloadCSV }) {
   const [salesQuery, setSalesQuery] = useState("");
   const [salesMonth, setSalesMonth] = useState("");
 
-  const soldItems = items.filter((x) => x.status === "已售出");
+  const soldItems = items.filter((x) => isSoldStatus(x.status));
 
   const filteredSold = soldItems.filter((x) => {
     const q = salesQuery.toLowerCase();
@@ -2598,7 +2733,7 @@ function SalesReport({ items, downloadCSV }) {
 }
 
 
-function PdfExportPanel({ items, totals, exportInventoryPdf, exportLedgerPdf }) {
+function PdfExportPanel({ items, totals, exportInventoryPdf }) {
   const [pdfQuery, setPdfQuery] = useState("");
   const [status, setStatus] = useState("全部");
   const [startDate, setStartDate] = useState("");
@@ -2606,7 +2741,7 @@ function PdfExportPanel({ items, totals, exportInventoryPdf, exportLedgerPdf }) 
   const [selectedIds, setSelectedIds] = useState([]);
 
   const q = pdfQuery.toLowerCase();
-  const statuses = ["全部", "采购中", "运输中", "已入库", "报关准备", "出品中", "已售出", "保留", "退货"];
+  const statuses = ["全部", ...WORKFLOW_STATUSES];
 
   const filteredPdfItems = (items || []).filter((x) => {
     const matchText = !q || Object.values(x).join(" ").toLowerCase().includes(q);
@@ -2642,21 +2777,10 @@ function PdfExportPanel({ items, totals, exportInventoryPdf, exportLedgerPdf }) 
     exportInventoryPdf(filteredPdfItems, `日期范围库存报告（${startDate || "开始"}～${endDate || "今天"}）`);
   }
 
-
-  function exportLedgerSelected() {
-    if (!selectedItems.length) return alert("请先勾选要导出的古物台账商品。 ");
-    exportLedgerPdf(selectedItems, `选中商品古物台帳（${selectedItems.length}件）`);
-  }
-
-  function exportLedgerByDate() {
-    if (!startDate && !endDate) return alert("请先选择开始日期或结束日期。 ");
-    exportLedgerPdf(filteredPdfItems, `日期范围古物台帳（${startDate || "开始"}～${endDate || "今天"}）`);
-  }
-
   return (
     <div className="panel">
       <h2><FileText size={20} /> PDF导出中心</h2>
-      <p className="note">V9 PDF企业版：使用公司正式抬头、电子公章、適格請求書登録番号。支持库存PDF与古物台账PDF：全部导出、勾选导出、按日期导出。</p>
+      <p className="note">V9 PDF企业版：使用公司正式抬头、电子公章、適格請求書登録番号。支持全部导出、勾选导出、按日期导出。</p>
 
       <div className="grid4" style={{marginTop:"16px"}}>
         <Card icon={<Package />} title="商品记录" value={`${items.length} 件`} />
@@ -2672,24 +2796,11 @@ function PdfExportPanel({ items, totals, exportInventoryPdf, exportLedgerPdf }) 
         <Input label="结束日期" type="date" value={endDate} onChange={setEndDate} />
       </div>
 
-      <div className="panel" style={{marginTop:"20px", background:"#f8fafc"}}>
-        <h3 style={{marginTop:0}}>库存报告 PDF</h3>
-        <div className="action-row" style={{flexWrap:"wrap"}}>
-          <button className="primary" onClick={() => exportInventoryPdf(items, "全部库存报告")}>库存：全部导出</button>
-          <button className="primary" onClick={exportSelected}>库存：勾选导出</button>
-          <button className="primary" onClick={exportByDate}>库存：按日期导出</button>
-        </div>
-      </div>
-
-      <div className="panel" style={{marginTop:"14px", background:"#fff7ed"}}>
-        <h3 style={{marginTop:0}}>古物台账 PDF</h3>
-        <p className="note">税理士确认用：显示商品图片、取引日、商品番号、人民币仕入金額、相手方、住所、本人確認、備考。</p>
-        <div className="action-row" style={{flexWrap:"wrap"}}>
-          <button className="primary" onClick={() => exportLedgerPdf(items, "全部古物台帳")}>古物：全部导出</button>
-          <button className="primary" onClick={exportLedgerSelected}>古物：勾选导出</button>
-          <button className="primary" onClick={exportLedgerByDate}>古物：按日期导出</button>
-          <button className="ghost" onClick={() => { setPdfQuery(""); setStatus("全部"); setStartDate(""); setEndDate(""); setSelectedIds([]); }}>清除条件</button>
-        </div>
+      <div className="action-row" style={{marginTop:"20px", flexWrap:"wrap"}}>
+        <button className="primary" onClick={() => exportInventoryPdf(items, "全部库存报告")}>全部导出PDF</button>
+        <button className="primary" onClick={exportSelected}>勾选导出PDF</button>
+        <button className="primary" onClick={exportByDate}>按日期导出PDF</button>
+        <button className="ghost" onClick={() => { setPdfQuery(""); setStatus("全部"); setStartDate(""); setEndDate(""); setSelectedIds([]); }}>清除条件</button>
       </div>
 
       <p className="note" style={{marginTop:"14px"}}>当前筛选：{filteredPdfItems.length} 件 / 已勾选：{selectedItems.length} 件</p>
@@ -2727,7 +2838,7 @@ function BackupPanel({ items, exportBackup, importBackup }) {
       <div className="grid4" style={{marginTop:"16px"}}>
         <Card icon={<Package />} title="当前商品记录" value={`${items.length} 件`} />
         <Card icon={<ImagePlus />} title="有图片商品" value={`${items.filter(x => x.images?.length).length} 件`} />
-        <Card icon={<Calculator />} title="已售商品" value={`${items.filter(x => x.status === "已售出").length} 件`} />
+        <Card icon={<Calculator />} title="已售商品" value={`${items.filter(x => isSoldStatus(x.status)).length} 件`} />
         <Card icon={<Database />} title="备份格式" value="JSON" />
       </div>
 
@@ -2821,12 +2932,12 @@ function parseAiText(raw, dictionaries, suppliers) {
 function buildAiBusinessStats(items, suppliers) {
   const today = new Date().toISOString().slice(0, 10);
   const month = currentMonth();
-  const active = items.filter((x) => x.status !== "已售出" && x.status !== "退货");
-  const sold = items.filter((x) => x.status === "已售出");
+  const active = items.filter((x) => !isSoldStatus(x.status) && x.status !== "退货");
+  const sold = items.filter((x) => isSoldStatus(x.status));
   const todayIn = items.filter((x) => (x.purchaseDate || "") === today);
-  const todaySold = items.filter((x) => (x.soldDate || "") === today || (x.status === "已售出" && !x.soldDate));
+  const todaySold = items.filter((x) => (x.soldDate || "") === today || (isSoldStatus(x.status) && !x.soldDate));
   const monthIn = items.filter((x) => (x.purchaseDate || "").startsWith(month));
-  const monthSold = items.filter((x) => (x.soldDate || "").startsWith(month) || (x.status === "已售出" && !x.soldDate));
+  const monthSold = items.filter((x) => (x.soldDate || "").startsWith(month) || (isSoldStatus(x.status) && !x.soldDate));
   const totalCost = items.reduce((a, x) => a + calcTax(x).costJpy, 0);
   const totalSale = items.reduce((a, x) => a + calcTax(x).saleJpy, 0);
   const totalProfit = items.reduce((a, x) => a + calcTax(x).profitExTax, 0);
@@ -2869,7 +2980,7 @@ function buildAiBusinessStats(items, suppliers) {
     supplierProfit: Object.entries(supplierMap).sort((a,b)=>b[1].profit-a[1].profit).slice(0,5),
     todoCustoms: items.filter((x) => x.status === "报关准备"),
     todoListing: items.filter((x) => x.status === "已入库"),
-    todoShipping: items.filter((x) => x.status === "已售出" && !String(x.soldMemo || "").includes("発送済"))
+    todoShipping: items.filter((x) => isSoldStatus(x.status) && !String(x.soldMemo || "").includes("発送済"))
   };
 }
 
@@ -2918,7 +3029,7 @@ function AiChatAssistant({ items, suppliers, dictionaries, setTab }) {
       <h2>🤖 豪嘉AI助理 V7.0</h2>
       <p className="note">本地AI经营助理：读取ERP本地数据，不上传外部服务器。可回答库存、利润、待办、品牌、供应商、超龄库存等问题。</p>
       <div className="grid4" style={{marginBottom:"16px"}}>
-        <Card icon={<Package />} title="当前库存" value={`${items.filter(x => x.status !== "已售出" && x.status !== "退货").length} 件`} />
+        <Card icon={<Package />} title="当前库存" value={`${items.filter(x => !isSoldStatus(x.status) && x.status !== "退货").length} 件`} />
         <Card icon={<Calculator />} title="记录总数" value={`${items.length} 件`} />
         <Card icon={<Building2 />} title="供应商" value={`${suppliers.length} 个`} />
         <Card icon={<Database />} title="模式" value="本地AI" />
@@ -3373,7 +3484,7 @@ function DictionaryPanel({ dictionaries, setDictionaries }) {
 
 
 function Toolbar({ title, query, setQuery, statusFilter, setStatusFilter, onDownload }) {
-  const statuses = ["全部", "采购中", "运输中", "已入库", "报关准备", "出品中", "已售出", "保留", "退货"];
+  const statuses = ["全部", ...WORKFLOW_STATUSES];
 
   return (
     <div className="toolbar">
