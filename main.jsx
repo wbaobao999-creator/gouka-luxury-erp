@@ -872,6 +872,30 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoggedIn]);
 
+  React.useEffect(() => {
+    if (!isLoggedIn) return;
+
+    let stopped = false;
+
+    async function realtimeCloudRefresh() {
+      try {
+        if (tab === "add") return;
+        const cloudItems = await getCloudItems();
+        if (stopped || !Array.isArray(cloudItems) || cloudItems.length === 0) return;
+        setItems(cloudItems.map(fromCloudItem));
+      } catch (e) {
+        console.error("Realtime cloud refresh failed", e);
+      }
+    }
+
+    const timer = window.setInterval(realtimeCloudRefresh, 45000);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoggedIn, tab]);
+
   if (!isLoggedIn) {
     return <LoginPage onLogin={(role) => { setSession({ username: "gouka", role, name: "老板账号" }); setIsLoggedIn(true); }} />;
   }
@@ -1381,7 +1405,7 @@ function App() {
       <div class="pdf-header">
         <div>
           <h1>商品资料 PDF</h1>
-          <p>Product Sheet / GOUKA Luxury ERP V9.04</p>
+          <p>Product Sheet / GOUKA Luxury ERP V9.05</p>
         </div>
         <div class="company">
           <b>豪嘉株式会社</b><br />
@@ -1564,6 +1588,7 @@ function App() {
   const menu = [
     ["dashboard", "控制台"],
     ["add", editingId ? "编辑商品" : "商品录入"],
+    ["ai", "AI拍照录入"],
     ["inventory", "库存管理"],
     ["ledger", "古物台账"],
     ["customsBatch", "报关批次"],
@@ -1573,6 +1598,7 @@ function App() {
     ["listing", "出品管理"],
     ["sales", "销售记录"],
     ["pdf", "PDF导出"],
+    ["labels", "标签打印"],
     ["suppliers", "供应商管理"],
     ["dictionary", "字典管理"],
     ["deleteLogs", "删除日志"],
@@ -1586,7 +1612,7 @@ function App() {
           <Building2 size={24} />
           <div>
             <b>豪嘉株式会社</b>
-            <span>GOUKA Luxury ERP V9.04</span>
+            <span>GOUKA Luxury ERP V9.05</span>
           </div>
         </div>
 
@@ -1602,13 +1628,13 @@ function App() {
       <main>
         <header>
           <div>
-            <h1>二手奢侈品管理系统 V9.04 Image Everywhere</h1>
-            <p>自动保存・云端同步・图片上传・状态筛选・古物台账锁定・EMS报关・利润计算</p>
+            <h1>二手奢侈品管理系统 V9.05 Enterprise Workflow</h1>
+            <p>自动保存・实时云端同步・图片上传・出品管理・标签二维码・AI拍照录入</p>
           </div>
           <div className="action-row">
-            <button className="ghost" onClick={syncToCloud}>手动同步</button>
-            <button className="ghost" onClick={loadFromCloud}>手动读取</button>
-            <span className="pill">Auto Save · {isOwner ? "老板" : "员工"}</span>
+            <button className="ghost" onClick={syncToCloud}>立即同步</button>
+            <button className="ghost" onClick={loadFromCloud}>云端读取</button>
+            <span className="pill">Auto Save · Realtime · {isOwner ? "老板" : "员工"}</span>
           </div>
         </header>
 
@@ -1653,6 +1679,7 @@ function App() {
         {tab === "listing" && <ListingManagement items={computedItems} updateListingItem={updateListingItem} editItem={editItem} setPreviewImage={setPreviewImage} setPreviewScale={setPreviewScale} />}
         {tab === "sales" && <SalesReport items={computedItems} downloadCSV={downloadCSV} />}
         {tab === "pdf" && <PdfExportPanel items={computedItems} totals={totals} exportInventoryPdf={exportInventoryPdf} exportLedgerPdf={exportLedgerPdf} exportCustomsPdf={exportCustomsPdf} exportItemPdf={exportItemPdf} />}
+        {tab === "labels" && <LabelPrintPanel items={computedItems} setPreviewImage={setPreviewImage} setPreviewScale={setPreviewScale} />}
         {tab === "suppliers" && <SupplierPanel suppliers={suppliers} setSuppliers={setSuppliers} downloadCSV={downloadCSV} />}
         {tab === "dictionary" && <DictionaryPanel dictionaries={dictionaries} setDictionaries={setDictionaries} />}
         {tab === "deleteLogs" && <DeleteLogPanel deleteLogs={deleteLogs} downloadCSV={downloadCSV} />}
@@ -2863,6 +2890,169 @@ function PdfExportPanel({ items, totals, exportInventoryPdf }) {
             <StatusBadge status={x.status} />,
             jpy(t.costJpy),
             jpy(t.profitExTax)
+          ];
+        })}
+      />
+    </div>
+  );
+}
+
+
+function qrUrl(value) {
+  const data = encodeURIComponent(String(value || ""));
+  return `https://api.qrserver.com/v1/create-qr-code/?size=130x130&data=${data}`;
+}
+
+function openLabelPrintWindow(title, bodyHtml) {
+  const win = window.open("", "_blank");
+  if (!win) {
+    alert("浏览器阻止了打印窗口。请允许弹出窗口后再试。");
+    return;
+  }
+  win.document.write(`<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>${title}</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: Arial, "Hiragino Sans", "Yu Gothic", sans-serif; margin:0; padding:14px; color:#111827; background:#fff; }
+  .no-print { position:fixed; right:18px; top:18px; z-index:9; padding:10px 14px; border:0; border-radius:10px; background:#111827; color:#fff; cursor:pointer; }
+  .label-sheet { display:grid; grid-template-columns: repeat(3, 1fr); gap:8px; max-width: 1120px; margin:0 auto; }
+  .label-card { border:1px solid #111827; border-radius:10px; padding:8px; min-height:170px; page-break-inside:avoid; display:grid; grid-template-columns: 72px 1fr 76px; gap:8px; align-items:start; }
+  .label-img { width:72px; height:72px; object-fit:cover; border:1px solid #e5e7eb; border-radius:8px; }
+  .label-no-img { width:72px; height:72px; border:1px dashed #94a3b8; border-radius:8px; display:flex; align-items:center; justify-content:center; color:#64748b; font-size:10px; }
+  .label-main b { font-size:14px; display:block; margin-bottom:3px; }
+  .label-main small { display:block; font-size:10px; color:#475569; line-height:1.35; }
+  .label-id { margin-top:6px; font-size:11px; font-weight:700; word-break:break-all; }
+  .label-qr { width:74px; height:74px; object-fit:contain; }
+  .label-price { margin-top:6px; font-size:12px; font-weight:700; }
+  .label-footer { grid-column: 1 / -1; display:flex; justify-content:space-between; border-top:1px solid #e5e7eb; padding-top:5px; font-size:10px; color:#475569; }
+  @media print { body { padding:8mm; } .no-print { display:none; } .label-sheet { gap:5mm; } .label-card { break-inside: avoid; } }
+</style>
+</head>
+<body>
+<button class="no-print" onclick="window.print()">打印 / 另存为PDF</button>
+<div class="label-sheet">${bodyHtml}</div>
+</body>
+</html>`);
+  win.document.close();
+}
+
+function LabelPrintPanel({ items, setPreviewImage, setPreviewScale }) {
+  const [query, setQuery] = useState("");
+  const [status, setStatus] = useState("全部");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [selectedIds, setSelectedIds] = useState([]);
+
+  const q = query.toLowerCase();
+  const statuses = ["全部", ...WORKFLOW_STATUSES];
+
+  const filteredItems = (items || []).filter((x) => {
+    const text = Object.values(x).join(" ").toLowerCase();
+    const matchText = !q || text.includes(q);
+    const matchStatus = status === "全部" || x.status === status;
+    const d = x.purchaseDate || "";
+    const matchStart = !startDate || d >= startDate;
+    const matchEnd = !endDate || d <= endDate;
+    return matchText && matchStatus && matchStart && matchEnd;
+  });
+
+  const selectedItems = filteredItems.filter((x) => selectedIds.includes(x.id));
+  const allSelected = filteredItems.length > 0 && filteredItems.every((x) => selectedIds.includes(x.id));
+
+  function toggleOne(id) {
+    setSelectedIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
+  }
+
+  function toggleAll() {
+    if (allSelected) {
+      setSelectedIds((prev) => prev.filter((id) => !filteredItems.some((x) => x.id === id)));
+    } else {
+      setSelectedIds((prev) => Array.from(new Set([...prev, ...filteredItems.map((x) => x.id)])));
+    }
+  }
+
+  function labelCardHtml(x) {
+    const t = calcTax(x);
+    const image = Array.isArray(x.images) && x.images[0]
+      ? `<img class="label-img" src="${htmlEscape(x.images[0])}" />`
+      : `<div class="label-no-img">No Image</div>`;
+    const platform = x.listingPlatform || x.platform || "未设置";
+    const qrText = `${x.id} ${x.brand || ""} ${x.item || ""}`;
+    return `
+      <div class="label-card">
+        ${image}
+        <div class="label-main">
+          <b>${htmlEscape(x.brand || "未填写品牌")}</b>
+          <small>${htmlEscape(x.item || "未填写商品")}</small>
+          <small>${htmlEscape([x.material, x.color, x.origin].filter(Boolean).join(" / "))}</small>
+          <div class="label-id">${htmlEscape(x.id)}</div>
+          <div class="label-price">${htmlEscape(x.status || "")} / ${htmlEscape(platform)}</div>
+        </div>
+        <img class="label-qr" src="${qrUrl(qrText)}" />
+        <div class="label-footer">
+          <span>Cost ${jpy(t.costJpy)}</span>
+          <span>GOUKA ERP</span>
+        </div>
+      </div>`;
+  }
+
+  function printLabels(targetItems, title) {
+    const arr = Array.isArray(targetItems) ? targetItems : [];
+    if (!arr.length) return alert("没有可打印的商品。请先勾选或调整筛选条件。");
+    openLabelPrintWindow(title, arr.map(labelCardHtml).join(""));
+  }
+
+  function printSelected() {
+    if (!selectedItems.length) return alert("请先勾选要打印标签的商品。");
+    printLabels(selectedItems, `商品标签_${selectedItems.length}件`);
+  }
+
+  function printByDate() {
+    if (!startDate && !endDate) return alert("请先选择开始日期或结束日期。");
+    printLabels(filteredItems, `日期范围标签_${startDate || "开始"}_${endDate || "今天"}`);
+  }
+
+  return (
+    <div className="panel">
+      <h2><FileText size={20} /> 商品标签打印 / QR</h2>
+      <p className="note">V9.05：支持全部打印、勾选打印、按日期打印。标签包含图片、商品编号、品牌、商品名、状态、平台和二维码。</p>
+
+      <div className="formgrid" style={{marginTop:"16px"}}>
+        <Input label="搜索编号 / 品牌 / 商品 / 平台" value={query} onChange={setQuery} placeholder="例如 CHANEL / NBAA / GOUKA-202606" />
+        <Select label="状态筛选" value={status} onChange={setStatus} options={statuses} />
+        <Input label="开始日期" type="date" value={startDate} onChange={setStartDate} />
+        <Input label="结束日期" type="date" value={endDate} onChange={setEndDate} />
+      </div>
+
+      <div className="action-row" style={{marginTop:"18px", flexWrap:"wrap"}}>
+        <button className="primary" onClick={() => printLabels(filteredItems, "全部商品标签")}>全部打印标签</button>
+        <button className="primary" onClick={printSelected}>勾选打印标签</button>
+        <button className="primary" onClick={printByDate}>按日期打印标签</button>
+        <button className="ghost" onClick={() => { setQuery(""); setStatus("全部"); setStartDate(""); setEndDate(""); setSelectedIds([]); }}>清除条件</button>
+      </div>
+
+      <p className="note" style={{marginTop:"12px"}}>当前筛选：{filteredItems.length} 件 / 已勾选：{selectedItems.length} 件</p>
+
+      <Table
+        headers={[
+          <input type="checkbox" checked={allSelected} onChange={toggleAll} />,
+          "图片", "商品编号", "入库日", "品牌", "商品名", "状态", "平台", "成本"
+        ]}
+        rows={filteredItems.map((x) => {
+          const t = calcTax(x);
+          return [
+            <input type="checkbox" checked={selectedIds.includes(x.id)} onChange={() => toggleOne(x.id)} />,
+            <ProductThumb item={x} onPreview={(src) => { setPreviewScale(1); setPreviewImage(src); }} />,
+            x.id,
+            x.purchaseDate,
+            x.brand,
+            x.item,
+            <StatusBadge status={x.status} />,
+            x.listingPlatform || x.platform || "—",
+            jpy(t.costJpy)
           ];
         })}
       />
