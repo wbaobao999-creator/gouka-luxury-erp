@@ -815,6 +815,7 @@ function App() {
   const [editingId, setEditingId] = useState(null);
   const [previewImage, setPreviewImage] = useState(null);
   const [previewScale, setPreviewScale] = useState(1);
+  const [syncStatusText, setSyncStatusText] = useState("云端待机");
 
   React.useEffect(() => {
     safeLocalSet(STORAGE_KEY, stripImagesForStorage(items), "商品文字数据");
@@ -855,12 +856,18 @@ function App() {
 
     async function autoLoadCloudItems() {
       try {
+        setSyncStatusText("正在读取云端…");
         const cloudItems = await getCloudItems();
-        if (cancelled || !Array.isArray(cloudItems) || cloudItems.length === 0) return;
+        if (cancelled || !Array.isArray(cloudItems) || cloudItems.length === 0) {
+          setSyncStatusText("云端待机");
+          return;
+        }
         const nextItems = cloudItems.map(fromCloudItem);
         setItems(nextItems);
+        setSyncStatusText(`已读取云端 ${nextItems.length} 件`);
       } catch (e) {
         console.error("Auto cloud load failed", e);
+        setSyncStatusText("云端读取失败");
       }
     }
 
@@ -887,7 +894,7 @@ function App() {
   }
 
   function exportBackup() {
-    const data = { version: "GOUKA-ERP-V7.11-IMAGE-DB", exportedAt: new Date().toISOString(), items, customsBatches, dictionaries, suppliers, deleteLogs };
+    const data = { version: "GOUKA-ERP-V9.04.1-PRODUCTION-STABLE", exportedAt: new Date().toISOString(), items, customsBatches, dictionaries, suppliers, deleteLogs };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -1025,26 +1032,32 @@ function App() {
   async function syncToCloud() {
     try {
       if (!window.confirm(`同步 ${items.length} 件商品到云端吗？`)) return;
+      setSyncStatusText("正在同步云端…");
       for (const item of items) {
         const cloudImages = await uploadItemImages(item.id, item.images || []);
         await upsertCloudItem(toCloudItem({ ...item, images: cloudImages }));
       }
+      setSyncStatusText(`已同步 ${items.length} 件`);
       alert("已同步到云端。另一台电脑请点击“从云端读取”。");
     } catch (e) {
       console.error(e);
+      setSyncStatusText("同步失败");
       alert("同步失败：" + (e?.message || e));
     }
   }
 
   async function loadFromCloud() {
     try {
+      setSyncStatusText("正在读取云端…");
       const cloudItems = await getCloudItems();
       const nextItems = cloudItems.map(fromCloudItem);
       if (!window.confirm(`从云端读取 ${nextItems.length} 件商品，并覆盖当前浏览器库存吗？`)) return;
       setItems(nextItems);
+      setSyncStatusText(`已读取云端 ${nextItems.length} 件`);
       alert(`已从云端读取 ${nextItems.length} 件商品。`);
     } catch (e) {
       console.error(e);
+      setSyncStatusText("读取失败");
       alert("读取失败：" + (e?.message || e));
     }
   }
@@ -1140,9 +1153,12 @@ function App() {
       setItems(updatedItems);
 
       try {
+        setSyncStatusText("正在同步云端…");
         if (updatedItem) await upsertCloudItem(toCloudItem(updatedItem));
+        setSyncStatusText("商品已同步");
       } catch (e) {
         console.error("Cloud update failed", e);
+        setSyncStatusText("商品同步失败");
       }
 
       alert("商品已更新，并已同步云端");
@@ -1182,9 +1198,12 @@ function App() {
       setItems([savedNext, ...items]);
 
       try {
+        setSyncStatusText("正在同步云端…");
         await upsertCloudItem(toCloudItem(savedNext));
+        setSyncStatusText("商品已同步");
       } catch (e) {
         console.error("Cloud insert failed", e);
+        setSyncStatusText("商品同步失败");
       }
 
       alert("商品已添加，并已同步云端");
@@ -1212,10 +1231,13 @@ function App() {
     await deleteItemImagesFromDb(id);
 
     try {
+      setSyncStatusText("正在同步删除…");
       await deleteProductImages(id);
       await deleteItemCloud(id);
+      setSyncStatusText("删除已同步");
     } catch (e) {
       console.error("Cloud delete failed", e);
+      setSyncStatusText("删除同步失败");
     }
 
     setItems(items.filter((x) => x.id !== id));
@@ -1234,9 +1256,12 @@ function App() {
     setItems((prev) => prev.map((x) => x.id === id ? nextItem : x));
 
     try {
+      setSyncStatusText("正在同步出品状态…");
       await upsertCloudItem(toCloudItem(nextItem));
+      setSyncStatusText("出品状态已同步");
     } catch (e) {
       console.error("Listing cloud update failed", e);
+      setSyncStatusText("出品同步失败");
       alert("出品状态已在本机更新，但云端同步失败：" + (e?.message || e));
     }
   }
@@ -1381,7 +1406,7 @@ function App() {
       <div class="pdf-header">
         <div>
           <h1>商品资料 PDF</h1>
-          <p>Product Sheet / GOUKA Luxury ERP V9.04</p>
+          <p>Product Sheet / GOUKA Luxury ERP V9.04.1</p>
         </div>
         <div class="company">
           <b>豪嘉株式会社</b><br />
@@ -1586,7 +1611,7 @@ function App() {
           <Building2 size={24} />
           <div>
             <b>豪嘉株式会社</b>
-            <span>GOUKA Luxury ERP V9.04</span>
+            <span>GOUKA Luxury ERP V9.04.1</span>
           </div>
         </div>
 
@@ -1602,12 +1627,13 @@ function App() {
       <main>
         <header>
           <div>
-            <h1>二手奢侈品管理系统 V9.04 Image Everywhere</h1>
+            <h1>二手奢侈品管理系统 V9.04.1 Production Stable</h1>
             <p>自动保存・云端同步・图片上传・状态筛选・古物台账锁定・EMS报关・利润计算</p>
           </div>
           <div className="action-row">
             <button className="ghost" onClick={syncToCloud}>手动同步</button>
             <button className="ghost" onClick={loadFromCloud}>手动读取</button>
+            <span className="pill">{syncStatusText}</span>
             <span className="pill">Auto Save · {isOwner ? "老板" : "员工"}</span>
           </div>
         </header>
@@ -1906,7 +1932,7 @@ function Dashboard({ totals, items, setTab, exportBackup }) {
       </div>
       <div className="panel wide">
         <h2>经营提醒</h2>
-        <p>V7.11新增今日经营、库存预警、品牌利润排行、供应商利润排行。V9.04已统一商品图片显示，库存、古物、出品、销售、EMS、利润、消费税页面都可看图；本地仍保留自动备份。</p>
+        <p>V7.11新增今日经营、库存预警、品牌利润排行、供应商利润排行。V9.04.1稳定版：已统一商品图片显示，库存、古物、出品、销售、EMS、利润、消费税页面都可看图；删除会写入审计日志，本地仍保留自动备份。</p>
       </div>
     </section>
   );
