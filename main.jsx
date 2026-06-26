@@ -2904,22 +2904,18 @@ function qrUrl(value) {
 }
 
 function openLabelPrintWindow(title, bodyHtml) {
-  const win = window.open("", "_blank");
-  if (!win) {
-    alert("浏览器阻止了打印窗口。请允许弹出窗口后再试。");
-    return;
-  }
-  win.document.write(`<!doctype html>
+  const safeTitle = htmlEscape(title || "商品标签");
+  const html = `<!doctype html>
 <html>
 <head>
 <meta charset="utf-8" />
-<title>${title}</title>
+<title>${safeTitle}</title>
 <style>
   * { box-sizing: border-box; }
   body { font-family: Arial, "Hiragino Sans", "Yu Gothic", sans-serif; margin:0; padding:14px; color:#111827; background:#fff; }
   .no-print { position:fixed; right:18px; top:18px; z-index:9; padding:10px 14px; border:0; border-radius:10px; background:#111827; color:#fff; cursor:pointer; }
-  .label-sheet { display:grid; grid-template-columns: repeat(3, 1fr); gap:8px; max-width: 1120px; margin:0 auto; }
-  .label-card { border:1px solid #111827; border-radius:10px; padding:8px; min-height:170px; page-break-inside:avoid; display:grid; grid-template-columns: 72px 1fr 76px; gap:8px; align-items:start; }
+  .label-sheet { display:grid; grid-template-columns: repeat(3, 1fr); gap:8px; max-width: 1120px; margin:0 auto; padding-top:56px; }
+  .label-card { border:1px solid #111827; border-radius:10px; padding:8px; min-height:170px; page-break-inside:avoid; display:grid; grid-template-columns: 72px 1fr 76px; gap:8px; align-items:start; background:#fff; }
   .label-img { width:72px; height:72px; object-fit:cover; border:1px solid #e5e7eb; border-radius:8px; }
   .label-no-img { width:72px; height:72px; border:1px dashed #94a3b8; border-radius:8px; display:flex; align-items:center; justify-content:center; color:#64748b; font-size:10px; }
   .label-main b { font-size:14px; display:block; margin-bottom:3px; }
@@ -2928,15 +2924,32 @@ function openLabelPrintWindow(title, bodyHtml) {
   .label-qr { width:74px; height:74px; object-fit:contain; }
   .label-price { margin-top:6px; font-size:12px; font-weight:700; }
   .label-footer { grid-column: 1 / -1; display:flex; justify-content:space-between; border-top:1px solid #e5e7eb; padding-top:5px; font-size:10px; color:#475569; }
-  @media print { body { padding:8mm; } .no-print { display:none; } .label-sheet { gap:5mm; } .label-card { break-inside: avoid; } }
+  @media print { body { padding:8mm; } .no-print { display:none; } .label-sheet { padding-top:0; gap:5mm; } .label-card { break-inside: avoid; page-break-inside: avoid; } }
 </style>
 </head>
 <body>
 <button class="no-print" onclick="window.print()">打印 / 另存为PDF</button>
 <div class="label-sheet">${bodyHtml}</div>
 </body>
-</html>`);
-  win.document.close();
+</html>`;
+
+  try {
+    const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const win = window.open(url, "_blank");
+    if (!win) {
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${String(title || "商品标签").replace(/[\\/:*?\"<>|]/g, "_")}.html`;
+      a.click();
+      alert("浏览器拦截了打印窗口，已改为下载标签HTML。打开下载的文件后再打印/另存为PDF。");
+      return;
+    }
+    setTimeout(() => URL.revokeObjectURL(url), 30000);
+  } catch (e) {
+    console.error("Open label print failed", e);
+    alert("标签打印窗口打开失败：" + (e?.message || e));
+  }
 }
 
 function LabelPrintPanel({ items, setPreviewImage, setPreviewScale }) {
