@@ -1031,8 +1031,7 @@ function App() {
   async function loadFromCloud() {
     try {
       const cloudItems = await getCloudItems();
-      const baseItems = cloudItems.map(fromCloudItem);
-      const nextItems = await hydrateItemsWithImages(baseItems);
+      const nextItems = cloudItems.map(fromCloudItem);
       if (!window.confirm(`从云端读取 ${nextItems.length} 件商品，并覆盖当前浏览器库存吗？`)) return;
       setItems(nextItems);
       alert(`已从云端读取 ${nextItems.length} 件商品。`);
@@ -1242,6 +1241,205 @@ function App() {
   }
 
 
+  function htmlEscape(value) {
+    return String(value ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;");
+  }
+
+  function pdfImageHtml(item, size = 130) {
+    const images = Array.isArray(item?.images) ? item.images.filter(Boolean).slice(0, 3) : [];
+    if (!images.length) return `<div class="no-image">No Image</div>`;
+    return images.map((src) => `<img class="pdf-img" style="width:${size}px;height:${size}px" src="${htmlEscape(src)}" />`).join("");
+  }
+
+  function openPdfWindow(title, bodyHtml) {
+    const win = window.open("", "_blank");
+    if (!win) {
+      alert("浏览器阻止了PDF窗口。请允许弹出窗口后再试。 ");
+      return;
+    }
+
+    win.document.write(`<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>${htmlEscape(title)}</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: Arial, "Hiragino Sans", "Yu Gothic", sans-serif; color:#111827; margin:0; padding:28px; background:#fff; }
+  .pdf-page { max-width: 980px; margin: 0 auto; }
+  .pdf-header { display:flex; justify-content:space-between; align-items:flex-start; border-bottom:3px solid #111827; padding-bottom:14px; margin-bottom:18px; }
+  .pdf-header h1 { margin:0; font-size:24px; }
+  .pdf-header p { margin:4px 0 0; color:#475569; font-size:12px; }
+  .company { text-align:right; font-size:12px; color:#475569; }
+  .section { margin-top:18px; page-break-inside: avoid; }
+  .section h2 { font-size:16px; border-left:5px solid #111827; padding-left:10px; margin:0 0 10px; }
+  .grid { display:grid; grid-template-columns: repeat(4, 1fr); gap:8px; }
+  .field { border:1px solid #e5e7eb; border-radius:8px; padding:8px; min-height:54px; }
+  .field small { display:block; color:#64748b; font-size:10px; margin-bottom:4px; }
+  .field b { font-size:13px; word-break:break-word; }
+  .image-row { display:flex; gap:10px; flex-wrap:wrap; }
+  .pdf-img { object-fit:cover; border:1px solid #e5e7eb; border-radius:10px; }
+  .no-image { width:130px; height:130px; border:1px dashed #94a3b8; display:flex; align-items:center; justify-content:center; border-radius:10px; color:#64748b; }
+  table { width:100%; border-collapse:collapse; font-size:11px; }
+  th, td { border:1px solid #e5e7eb; padding:6px; text-align:left; vertical-align:top; }
+  th { background:#f1f5f9; }
+  .right { text-align:right; }
+  .memo { white-space:pre-wrap; border:1px solid #e5e7eb; border-radius:8px; padding:10px; min-height:60px; }
+  .footer { margin-top:22px; color:#64748b; font-size:10px; border-top:1px solid #e5e7eb; padding-top:8px; }
+  @media print { body { padding:12mm; } .no-print { display:none; } .pdf-page { max-width: none; } }
+</style>
+</head>
+<body>
+<button class="no-print" onclick="window.print()" style="position:fixed;right:18px;top:18px;padding:10px 14px;border-radius:10px;border:0;background:#111827;color:white;cursor:pointer;z-index:9">打印 / 另存为PDF</button>
+<div class="pdf-page">${bodyHtml}</div>
+<script>setTimeout(function(){ window.print(); }, 600);</script>
+</body>
+</html>`);
+    win.document.close();
+  }
+
+  function exportItemPdf(item) {
+    if (!item) return;
+    const t = calcTax(item);
+    const body = `
+      <div class="pdf-header">
+        <div>
+          <h1>商品资料 PDF</h1>
+          <p>Product Sheet / GOUKA Luxury ERP V8.05</p>
+        </div>
+        <div class="company">
+          <b>豪嘉株式会社</b><br />
+          GOUKA INC.<br />
+          Exported: ${new Date().toLocaleString()}
+        </div>
+      </div>
+
+      <div class="section">
+        <h2>商品图片</h2>
+        <div class="image-row">${pdfImageHtml(item, 180)}</div>
+      </div>
+
+      <div class="section">
+        <h2>基本信息</h2>
+        <div class="grid">
+          <div class="field"><small>商品编号</small><b>${htmlEscape(item.id)}</b></div>
+          <div class="field"><small>仕入日</small><b>${htmlEscape(item.purchaseDate)}</b></div>
+          <div class="field"><small>状态</small><b>${htmlEscape(item.status)}</b></div>
+          <div class="field"><small>品类</small><b>${htmlEscape(item.category)}</b></div>
+          <div class="field"><small>品牌</small><b>${htmlEscape(item.brand)}</b></div>
+          <div class="field"><small>商品名</small><b>${htmlEscape(item.item)}</b></div>
+          <div class="field"><small>材质</small><b>${htmlEscape(item.material)}</b></div>
+          <div class="field"><small>颜色</small><b>${htmlEscape(item.color)}</b></div>
+          <div class="field"><small>产地</small><b>${htmlEscape(item.origin)}</b></div>
+          <div class="field"><small>数量</small><b>${htmlEscape(item.qty)}</b></div>
+          <div class="field"><small>来源</small><b>${htmlEscape(item.source)}</b></div>
+          <div class="field"><small>本人确认</small><b>${htmlEscape(item.idCheck)}</b></div>
+        </div>
+      </div>
+
+      <div class="section">
+        <h2>金额 / 利润参考</h2>
+        <div class="grid">
+          <div class="field"><small>采购金额</small><b>${htmlEscape(item.purchaseCny)} ${htmlEscape(item.purchaseCurrency || "CNY")}</b></div>
+          <div class="field"><small>申报金额</small><b>${htmlEscape(item.declaredCny)} ${htmlEscape(item.declaredCurrency || "CNY")}</b></div>
+          <div class="field"><small>真实成本 JPY</small><b>${jpy(t.costJpy)}</b></div>
+          <div class="field"><small>预计/实际售价 JPY</small><b>${jpy(t.saleJpy)}</b></div>
+          <div class="field"><small>销售消费税</small><b>${jpy(t.outputTax)}</b></div>
+          <div class="field"><small>税抜售价</small><b>${jpy(t.saleExTax)}</b></div>
+          <div class="field"><small>不含税利润参考</small><b>${jpy(t.profitExTax)}</b></div>
+          <div class="field"><small>利润率</small><b>${(t.saleExTax ? (t.profitExTax / t.saleExTax * 100) : 0).toFixed(1)}%</b></div>
+        </div>
+      </div>
+
+      <div class="section">
+        <h2>备注</h2>
+        <div class="memo">${htmlEscape(item.memo || "")}</div>
+      </div>
+      <div class="footer">此PDF由 GOUKA Luxury ERP 自动生成。金额与消费税为内部参考，正式申告请交由税理士确认。</div>
+    `;
+    openPdfWindow(`商品资料_${item.id}`, body);
+  }
+
+  function exportInventoryPdf() {
+    const arr = computedItems || [];
+    const rows = arr.map((x) => {
+      const t = calcTax(x);
+      return `<tr>
+        <td>${pdfImageHtml(x, 42)}</td>
+        <td>${htmlEscape(x.id)}</td>
+        <td>${htmlEscape(x.purchaseDate)}</td>
+        <td>${htmlEscape(x.brand)}</td>
+        <td>${htmlEscape(x.item)}</td>
+        <td>${htmlEscape(x.status)}</td>
+        <td class="right">${jpy(t.costJpy)}</td>
+        <td class="right">${jpy(t.saleJpy)}</td>
+        <td class="right">${jpy(t.profitExTax)}</td>
+      </tr>`;
+    }).join("");
+
+    const body = `
+      <div class="pdf-header"><div><h1>库存清单 PDF</h1><p>Inventory Report</p></div><div class="company"><b>豪嘉株式会社</b><br/>${new Date().toLocaleString()}</div></div>
+      <div class="section"><h2>汇总</h2><div class="grid">
+        <div class="field"><small>商品记录</small><b>${arr.length} 件</b></div>
+        <div class="field"><small>库存总成本</small><b>${jpy(totals.cost)}</b></div>
+        <div class="field"><small>预计销售</small><b>${jpy(totals.sale)}</b></div>
+        <div class="field"><small>预计净利润</small><b>${jpy(totals.profit)}</b></div>
+      </div></div>
+      <div class="section"><h2>库存明细</h2><table><thead><tr><th>图</th><th>商品编号</th><th>入库日</th><th>品牌</th><th>商品</th><th>状态</th><th>成本</th><th>售价</th><th>利润</th></tr></thead><tbody>${rows}</tbody></table></div>
+      <div class="footer">GOUKA Luxury ERP 自动生成。</div>
+    `;
+    openPdfWindow("库存清单_PDF", body);
+  }
+
+  function exportLedgerPdf() {
+    const arr = computedItems || [];
+    const rows = arr.map((x, i) => `<tr>
+      <td>${pdfImageHtml(x, 40)}</td>
+      <td>${i + 1}</td>
+      <td>${htmlEscape(x.purchaseDate)}</td>
+      <td>${htmlEscape(x.id)}</td>
+      <td>${htmlEscape(x.category)}</td>
+      <td>${htmlEscape(x.brand)}</td>
+      <td>${htmlEscape(x.item)}</td>
+      <td>${htmlEscape((x.material || "") + " / " + (x.color || "") + " / " + (x.origin || ""))}</td>
+      <td>${htmlEscape(x.qty)}</td>
+      <td>${htmlEscape(x.purchaseCny)} ${htmlEscape(x.purchaseCurrency || "CNY")}</td>
+      <td>${htmlEscape(x.source)}</td>
+      <td>${htmlEscape(x.address)}</td>
+      <td>${htmlEscape(x.idCheck)}</td>
+      <td>${htmlEscape(x.ledgerStatus || "有效")}</td>
+    </tr>`).join("");
+
+    const body = `
+      <div class="pdf-header"><div><h1>古物台账 PDF</h1><p>Kobutsu Ledger</p></div><div class="company"><b>豪嘉株式会社</b><br/>${new Date().toLocaleString()}</div></div>
+      <div class="section"><table><thead><tr><th>图</th><th>No</th><th>取引日</th><th>商品番号</th><th>区分</th><th>品牌</th><th>商品名</th><th>特徴</th><th>数量</th><th>金额</th><th>相手方</th><th>住所</th><th>本人確認</th><th>状态</th></tr></thead><tbody>${rows}</tbody></table></div>
+      <div class="footer">古物台账不建议物理删除。更正/作废请保留履历。</div>
+    `;
+    openPdfWindow("古物台账_PDF", body);
+  }
+
+  function exportCustomsPdf() {
+    const arr = filtered || computedItems || [];
+    const totalQty = arr.reduce((a, x) => a + Number(x.qty || 0), 0);
+    const totalValue = arr.reduce((a, x) => a + calcTax(x).declaredJpy, 0);
+    const rows = arr.map((x, i) => {
+      const t = calcTax(x);
+      return `<tr><td>${i + 1}</td><td>${htmlEscape(x.brand)}</td><td>${htmlEscape(x.item)}</td><td>${htmlEscape(x.material)}</td><td>${htmlEscape(x.color)}</td><td>${htmlEscape(x.qty)}</td><td>${htmlEscape(x.origin)}</td><td>${htmlEscape(x.declaredCurrency || "CNY")}</td><td class="right">${htmlEscape(x.declaredCny)}</td><td class="right">${jpy(t.declaredJpy)}</td><td>Used luxury goods / Non-CITES material</td></tr>`;
+    }).join("");
+    const body = `
+      <div class="pdf-header"><div><h1>EMS Commercial Invoice PDF</h1><p>Customs Declaration Reference</p></div><div class="company"><b>Importer: 豪嘉株式会社</b><br/>GOUKA INC.<br/>${new Date().toLocaleString()}</div></div>
+      <div class="section"><table><thead><tr><th>No</th><th>Brand</th><th>Item</th><th>Material</th><th>Color</th><th>Qty</th><th>Origin</th><th>Currency</th><th>Declared</th><th>JPY</th><th>Remarks</th></tr></thead><tbody>${rows}</tbody></table></div>
+      <div class="section"><h2>Total</h2><div class="grid"><div class="field"><small>Total Quantity</small><b>${totalQty} pcs</b></div><div class="field"><small>Total Declared Value</small><b>${jpy(totalValue)}</b></div></div></div>
+      <div class="footer">Non-CITES material statement is based on internal entry. Please verify before official customs submission.</div>
+    `;
+    openPdfWindow("EMS报关_PDF", body);
+  }
+
+
   function applyAiDraft(draft) {
     const nextForm = {
       ...emptyForm,
@@ -1287,6 +1485,7 @@ function App() {
     ["profit", "利润分析"],
     ["tax", "消费税参考"],
     ["sales", "销售记录"],
+    ["pdf", "PDF导出"],
     ["suppliers", "供应商管理"],
     ["dictionary", "字典管理"],
     ["deleteLogs", "删除日志"],
@@ -1300,7 +1499,7 @@ function App() {
           <Building2 size={24} />
           <div>
             <b>豪嘉株式会社</b>
-            <span>GOUKA Luxury ERP V8.03</span>
+            <span>GOUKA Luxury ERP V8.05</span>
           </div>
         </div>
 
@@ -1316,7 +1515,7 @@ function App() {
       <main>
         <header>
           <div>
-            <h1>二手奢侈品管理系统 V8.03 Enterprise Stable</h1>
+            <h1>二手奢侈品管理系统 V8.05 Enterprise PDF</h1>
             <p>自动保存・云端同步・图片上传・状态筛选・古物台账锁定・EMS报关・利润计算</p>
           </div>
           <div className="action-row">
@@ -1356,6 +1555,7 @@ function App() {
             isOwner={isOwner}
             setPreviewImage={setPreviewImage}
             setPreviewScale={setPreviewScale}
+            exportItemPdf={exportItemPdf}
           />
         )}
         {tab === "ledger" && <Ledger items={filtered} setItems={setItems} isOwner={isOwner} downloadCSV={downloadCSV} />}
@@ -1364,6 +1564,7 @@ function App() {
         {tab === "profit" && <Profit items={filtered} />}
         {tab === "tax" && <TaxReport items={filtered} totals={totals} customsBatches={customsBatches} downloadCSV={downloadCSV} />}
         {tab === "sales" && <SalesReport items={computedItems} downloadCSV={downloadCSV} />}
+        {tab === "pdf" && <PdfExportPanel items={computedItems} totals={totals} exportInventoryPdf={exportInventoryPdf} exportLedgerPdf={exportLedgerPdf} exportCustomsPdf={exportCustomsPdf} exportItemPdf={exportItemPdf} />}
         {tab === "suppliers" && <SupplierPanel suppliers={suppliers} setSuppliers={setSuppliers} downloadCSV={downloadCSV} />}
         {tab === "dictionary" && <DictionaryPanel dictionaries={dictionaries} setDictionaries={setDictionaries} />}
         {tab === "deleteLogs" && <DeleteLogPanel deleteLogs={deleteLogs} downloadCSV={downloadCSV} />}
@@ -1617,7 +1818,7 @@ function Dashboard({ totals, items, setTab, exportBackup }) {
       </div>
       <div className="panel wide">
         <h2>经营提醒</h2>
-        <p>V7.11新增今日经营、库存预警、品牌利润排行、供应商利润排行。V8.03已接入Supabase云端同步，库存与古物台账可读取云端图片；本地仍保留自动备份。</p>
+        <p>V7.11新增今日经营、库存预警、品牌利润排行、供应商利润排行。V8.05已接入Supabase云端同步、云端图片与PDF导出；本地仍保留自动备份。</p>
       </div>
     </section>
   );
@@ -1809,7 +2010,7 @@ function StatusBadge({ status }) {
   return <span className={`status-badge status-${status}`}>{status}</span>;
 }
 
-function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, downloadCSV, editItem, deleteItem, isOwner, setPreviewImage, setPreviewScale }) {
+function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, downloadCSV, editItem, deleteItem, isOwner, setPreviewImage, setPreviewScale, exportItemPdf }) {
   const [detailItem, setDetailItem] = useState(null);
   const headers = ["图片", "商品编号", "入库日期", "品牌", "商品名", "状态", "报关批次", "真实成本JPY", "预计售价JPY（税込）", "销售消费税", "税抜售价", "净利润", "利润率", "操作"];
   const csvHeaders = ["商品编号", "入库日期", "品类", "品牌", "商品名", "材质", "颜色", "产地", "数量", "采购币种", "采购金额", "采购汇率", "申报币种", "申报金额", "申报汇率", "采购JPY", "附加成本JPY", "真实成本JPY", "报关批次", "进项消费税估算", "预计销售JPY税込", "销售消费税", "税抜售价", "净利润", "状态"];
@@ -1838,6 +2039,7 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
       `${(t.saleExTax ? (t.profitExTax / t.saleExTax * 100) : 0).toFixed(1)}%`,
       <div className="table-actions">
         <button className="ghost" onClick={() => setDetailItem(x)}>详情</button>
+        <button className="ghost" onClick={() => exportItemPdf?.(x)}>PDF</button>
         <button className="edit" onClick={() => editItem(x)}>
           <Edit3 size={14} /> 编辑
         </button>
@@ -1868,6 +2070,7 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
           <div className="panel" style={{ width: "860px", maxWidth: "92vw", maxHeight: "88vh", overflow: "auto" }} onClick={(e) => e.stopPropagation()}>
             <div className="toolbar">
               <h2>{detailItem.brand} {detailItem.item}</h2>
+              <button onClick={() => exportItemPdf?.(detailItem)}>导出PDF</button>
               <button onClick={() => setDetailItem(null)}>关闭</button>
             </div>
             <div className="image-row">
@@ -2286,6 +2489,55 @@ function SalesReport({ items, downloadCSV }) {
 
       <p>销售消费税参考：{jpy(totalOutputTax)}</p>
       <Table headers={headers} rows={rows} />
+    </div>
+  );
+}
+
+
+function PdfExportPanel({ items, totals, exportInventoryPdf, exportLedgerPdf, exportCustomsPdf, exportItemPdf }) {
+  const [pdfQuery, setPdfQuery] = useState("");
+  const q = pdfQuery.toLowerCase();
+  const filteredPdfItems = (items || []).filter((x) => !q || Object.values(x).join(" ").toLowerCase().includes(q)).slice(0, 30);
+
+  return (
+    <div className="panel">
+      <h2><FileText size={20} /> PDF导出中心</h2>
+      <p className="note">V8.05新增：直接使用浏览器打印功能导出PDF，不需要额外插件。打开后选择「另存为PDF」即可保存。</p>
+
+      <div className="grid4" style={{marginTop:"16px"}}>
+        <Card icon={<Package />} title="商品记录" value={`${items.length} 件`} />
+        <Card icon={<ImagePlus />} title="有图商品" value={`${items.filter(x => x.images?.length).length} 件`} />
+        <Card icon={<Calculator />} title="库存总成本" value={jpy(totals.cost)} />
+        <Card icon={<Calculator />} title="预计净利润" value={jpy(totals.profit)} />
+      </div>
+
+      <div className="action-row" style={{marginTop:"20px", flexWrap:"wrap"}}>
+        <button className="primary" onClick={exportInventoryPdf}>导出库存清单 PDF</button>
+        <button className="primary" onClick={exportLedgerPdf}>导出古物台账 PDF</button>
+        <button className="primary" onClick={exportCustomsPdf}>导出EMS报关 PDF</button>
+      </div>
+
+      <div className="toolbar" style={{marginTop:"20px"}}>
+        <h2>单件商品PDF</h2>
+        <div className="toolbar-right">
+          <div className="search">
+            <Search size={16} />
+            <input placeholder="搜索编号 / 品牌 / 商品" value={pdfQuery} onChange={(e)=>setPdfQuery(e.target.value)} />
+          </div>
+        </div>
+      </div>
+
+      <Table
+        headers={["图片", "商品编号", "品牌", "商品名", "状态", "PDF"]}
+        rows={filteredPdfItems.map((x) => [
+          x.images?.[0] ? <img className="thumb" src={x.images[0]} alt={x.item} /> : "—",
+          x.id,
+          x.brand,
+          x.item,
+          <StatusBadge status={x.status} />,
+          <button className="ghost" onClick={() => exportItemPdf(x)}>导出商品PDF</button>
+        ])}
+      />
     </div>
   );
 }
