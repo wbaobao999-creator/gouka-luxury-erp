@@ -2936,19 +2936,17 @@ function openLabelPrintWindow(title, bodyHtml) {
   try {
     const blob = new Blob([html], { type: "text/html;charset=utf-8" });
     const url = URL.createObjectURL(blob);
-    const win = window.open(url, "_blank");
-    if (!win) {
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${String(title || "商品标签").replace(/[\\/:*?\"<>|]/g, "_")}.html`;
-      a.click();
-      alert("浏览器拦截了打印窗口，已改为下载标签HTML。打开下载的文件后再打印/另存为PDF。");
-      return;
-    }
-    setTimeout(() => URL.revokeObjectURL(url), 30000);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${String(title || "商品标签").replace(/[\\/:*?\"<>|]/g, "_")}.html`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 3000);
+    alert("标签文件已下载。打开下载的HTML文件，再点右上角『打印 / 另存为PDF』。");
   } catch (e) {
-    console.error("Open label print failed", e);
-    alert("标签打印窗口打开失败：" + (e?.message || e));
+    console.error("Label download failed", e);
+    alert("标签下载失败：" + (e?.message || e));
   }
 }
 
