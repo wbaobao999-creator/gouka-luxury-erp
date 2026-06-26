@@ -1454,10 +1454,22 @@ function App() {
     openPdfWindow(`${label}_${new Date().toISOString().slice(0,10)}`, body);
   }
 
-  function exportLedgerPdf() {
-    const arr = computedItems || [];
+  function exportLedgerPdf(targetItems = null, label = "古物台帳") {
+    const arr = Array.isArray(targetItems) ? targetItems : (computedItems || []);
+    if (!arr.length) {
+      alert("没有可导出的古物台账。请先勾选商品或调整日期范围。 ");
+      return;
+    }
+
+    const sum = arr.reduce((a, x) => {
+      a.qty += Number(x.qty || 1);
+      a.purchase += Number(x.purchaseCny || 0);
+      a.withImages += x.images?.length ? 1 : 0;
+      return a;
+    }, { qty: 0, purchase: 0, withImages: 0 });
+
     const rows = arr.map((x, i) => `<tr>
-      <td>${pdfImageHtml(x, 40)}</td>
+      <td>${pdfImageHtml(x, 70)}</td>
       <td>${i + 1}</td>
       <td>${htmlEscape(x.purchaseDate)}</td>
       <td>${htmlEscape(x.id)}</td>
@@ -1466,19 +1478,52 @@ function App() {
       <td>${htmlEscape(x.item)}</td>
       <td>${htmlEscape((x.material || "") + " / " + (x.color || "") + " / " + (x.origin || ""))}</td>
       <td>${htmlEscape(x.qty)}</td>
-      <td>${htmlEscape(x.purchaseCny)} ${htmlEscape(x.purchaseCurrency || "CNY")}</td>
+      <td class="right">${htmlEscape(x.purchaseCny)}</td>
+      <td>${htmlEscape(x.purchaseCurrency || "CNY")}</td>
       <td>${htmlEscape(x.source)}</td>
       <td>${htmlEscape(x.address)}</td>
       <td>${htmlEscape(x.idCheck)}</td>
+      <td>${htmlEscape(x.memo || "")}</td>
       <td>${htmlEscape(x.ledgerStatus || "有效")}</td>
     </tr>`).join("");
 
     const body = `
-      <div class="pdf-header"><div><h1>古物台账 PDF</h1><p>Kobutsu Ledger</p></div><div class="company"><b>豪嘉株式会社</b><br/>${new Date().toLocaleString()}</div></div>
-      <div class="section"><table><thead><tr><th>图</th><th>No</th><th>取引日</th><th>商品番号</th><th>区分</th><th>品牌</th><th>商品名</th><th>特徴</th><th>数量</th><th>金额</th><th>相手方</th><th>住所</th><th>本人確認</th><th>状态</th></tr></thead><tbody>${rows}</tbody></table></div>
-      <div class="footer">古物台账不建议物理删除。更正/作废请保留履历。</div>
+      ${companyPdfHeader(label, "Kobutsu Ledger / 古物台帳")}
+      <div class="section"><h2>台帳概要</h2><div class="summary-grid">
+        <div class="field"><small>台帳件数</small><b>${arr.length} 件</b></div>
+        <div class="field"><small>数量合計</small><b>${sum.qty} 点</b></div>
+        <div class="field"><small>仕入金額合計</small><b>CNY ${money(sum.purchase)}</b></div>
+        <div class="field"><small>画像あり</small><b>${sum.withImages} 件</b></div>
+      </div></div>
+      <div class="section">
+        <h2>古物台帳明細</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>画像</th>
+              <th>No</th>
+              <th>取引日</th>
+              <th>商品番号</th>
+              <th>区分</th>
+              <th>ブランド</th>
+              <th>商品名</th>
+              <th>特徴</th>
+              <th>数量</th>
+              <th>仕入金額</th>
+              <th>通貨</th>
+              <th>相手方</th>
+              <th>住所</th>
+              <th>本人確認</th>
+              <th>備考</th>
+              <th>状態</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+      <div class="footer">GOUKA Luxury ERP Enterprise / 古物台帳は税理士確認用の社内資料です。物理削除ではなく、更正・作废履歴を保管してください。</div>
     `;
-    openPdfWindow("古物台账_PDF", body);
+    openPdfWindow(`${label}_${new Date().toISOString().slice(0,10)}`, body);
   }
 
   function exportCustomsPdf() {
@@ -2553,7 +2598,7 @@ function SalesReport({ items, downloadCSV }) {
 }
 
 
-function PdfExportPanel({ items, totals, exportInventoryPdf }) {
+function PdfExportPanel({ items, totals, exportInventoryPdf, exportLedgerPdf }) {
   const [pdfQuery, setPdfQuery] = useState("");
   const [status, setStatus] = useState("全部");
   const [startDate, setStartDate] = useState("");
@@ -2597,10 +2642,21 @@ function PdfExportPanel({ items, totals, exportInventoryPdf }) {
     exportInventoryPdf(filteredPdfItems, `日期范围库存报告（${startDate || "开始"}～${endDate || "今天"}）`);
   }
 
+
+  function exportLedgerSelected() {
+    if (!selectedItems.length) return alert("请先勾选要导出的古物台账商品。 ");
+    exportLedgerPdf(selectedItems, `选中商品古物台帳（${selectedItems.length}件）`);
+  }
+
+  function exportLedgerByDate() {
+    if (!startDate && !endDate) return alert("请先选择开始日期或结束日期。 ");
+    exportLedgerPdf(filteredPdfItems, `日期范围古物台帳（${startDate || "开始"}～${endDate || "今天"}）`);
+  }
+
   return (
     <div className="panel">
       <h2><FileText size={20} /> PDF导出中心</h2>
-      <p className="note">V9 PDF企业版：使用公司正式抬头、电子公章、適格請求書登録番号。支持全部导出、勾选导出、按日期导出。</p>
+      <p className="note">V9 PDF企业版：使用公司正式抬头、电子公章、適格請求書登録番号。支持库存PDF与古物台账PDF：全部导出、勾选导出、按日期导出。</p>
 
       <div className="grid4" style={{marginTop:"16px"}}>
         <Card icon={<Package />} title="商品记录" value={`${items.length} 件`} />
@@ -2616,11 +2672,24 @@ function PdfExportPanel({ items, totals, exportInventoryPdf }) {
         <Input label="结束日期" type="date" value={endDate} onChange={setEndDate} />
       </div>
 
-      <div className="action-row" style={{marginTop:"20px", flexWrap:"wrap"}}>
-        <button className="primary" onClick={() => exportInventoryPdf(items, "全部库存报告")}>全部导出PDF</button>
-        <button className="primary" onClick={exportSelected}>勾选导出PDF</button>
-        <button className="primary" onClick={exportByDate}>按日期导出PDF</button>
-        <button className="ghost" onClick={() => { setPdfQuery(""); setStatus("全部"); setStartDate(""); setEndDate(""); setSelectedIds([]); }}>清除条件</button>
+      <div className="panel" style={{marginTop:"20px", background:"#f8fafc"}}>
+        <h3 style={{marginTop:0}}>库存报告 PDF</h3>
+        <div className="action-row" style={{flexWrap:"wrap"}}>
+          <button className="primary" onClick={() => exportInventoryPdf(items, "全部库存报告")}>库存：全部导出</button>
+          <button className="primary" onClick={exportSelected}>库存：勾选导出</button>
+          <button className="primary" onClick={exportByDate}>库存：按日期导出</button>
+        </div>
+      </div>
+
+      <div className="panel" style={{marginTop:"14px", background:"#fff7ed"}}>
+        <h3 style={{marginTop:0}}>古物台账 PDF</h3>
+        <p className="note">税理士确认用：显示商品图片、取引日、商品番号、人民币仕入金額、相手方、住所、本人確認、備考。</p>
+        <div className="action-row" style={{flexWrap:"wrap"}}>
+          <button className="primary" onClick={() => exportLedgerPdf(items, "全部古物台帳")}>古物：全部导出</button>
+          <button className="primary" onClick={exportLedgerSelected}>古物：勾选导出</button>
+          <button className="primary" onClick={exportLedgerByDate}>古物：按日期导出</button>
+          <button className="ghost" onClick={() => { setPdfQuery(""); setStatus("全部"); setStartDate(""); setEndDate(""); setSelectedIds([]); }}>清除条件</button>
+        </div>
       </div>
 
       <p className="note" style={{marginTop:"14px"}}>当前筛选：{filteredPdfItems.length} 件 / 已勾选：{selectedItems.length} 件</p>
