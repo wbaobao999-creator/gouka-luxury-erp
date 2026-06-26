@@ -1381,7 +1381,7 @@ function App() {
       <div class="pdf-header">
         <div>
           <h1>商品资料 PDF</h1>
-          <p>Product Sheet / GOUKA Luxury ERP V9.03</p>
+          <p>Product Sheet / GOUKA Luxury ERP V9.04</p>
         </div>
         <div class="company">
           <b>豪嘉株式会社</b><br />
@@ -1586,7 +1586,7 @@ function App() {
           <Building2 size={24} />
           <div>
             <b>豪嘉株式会社</b>
-            <span>GOUKA Luxury ERP V9.03</span>
+            <span>GOUKA Luxury ERP V9.04</span>
           </div>
         </div>
 
@@ -1602,7 +1602,7 @@ function App() {
       <main>
         <header>
           <div>
-            <h1>二手奢侈品管理系统 V9.03 Listing Management</h1>
+            <h1>二手奢侈品管理系统 V9.04 Image Everywhere</h1>
             <p>自动保存・云端同步・图片上传・状态筛选・古物台账锁定・EMS报关・利润计算</p>
           </div>
           <div className="action-row">
@@ -1906,7 +1906,7 @@ function Dashboard({ totals, items, setTab, exportBackup }) {
       </div>
       <div className="panel wide">
         <h2>经营提醒</h2>
-        <p>V7.11新增今日经营、库存预警、品牌利润排行、供应商利润排行。V9.03已接入出品管理、企业版PDF模板、Supabase云端同步与云端图片；本地仍保留自动备份。</p>
+        <p>V7.11新增今日经营、库存预警、品牌利润排行、供应商利润排行。V9.04已统一商品图片显示，库存、古物、出品、销售、EMS、利润、消费税页面都可看图；本地仍保留自动备份。</p>
       </div>
     </section>
   );
@@ -2096,6 +2096,20 @@ function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, 
 
 function StatusBadge({ status }) {
   return <span className={`status-badge status-${status}`}>{status}</span>;
+}
+
+function ProductThumb({ item, size = 52, onPreview }) {
+  const src = Array.isArray(item?.images) && item.images.length ? item.images[0] : "";
+  if (!src) return "—";
+  return (
+    <img
+      className="thumb"
+      src={src}
+      alt={item?.item || item?.id || "product"}
+      style={{ width: size, height: size }}
+      onClick={() => onPreview?.(src)}
+    />
+  );
 }
 
 function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, downloadCSV, editItem, deleteItem, isOwner, setPreviewImage, setPreviewScale, exportItemPdf }) {
@@ -2450,8 +2464,13 @@ function CustomsBatchPanel({ batches, setBatches, items, downloadCSV }) {
 }
 
 function Customs({ items, customsBatches, downloadCSV }) {
-  const headers = ["No.", "Brand", "Item", "Material", "Color", "Specification", "Qty", "Country of Origin", "Declared Currency", "Declared Value", "Declared Value (JPY)", "Import Tax 10% Ref", "Customs Batch", "Remarks"];
+  const headers = ["图片", "No.", "Brand", "Item", "Material", "Color", "Specification", "Qty", "Country of Origin", "Declared Currency", "Declared Value", "Declared Value (JPY)", "Import Tax 10% Ref", "Customs Batch", "Remarks"];
+  const csvHeaders = headers.filter((h) => h !== "图片");
   const rows = items.map((x, i) => {
+    const t = calcTax(x);
+    return [<ProductThumb item={x} />, i + 1, x.brand, x.item, x.material, x.color, x.category, x.qty, x.origin, x.declaredCurrency || "CNY", x.declaredCny, Math.round(t.declaredJpy), Math.round(t.inputTax), x.customsBatchId || "", "Used luxury goods / Non-CITES material"];
+  });
+  const csvRows = items.map((x, i) => {
     const t = calcTax(x);
     return [i + 1, x.brand, x.item, x.material, x.color, x.category, x.qty, x.origin, x.declaredCurrency || "CNY", x.declaredCny, Math.round(t.declaredJpy), Math.round(t.inputTax), x.customsBatchId || "", "Used luxury goods / Non-CITES material"];
   });
@@ -2460,7 +2479,7 @@ function Customs({ items, customsBatches, downloadCSV }) {
 
   return (
     <div className="panel">
-      <Toolbar title="EMS Commercial Customs Declaration" onDownload={() => downloadCSV([headers, ...rows, [], ["Total Quantity", totalQty], ["Total Declared Value JPY", Math.round(totalValue)]], "gouka_ems_customs_tax.csv")} />
+      <Toolbar title="EMS Commercial Customs Declaration" onDownload={() => downloadCSV([csvHeaders, ...csvRows, [], ["Total Quantity", totalQty], ["Total Declared Value JPY", Math.round(totalValue)]], "gouka_ems_customs_tax.csv")} />
       <p>
         <b>Importer:</b> 豪嘉株式会社 (GOUKA INC.)
       </p>
@@ -2471,11 +2490,11 @@ function Customs({ items, customsBatches, downloadCSV }) {
 }
 
 function Profit({ items }) {
-  const headers = ["商品编号", "品牌", "商品名", "报关批次", "基础成本JPY", "附加成本JPY", "真实成本JPY", "销售JPY（税込）", "销售不含税", "销售消费税", "预计毛利", "不含税利润参考", "利润率"];
+  const headers = ["图片", "商品编号", "品牌", "商品名", "报关批次", "基础成本JPY", "附加成本JPY", "真实成本JPY", "销售JPY（税込）", "销售不含税", "销售消费税", "预计毛利", "不含税利润参考", "利润率"];
   const rows = items.map((x) => {
     const t = calcTax(x);
     const margin = t.saleExTax ? ((t.profitExTax / t.saleExTax) * 100).toFixed(1) + "%" : "";
-    return [x.id, x.brand, x.item, x.customsBatchId || "", Math.round(t.baseCostJpy), Math.round(t.extraCostJpy), Math.round(t.costJpy), x.saleJpy, Math.round(t.saleExTax), Math.round(t.outputTax), Math.round(t.grossProfit), Math.round(t.profitExTax), margin];
+    return [<ProductThumb item={x} />, x.id, x.brand, x.item, x.customsBatchId || "", Math.round(t.baseCostJpy), Math.round(t.extraCostJpy), Math.round(t.costJpy), x.saleJpy, Math.round(t.saleExTax), Math.round(t.outputTax), Math.round(t.grossProfit), Math.round(t.profitExTax), margin];
   });
 
   return (
@@ -2489,13 +2508,18 @@ function Profit({ items }) {
 }
 
 function TaxReport({ items, totals, customsBatches, downloadCSV }) {
-  const headers = ["商品编号", "品牌", "商品名", "申报JPY", "进项消费税估算", "销售JPY（税込）", "销售不含税", "销售消费税", "消费税差额参考", "检查提示"];
+  const headers = ["图片", "商品编号", "品牌", "商品名", "申报JPY", "进项消费税估算", "销售JPY（税込）", "销售不含税", "销售消费税", "消费税差额参考", "检查提示"];
+  const csvHeaders = headers.filter((h) => h !== "图片");
   const rows = items.map((x) => {
     const t = calcTax(x);
-    return [x.id, x.brand, x.item, Math.round(t.declaredJpy), Math.round(t.inputTax), Math.round(t.saleJpy), Math.round(t.saleExTax), Math.round(t.outputTax), Math.round(t.taxBalance)];
+    return [<ProductThumb item={x} />, x.id, x.brand, x.item, Math.round(t.declaredJpy), Math.round(t.inputTax), Math.round(t.saleJpy), Math.round(t.saleExTax), Math.round(t.outputTax), Math.round(t.taxBalance), ""];
+  });
+  const csvRows = items.map((x) => {
+    const t = calcTax(x);
+    return [x.id, x.brand, x.item, Math.round(t.declaredJpy), Math.round(t.inputTax), Math.round(t.saleJpy), Math.round(t.saleExTax), Math.round(t.outputTax), Math.round(t.taxBalance), ""];
   });
 
-  const csv = [headers, ...rows, [], ["合计", "", "", "", Math.round(totals.inputTax), Math.round(totals.sale), "", Math.round(totals.outputTax), Math.round(totals.taxBalance)]];
+  const csv = [csvHeaders, ...csvRows, [], ["合计", "", "", Math.round(totals.inputTax), Math.round(totals.sale), "", Math.round(totals.outputTax), Math.round(totals.taxBalance)]];
 
   return (
     <div className="panel">
@@ -2511,7 +2535,6 @@ function TaxReport({ items, totals, customsBatches, downloadCSV }) {
     </div>
   );
 }
-
 
 
 function ListingManagement({ items, updateListingItem, editItem, setPreviewImage, setPreviewScale }) {
@@ -2676,15 +2699,33 @@ function SalesReport({ items, downloadCSV }) {
     return matchText && matchMonth;
   });
 
-  const headers = ["商品编号", "品牌", "商品名", "销售日期", "销售平台", "销售额JPY（税込）", "采购成本JPY", "销售消费税", "预计毛利", "不含税利润参考", "备注"];
+  const headers = ["图片", "商品编号", "品牌", "商品名", "销售日期", "销售平台", "销售额JPY（税込）", "采购成本JPY", "销售消费税", "预计毛利", "不含税利润参考", "备注"];
+  const csvHeaders = headers.filter((h) => h !== "图片");
   const rows = filteredSold.map((x) => {
+    const t = calcTax(x);
+    return [
+      <ProductThumb item={x} />,
+      x.id,
+      x.brand,
+      x.item,
+      x.soldDate || "",
+      x.soldPlatform || x.platform || "",
+      Math.round(t.saleJpy),
+      Math.round(t.costJpy),
+      Math.round(t.outputTax),
+      Math.round(t.grossProfit),
+      Math.round(t.profitExTax),
+      x.soldMemo || ""
+    ];
+  });
+  const csvRows = filteredSold.map((x) => {
     const t = calcTax(x);
     return [
       x.id,
       x.brand,
       x.item,
       x.soldDate || "",
-      x.soldPlatform || "",
+      x.soldPlatform || x.platform || "",
       Math.round(t.saleJpy),
       Math.round(t.costJpy),
       Math.round(t.outputTax),
@@ -2701,7 +2742,7 @@ function SalesReport({ items, downloadCSV }) {
 
   return (
     <div className="panel">
-      <Toolbar title="销售记录" onDownload={() => downloadCSV([headers, ...rows], "gouka_sales_report.csv")} />
+      <Toolbar title="销售记录" onDownload={() => downloadCSV([csvHeaders, ...csvRows], "gouka_sales_report.csv")} />
 
       <div className="filter-row">
         <input
@@ -2717,7 +2758,7 @@ function SalesReport({ items, downloadCSV }) {
         <button onClick={() => { setSalesQuery(""); setSalesMonth(""); }}>清除筛选</button>
       </div>
 
-      <p className="note">状态改为「已售出」后，会自动进入这里。可按品牌、商品名、销售平台、月份筛选。</p>
+      <p className="note">状态改为「已售出」或「已发货」后，会自动进入这里。可按品牌、商品名、销售平台、月份筛选。</p>
 
       <div className="grid4" style={{marginBottom:"16px"}}>
         <Card icon={<Calculator />} title="筛选已售件数" value={`${filteredSold.length} 件`} />
