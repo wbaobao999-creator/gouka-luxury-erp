@@ -1295,9 +1295,8 @@ function App() {
 </head>
 <body>
 <button class="no-print" onclick="window.print()" style="position:fixed;right:18px;top:18px;padding:10px 14px;border-radius:10px;border:0;background:#111827;color:white;cursor:pointer;z-index:9">打印 / 另存为PDF</button>
-<div class="no-print" style="position:fixed;right:18px;top:58px;width:230px;font-size:12px;line-height:1.5;color:#475569;background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:10px;z-index:9">选择打印机：另存为PDF，然后手动选择桌面保存。</div>
 <div class="pdf-page">${bodyHtml}</div>
-<script>document.title = `${htmlEscape(title)}`;</script>
+<script>setTimeout(function(){ window.print(); }, 600);</script>
 </body>
 </html>`);
     win.document.close();
@@ -1310,7 +1309,7 @@ function App() {
       <div class="pdf-header">
         <div>
           <h1>商品资料 PDF</h1>
-          <p>Product Sheet / GOUKA Luxury ERP V8.06</p>
+          <p>Product Sheet / GOUKA Luxury ERP V8.05</p>
         </div>
         <div class="company">
           <b>豪嘉株式会社</b><br />
@@ -1365,8 +1364,8 @@ function App() {
     openPdfWindow(`商品资料_${item.id}`, body);
   }
 
-  function exportInventoryPdf(selectedItems = null, label = "库存清单") {
-    const arr = Array.isArray(selectedItems) ? selectedItems : (computedItems || []);
+  function exportInventoryPdf() {
+    const arr = computedItems || [];
     const rows = arr.map((x) => {
       const t = calcTax(x);
       return `<tr>
@@ -1383,7 +1382,7 @@ function App() {
     }).join("");
 
     const body = `
-      <div class="pdf-header"><div><h1>${htmlEscape(label)} PDF</h1><p>Inventory Report / Selected Items</p></div><div class="company"><b>豪嘉株式会社</b><br/>${new Date().toLocaleString()}<br/>导出件数：${arr.length}</div></div>
+      <div class="pdf-header"><div><h1>库存清单 PDF</h1><p>Inventory Report</p></div><div class="company"><b>豪嘉株式会社</b><br/>${new Date().toLocaleString()}</div></div>
       <div class="section"><h2>汇总</h2><div class="grid">
         <div class="field"><small>商品记录</small><b>${arr.length} 件</b></div>
         <div class="field"><small>库存总成本</small><b>${jpy(totals.cost)}</b></div>
@@ -1393,11 +1392,11 @@ function App() {
       <div class="section"><h2>库存明细</h2><table><thead><tr><th>图</th><th>商品编号</th><th>入库日</th><th>品牌</th><th>商品</th><th>状态</th><th>成本</th><th>售价</th><th>利润</th></tr></thead><tbody>${rows}</tbody></table></div>
       <div class="footer">GOUKA Luxury ERP 自动生成。</div>
     `;
-    openPdfWindow(`${label}_PDF`, body);
+    openPdfWindow("库存清单_PDF", body);
   }
 
-  function exportLedgerPdf(selectedItems = null, label = "古物台账") {
-    const arr = Array.isArray(selectedItems) ? selectedItems : (computedItems || []);
+  function exportLedgerPdf() {
+    const arr = computedItems || [];
     const rows = arr.map((x, i) => `<tr>
       <td>${pdfImageHtml(x, 40)}</td>
       <td>${i + 1}</td>
@@ -1416,15 +1415,15 @@ function App() {
     </tr>`).join("");
 
     const body = `
-      <div class="pdf-header"><div><h1>${htmlEscape(label)} PDF</h1><p>Kobutsu Ledger / Selected Items</p></div><div class="company"><b>豪嘉株式会社</b><br/>${new Date().toLocaleString()}<br/>导出件数：${arr.length}</div></div>
+      <div class="pdf-header"><div><h1>古物台账 PDF</h1><p>Kobutsu Ledger</p></div><div class="company"><b>豪嘉株式会社</b><br/>${new Date().toLocaleString()}</div></div>
       <div class="section"><table><thead><tr><th>图</th><th>No</th><th>取引日</th><th>商品番号</th><th>区分</th><th>品牌</th><th>商品名</th><th>特徴</th><th>数量</th><th>金额</th><th>相手方</th><th>住所</th><th>本人確認</th><th>状态</th></tr></thead><tbody>${rows}</tbody></table></div>
       <div class="footer">古物台账不建议物理删除。更正/作废请保留履历。</div>
     `;
-    openPdfWindow(`${label}_PDF`, body);
+    openPdfWindow("古物台账_PDF", body);
   }
 
-  function exportCustomsPdf(selectedItems = null, label = "EMS报关") {
-    const arr = Array.isArray(selectedItems) ? selectedItems : (filtered || computedItems || []);
+  function exportCustomsPdf() {
+    const arr = filtered || computedItems || [];
     const totalQty = arr.reduce((a, x) => a + Number(x.qty || 0), 0);
     const totalValue = arr.reduce((a, x) => a + calcTax(x).declaredJpy, 0);
     const rows = arr.map((x, i) => {
@@ -1432,12 +1431,12 @@ function App() {
       return `<tr><td>${i + 1}</td><td>${htmlEscape(x.brand)}</td><td>${htmlEscape(x.item)}</td><td>${htmlEscape(x.material)}</td><td>${htmlEscape(x.color)}</td><td>${htmlEscape(x.qty)}</td><td>${htmlEscape(x.origin)}</td><td>${htmlEscape(x.declaredCurrency || "CNY")}</td><td class="right">${htmlEscape(x.declaredCny)}</td><td class="right">${jpy(t.declaredJpy)}</td><td>Used luxury goods / Non-CITES material</td></tr>`;
     }).join("");
     const body = `
-      <div class="pdf-header"><div><h1>${htmlEscape(label)} PDF</h1><p>Customs Declaration Reference / Selected Items</p></div><div class="company"><b>Importer: 豪嘉株式会社</b><br/>GOUKA INC.<br/>${new Date().toLocaleString()}<br/>导出件数：${arr.length}</div></div>
+      <div class="pdf-header"><div><h1>EMS Commercial Invoice PDF</h1><p>Customs Declaration Reference</p></div><div class="company"><b>Importer: 豪嘉株式会社</b><br/>GOUKA INC.<br/>${new Date().toLocaleString()}</div></div>
       <div class="section"><table><thead><tr><th>No</th><th>Brand</th><th>Item</th><th>Material</th><th>Color</th><th>Qty</th><th>Origin</th><th>Currency</th><th>Declared</th><th>JPY</th><th>Remarks</th></tr></thead><tbody>${rows}</tbody></table></div>
       <div class="section"><h2>Total</h2><div class="grid"><div class="field"><small>Total Quantity</small><b>${totalQty} pcs</b></div><div class="field"><small>Total Declared Value</small><b>${jpy(totalValue)}</b></div></div></div>
       <div class="footer">Non-CITES material statement is based on internal entry. Please verify before official customs submission.</div>
     `;
-    openPdfWindow(`${label}_PDF`, body);
+    openPdfWindow("EMS报关_PDF", body);
   }
 
 
@@ -1500,7 +1499,7 @@ function App() {
           <Building2 size={24} />
           <div>
             <b>豪嘉株式会社</b>
-            <span>GOUKA Luxury ERP V8.06</span>
+            <span>GOUKA Luxury ERP V8.05</span>
           </div>
         </div>
 
@@ -1516,7 +1515,7 @@ function App() {
       <main>
         <header>
           <div>
-            <h1>二手奢侈品管理系统 V8.06 Enterprise PDF</h1>
+            <h1>二手奢侈品管理系统 V8.05 Enterprise PDF</h1>
             <p>自动保存・云端同步・图片上传・状态筛选・古物台账锁定・EMS报关・利润计算</p>
           </div>
           <div className="action-row">
@@ -1819,7 +1818,7 @@ function Dashboard({ totals, items, setTab, exportBackup }) {
       </div>
       <div className="panel wide">
         <h2>经营提醒</h2>
-        <p>V7.11新增今日经营、库存预警、品牌利润排行、供应商利润排行。V8.06已接入Supabase云端同步、云端图片与筛选PDF导出；本地仍保留自动备份。</p>
+        <p>V7.11新增今日经营、库存预警、品牌利润排行、供应商利润排行。V8.05已接入Supabase云端同步、云端图片与PDF导出；本地仍保留自动备份。</p>
       </div>
     </section>
   );
@@ -2497,93 +2496,40 @@ function SalesReport({ items, downloadCSV }) {
 
 function PdfExportPanel({ items, totals, exportInventoryPdf, exportLedgerPdf, exportCustomsPdf, exportItemPdf }) {
   const [pdfQuery, setPdfQuery] = useState("");
-  const [pdfStatus, setPdfStatus] = useState("全部");
-  const [pdfDateFrom, setPdfDateFrom] = useState("");
-  const [pdfDateTo, setPdfDateTo] = useState("");
-  const [selectedIds, setSelectedIds] = useState([]);
   const q = pdfQuery.toLowerCase();
-  const statuses = ["全部", "采购中", "运输中", "已入库", "报关准备", "出品中", "已售出", "保留", "退货"];
-
-  const filteredPdfItems = (items || []).filter((x) => {
-    const text = Object.values(x).join(" ").toLowerCase();
-    const matchText = !q || text.includes(q);
-    const matchStatus = pdfStatus === "全部" || x.status === pdfStatus;
-    const d = x.purchaseDate || "";
-    const matchFrom = !pdfDateFrom || d >= pdfDateFrom;
-    const matchTo = !pdfDateTo || d <= pdfDateTo;
-    return matchText && matchStatus && matchFrom && matchTo;
-  });
-
-  const visibleItems = filteredPdfItems.slice(0, 100);
-  const selectedItems = filteredPdfItems.filter((x) => selectedIds.includes(x.id));
-  const exportItems = selectedItems.length ? selectedItems : filteredPdfItems;
-
-  function toggleSelected(id) {
-    setSelectedIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
-  }
-
-  function selectVisible() {
-    setSelectedIds(Array.from(new Set([...selectedIds, ...visibleItems.map((x) => x.id)])));
-  }
-
-  function clearSelected() {
-    setSelectedIds([]);
-  }
-
-  function safeExport(type) {
-    if (!exportItems.length) return alert("没有可导出的商品。请先筛选或勾选商品。");
-    if (exportItems.length > 80 && !window.confirm(`本次将导出 ${exportItems.length} 件，PDF可能很长。建议先按日期、状态或品牌筛选。继续吗？`)) return;
-    const label = selectedItems.length ? `选中商品_${selectedItems.length}件` : `筛选商品_${filteredPdfItems.length}件`;
-    if (type === "inventory") return exportInventoryPdf(exportItems, `库存清单_${label}`);
-    if (type === "ledger") return exportLedgerPdf(exportItems, `古物台账_${label}`);
-    if (type === "customs") return exportCustomsPdf(exportItems, `EMS报关_${label}`);
-  }
+  const filteredPdfItems = (items || []).filter((x) => !q || Object.values(x).join(" ").toLowerCase().includes(q)).slice(0, 30);
 
   return (
     <div className="panel">
       <h2><FileText size={20} /> PDF导出中心</h2>
-      <p className="note">V8.06：按筛选、按勾选、按单件导出PDF。不会再默认一次打印全部库存。PDF窗口打开后，点右上角「打印 / 另存为PDF」，再手动选择桌面保存。</p>
+      <p className="note">V8.05新增：直接使用浏览器打印功能导出PDF，不需要额外插件。打开后选择「另存为PDF」即可保存。</p>
 
       <div className="grid4" style={{marginTop:"16px"}}>
-        <Card icon={<Package />} title="全部商品" value={`${items.length} 件`} />
+        <Card icon={<Package />} title="商品记录" value={`${items.length} 件`} />
         <Card icon={<ImagePlus />} title="有图商品" value={`${items.filter(x => x.images?.length).length} 件`} />
-        <Card icon={<Search />} title="当前筛选" value={`${filteredPdfItems.length} 件`} />
-        <Card icon={<FileText />} title="已勾选" value={`${selectedItems.length} 件`} />
-      </div>
-
-      <div className="panel" style={{background:"#f8fafc", marginTop:"16px"}}>
-        <h2>筛选条件</h2>
-        <div className="formgrid">
-          <label>
-            搜索编号 / 品牌 / 商品 / 供应商
-            <input value={pdfQuery} onChange={(e)=>setPdfQuery(e.target.value)} placeholder="例：CHANEL / GOUKA-202606 / Kelly" />
-          </label>
-          <Select label="状态" value={pdfStatus} onChange={setPdfStatus} options={statuses} />
-          <Input label="入库日 从" type="date" value={pdfDateFrom} onChange={setPdfDateFrom} />
-          <Input label="入库日 到" type="date" value={pdfDateTo} onChange={setPdfDateTo} />
-        </div>
-        <div className="action-row" style={{marginTop:"12px", flexWrap:"wrap"}}>
-          <button className="ghost" onClick={selectVisible}>勾选当前显示100件</button>
-          <button className="ghost" onClick={clearSelected}>清空勾选</button>
-          <button className="ghost" onClick={() => { setPdfQuery(""); setPdfStatus("全部"); setPdfDateFrom(""); setPdfDateTo(""); setSelectedIds([]); }}>清除筛选</button>
-        </div>
+        <Card icon={<Calculator />} title="库存总成本" value={jpy(totals.cost)} />
+        <Card icon={<Calculator />} title="预计净利润" value={jpy(totals.profit)} />
       </div>
 
       <div className="action-row" style={{marginTop:"20px", flexWrap:"wrap"}}>
-        <button className="primary" onClick={() => safeExport("inventory")}>导出库存PDF（筛选/勾选）</button>
-        <button className="primary" onClick={() => safeExport("ledger")}>导出古物台账PDF（筛选/勾选）</button>
-        <button className="primary" onClick={() => safeExport("customs")}>导出EMS报关PDF（筛选/勾选）</button>
+        <button className="primary" onClick={exportInventoryPdf}>导出库存清单 PDF</button>
+        <button className="primary" onClick={exportLedgerPdf}>导出古物台账 PDF</button>
+        <button className="primary" onClick={exportCustomsPdf}>导出EMS报关 PDF</button>
       </div>
 
       <div className="toolbar" style={{marginTop:"20px"}}>
-        <h2>商品列表</h2>
-        <p className="note">当前显示前 {visibleItems.length} 件 / 筛选共 {filteredPdfItems.length} 件。单件PDF请点右侧按钮。</p>
+        <h2>单件商品PDF</h2>
+        <div className="toolbar-right">
+          <div className="search">
+            <Search size={16} />
+            <input placeholder="搜索编号 / 品牌 / 商品" value={pdfQuery} onChange={(e)=>setPdfQuery(e.target.value)} />
+          </div>
+        </div>
       </div>
 
       <Table
-        headers={["选择", "图片", "商品编号", "品牌", "商品名", "状态", "单件PDF"]}
-        rows={visibleItems.map((x) => [
-          <input type="checkbox" checked={selectedIds.includes(x.id)} onChange={() => toggleSelected(x.id)} />,
+        headers={["图片", "商品编号", "品牌", "商品名", "状态", "PDF"]}
+        rows={filteredPdfItems.map((x) => [
           x.images?.[0] ? <img className="thumb" src={x.images[0]} alt={x.item} /> : "—",
           x.id,
           x.brand,
