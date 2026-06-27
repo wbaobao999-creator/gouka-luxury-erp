@@ -1515,25 +1515,36 @@ function App() {
 
   function companyPdfHeader(title, subtitle = "Inventory Report") {
     const printedAt = new Date().toLocaleString();
+    const docNo = makeDocumentNo();
+    const sealRotate = (Math.random() * 4 - 2).toFixed(2);
+    const sealX = Math.round(Math.random() * 4 - 2);
+    const sealY = Math.round(Math.random() * 4 - 2);
     return `
-      <div class="company-letterhead">
+      <div class="company-letterhead enterprise-letterhead">
         <div class="company-left">
-          <div>〒532-0011</div>
+          <div class="postal">〒532-0011</div>
           <div>大阪府大阪市淀川区西中島4丁目2番26号</div>
           <div>天神第一ビル7F 1B</div>
           <div class="company-name">豪嘉株式会社</div>
-          <div>代表取締役　許 四傑</div>
+          <div class="representative-line">代表取締役　許 四傑
+            <img class="company-stamp seal-on-name" style="transform:translate(${sealX}px, ${sealY}px) rotate(${sealRotate}deg);" src="${COMPANY_STAMP_DATA_URL}" />
+          </div>
           <div class="invoice-no">適格請求書発行事業者　登録番号：T120001249367</div>
           <div>TEL：06-7176-7189</div>
         </div>
-        <div class="company-right">
-          <img class="company-stamp" src="${COMPANY_STAMP_DATA_URL}" />
-          <div class="doc-no">Document No.<br/>${htmlEscape(makeDocumentNo())}</div>
+        <div class="company-right doc-block">
+          <div class="doc-label">Document No.</div>
+          <div class="doc-value">${htmlEscape(docNo)}</div>
+          <div class="doc-label generated-label">Generated</div>
+          <div class="doc-value">${htmlEscape(printedAt)}</div>
         </div>
       </div>
-      <div class="report-title">
-        <h1>${htmlEscape(title)}</h1>
-        <p>${htmlEscape(subtitle)}　/　Generated：${htmlEscape(printedAt)}</p>
+      <div class="report-title enterprise-title">
+        <div>
+          <h1>${htmlEscape(title)}</h1>
+          <p>${htmlEscape(subtitle)}</p>
+        </div>
+        <div class="erp-version">GOUKA ERP Enterprise 2.0.3</div>
       </div>
     `;
   }
@@ -1554,16 +1565,25 @@ function App() {
   * { box-sizing: border-box; }
   body { font-family: Arial, "Hiragino Sans", "Yu Gothic", sans-serif; color:#111827; margin:0; padding:28px; background:#fff; }
   .pdf-page { max-width: 980px; margin: 0 auto; }
-  .company-letterhead { display:flex; justify-content:space-between; align-items:flex-start; gap:20px; border-bottom:3px solid #111827; padding-bottom:14px; margin-bottom:16px; }
-  .company-left { font-size:13px; line-height:1.65; color:#111827; }
-  .company-name { font-weight:700; font-size:18px; margin-top:8px; }
-  .invoice-no { margin-top:6px; font-weight:600; }
-  .company-right { text-align:center; min-width:180px; }
-  .company-stamp { width:118px; height:118px; object-fit:contain; opacity:.92; }
+  .company-letterhead { display:flex; justify-content:space-between; align-items:flex-start; gap:28px; border-bottom:3px solid #111827; padding-bottom:16px; margin-bottom:16px; }
+  .enterprise-letterhead { min-height:142px; }
+  .company-left { font-size:13px; line-height:1.65; color:#111827; position:relative; min-width:520px; }
+  .postal { letter-spacing:.02em; }
+  .company-name { font-weight:800; font-size:19px; margin-top:9px; letter-spacing:.03em; }
+  .representative-line { position:relative; display:inline-block; margin-top:2px; padding-right:96px; min-height:38px; }
+  .invoice-no { margin-top:6px; font-weight:700; }
+  .company-right { text-align:right; min-width:230px; }
+  .company-stamp { object-fit:contain; mix-blend-mode:multiply; filter:contrast(1.08) saturate(.9); }
+  .seal-on-name { position:absolute; width:92px; height:92px; right:2px; top:-32px; opacity:.76; z-index:2; pointer-events:none; }
+  .doc-block { padding-top:8px; color:#475569; line-height:1.4; }
+  .doc-label { font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:#64748b; }
+  .doc-value { font-size:11px; color:#1f2937; margin-bottom:10px; font-weight:600; }
+  .generated-label { margin-top:8px; }
   .doc-no { margin-top:6px; font-size:10px; color:#64748b; line-height:1.4; }
   .report-title { display:flex; justify-content:space-between; align-items:flex-end; border-bottom:1px solid #cbd5e1; padding-bottom:12px; margin-bottom:18px; }
-  .report-title h1 { margin:0; font-size:25px; letter-spacing:.02em; }
-  .report-title p { margin:4px 0 0; color:#475569; font-size:12px; }
+  .enterprise-title h1 { margin:0; font-size:25px; letter-spacing:.02em; }
+  .enterprise-title p { margin:4px 0 0; color:#475569; font-size:12px; }
+  .erp-version { color:#64748b; font-size:10px; white-space:nowrap; }
   .pdf-header { display:flex; justify-content:space-between; align-items:flex-start; border-bottom:3px solid #111827; padding-bottom:14px; margin-bottom:18px; }
   .pdf-header h1 { margin:0; font-size:24px; }
   .pdf-header p { margin:4px 0 0; color:#475569; font-size:12px; }
@@ -1600,17 +1620,7 @@ function App() {
     if (!item) return;
     const t = calcTax(item);
     const body = `
-      <div class="pdf-header">
-        <div>
-          <h1>商品资料 PDF</h1>
-          <p>Product Sheet / GOUKA ERP Enterprise 2.0.2.2.1</p>
-        </div>
-        <div class="company">
-          <b>豪嘉株式会社</b><br />
-          GOUKA INC.<br />
-          Exported: ${new Date().toLocaleString()}
-        </div>
-      </div>
+      ${companyPdfHeader("商品资料 PDF", "Product Sheet")}
 
       <div class="section">
         <h2>商品图片</h2>
@@ -1699,7 +1709,7 @@ function App() {
         <div class="field"><small>预计净利润</small><b>${jpy(sum.profit)}</b></div>
       </div></div>
       <div class="section"><h2>库存明细</h2><table><thead><tr><th>图</th><th>商品编号</th><th>入库日</th><th>品牌</th><th>商品</th><th>状态</th><th>成本</th><th>售价</th><th>利润</th></tr></thead><tbody>${rows}</tbody></table></div>
-      <div class="footer">GOUKA ERP Enterprise 2.0.2.2.1 / Generated by GOUKA ERP. 金额与消费税为内部参考，正式申告请交由税理士确认。</div>
+      <div class="footer">GOUKA ERP Enterprise 2.0.3.2.1 / Generated by GOUKA ERP. 金额与消费税为内部参考，正式申告请交由税理士确认。</div>
     `;
     openPdfWindow(`${label}_${new Date().toISOString().slice(0,10)}`, body);
   }
@@ -1724,7 +1734,7 @@ function App() {
     </tr>`).join("");
 
     const body = `
-      <div class="pdf-header"><div><h1>古物台账 PDF</h1><p>Kobutsu Ledger</p></div><div class="company"><b>豪嘉株式会社</b><br/>${new Date().toLocaleString()}</div></div>
+      ${companyPdfHeader("古物台账 PDF", "Kobutsu Ledger")}
       <div class="section"><table><thead><tr><th>图</th><th>No</th><th>取引日</th><th>商品番号</th><th>区分</th><th>品牌</th><th>商品名</th><th>特徴</th><th>数量</th><th>金额</th><th>相手方</th><th>住所</th><th>本人確認</th><th>状态</th></tr></thead><tbody>${rows}</tbody></table></div>
       <div class="footer">古物台账不建议物理删除。更正/作废请保留履历。</div>
     `;
@@ -1740,7 +1750,7 @@ function App() {
       return `<tr><td>${i + 1}</td><td>${htmlEscape(x.brand)}</td><td>${htmlEscape(x.item)}</td><td>${htmlEscape(x.material)}</td><td>${htmlEscape(x.color)}</td><td>${htmlEscape(x.qty)}</td><td>${htmlEscape(x.origin)}</td><td>${htmlEscape(x.declaredCurrency || "CNY")}</td><td class="right">${htmlEscape(x.declaredCny)}</td><td class="right">${jpy(t.declaredJpy)}</td><td>Used luxury goods / Non-CITES material</td></tr>`;
     }).join("");
     const body = `
-      <div class="pdf-header"><div><h1>EMS Commercial Invoice PDF</h1><p>Customs Declaration Reference</p></div><div class="company"><b>Importer: 豪嘉株式会社</b><br/>GOUKA INC.<br/>${new Date().toLocaleString()}</div></div>
+      ${companyPdfHeader("EMS Commercial Invoice PDF", "Customs Declaration Reference")}
       <div class="section"><table><thead><tr><th>No</th><th>Brand</th><th>Item</th><th>Material</th><th>Color</th><th>Qty</th><th>Origin</th><th>Currency</th><th>Declared</th><th>JPY</th><th>Remarks</th></tr></thead><tbody>${rows}</tbody></table></div>
       <div class="section"><h2>Total</h2><div class="grid"><div class="field"><small>Total Quantity</small><b>${totalQty} pcs</b></div><div class="field"><small>Total Declared Value</small><b>${jpy(totalValue)}</b></div></div></div>
       <div class="footer">Non-CITES material statement is based on internal entry. Please verify before official customs submission.</div>
@@ -1809,7 +1819,7 @@ function App() {
           <Building2 size={24} />
           <div>
             <b>豪嘉株式会社</b>
-            <span>GOUKA ERP Enterprise 2.0.2.2.1</span>
+            <span>GOUKA ERP Enterprise 2.0.3.2.1</span>
           </div>
         </div>
 
@@ -1825,7 +1835,7 @@ function App() {
       <main>
         <header>
           <div>
-            <h1>豪嘉ERP Enterprise 2.0.2 Auction Engine</h1>
+            <h1>豪嘉ERP Enterprise 2.0.3 Auction Engine</h1>
             <p>自动保存・云端同步・图片上传・状态筛选・古物台账锁定・EMS报关・利润计算</p>
           </div>
           <div className="action-row">
@@ -1993,8 +2003,8 @@ function Dashboard({ totals, items, setTab, exportBackup }) {
     <section className="v3-dashboard">
       <div className="v3-hero">
         <div>
-          <span className="v3-kicker">GOUKA ERP Enterprise 2.0.2.2.1</span>
-          <h1>经营驾驶舱 · Enterprise 2.0.2</h1>
+          <span className="v3-kicker">GOUKA ERP Enterprise 2.0.3.2.1</span>
+          <h1>经营驾驶舱 · Enterprise 2.0.3</h1>
           <p>今日经营、库存预警、品牌利润、供应商利润集中显示。老板打开第一页就知道该赚钱、该出品、该清库存。</p>
           <div className="v3-hero-actions">
             <button onClick={() => setTab("add")}>新增商品</button>
@@ -2130,7 +2140,7 @@ function Dashboard({ totals, items, setTab, exportBackup }) {
       </div>
       <div className="panel wide">
         <h2>经营提醒</h2>
-        <p>V7.11新增今日经营、库存预警、品牌利润排行、供应商利润排行。Enterprise 2.0.2：优化出品管理优先级、统一图片尺寸、菜单按日常业务重新排序；保留云端同步、PDF、古物台账和全页面图片。</p>
+        <p>V7.11新增今日经营、库存预警、品牌利润排行、供应商利润排行。Enterprise 2.0.3：优化出品管理优先级、统一图片尺寸、菜单按日常业务重新排序；保留云端同步、PDF、古物台账和全页面图片。</p>
       </div>
     </section>
   );
@@ -2239,7 +2249,7 @@ function AuctionSettlementBox({ form, setForm }) {
 
   return (
     <div className="full panel" style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", padding: "16px" }}>
-      <h3 style={{ marginTop: 0 }}>🏛 日本拍卖结算（结构化数据 / Enterprise 2.0.2）</h3>
+      <h3 style={{ marginTop: 0 }}>🏛 日本拍卖结算（结构化数据 / Enterprise 2.0.3）</h3>
       <p className="note">金额分三栏：实际支付＝拍卖公司请款合计；库存成本＝落札金額+落札手数料+国内送料（不含消费税）；可抵扣消费税＝落札消費税+手数料消費税。</p>
       <div className="formgrid">
         <SelectWithOther label="拍卖平台" value={auction.platform} onChange={(v) => setAuctionValue("platform", v)} options={["NBAA", "OBA", "ECO Ring", "JBA", "AUCNET", "Star Buyers", "其他"]} placeholder="选择或输入拍卖平台" />
@@ -3057,7 +3067,7 @@ function ListingManagement({ items, updateListingItem, editItem, setPreviewImage
   return (
     <div className="panel">
       <h2><Package size={20} /> 出品管理</h2>
-      <p className="note">Enterprise 2.0.2：出品管理优先优化。平台支持 NBAA / OBA / ECO Ring / JBA / AUCNET / Star Buyers / Mercari / Yahoo / 楽天 / 店铺，也可以手动输入。可快速把已入库商品加入待出品。</p>
+      <p className="note">Enterprise 2.0.3：出品管理优先优化。平台支持 NBAA / OBA / ECO Ring / JBA / AUCNET / Star Buyers / Mercari / Yahoo / 楽天 / 店铺，也可以手动输入。可快速把已入库商品加入待出品。</p>
 
       <div className="grid4" style={{marginBottom:"16px"}}>
         <Card icon={<Package />} title="已入库" value={`${counts["已入库"] || 0} 件`} />
