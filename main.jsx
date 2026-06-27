@@ -535,6 +535,183 @@ function sumExtraCosts(x) {
 }
 
 
+const AUCTION_BLOCK_START = "--- GOUKA_AUCTION_SETTLEMENT_START ---";
+const AUCTION_BLOCK_END = "--- GOUKA_AUCTION_SETTLEMENT_END ---";
+
+function parseMoneyNumber(value) {
+  if (value === null || value === undefined) return 0;
+  const normalized = String(value)
+    .replace(/[０-９]/g, (s) => String.fromCharCode(s.charCodeAt(0) - 65248))
+    .replace(/[,，円￥¥\s]/g, "")
+    .replace(/[^0-9.\-]/g, "");
+  const n = Number(normalized);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function calculateAuctionTotals(auction = {}) {
+  const hammerPrice = parseMoneyNumber(auction.hammerPrice);
+  const hammerTax = parseMoneyNumber(auction.hammerTax);
+  const buyerFee = parseMoneyNumber(auction.buyerFee);
+  const buyerFeeTax = parseMoneyNumber(auction.buyerFeeTax);
+  const domesticShipping = parseMoneyNumber(auction.domesticShipping);
+  const invoiceTotal = hammerPrice + hammerTax + buyerFee + buyerFeeTax + domesticShipping;
+  const inventoryCost = hammerPrice + buyerFee + buyerFeeTax + domesticShipping;
+  const taxCredit = hammerTax + buyerFeeTax;
+  return { hammerPrice, hammerTax, buyerFee, buyerFeeTax, domesticShipping, invoiceTotal, inventoryCost, taxCredit };
+}
+
+function normalizeAuction(auction) {
+  if (!auction || typeof auction !== "object") return null;
+  const totals = calculateAuctionTotals(auction);
+  const hasAuction = Boolean(
+    auction.platform || auction.auctionCode || auction.auctionDate || auction.boxNo || auction.branchNo ||
+    auction.itemNameJp || totals.hammerPrice || totals.hammerTax || totals.buyerFee || totals.buyerFeeTax || totals.domesticShipping
+  );
+  if (!hasAuction) return null;
+  return {
+    platform: auction.platform || "",
+    auctionCode: auction.auctionCode || "",
+    auctionDate: auction.auctionDate || "",
+    boxNo: auction.boxNo || "",
+    branchNo: auction.branchNo || "",
+    itemNameJp: auction.itemNameJp || "",
+    hammerPrice: totals.hammerPrice,
+    hammerTax: totals.hammerTax,
+    buyerFee: totals.buyerFee,
+    buyerFeeTax: totals.buyerFeeTax,
+    domesticShipping: totals.domesticShipping,
+    invoiceTotal: totals.invoiceTotal,
+    inventoryCost: totals.inventoryCost,
+    taxCredit: totals.taxCredit
+  };
+}
+
+function stripAuctionBlocks(memo = "") {
+  let text = String(memo || "");
+  const blockRe = new RegExp(`-{2,}\\s*GOUKA_AUCTION_SETTLEMENT_START\\s*-{2,}[\\s\\S]*?-{2,}\\s*GOUKA_AUCTION_SETTLEMENT_END\\s*-{2,}`, "g");
+  text = text.replace(blockRe, "");
+  text = text
+    .split("\n")
+    .filter((line) => {
+      const s = line.trim();
+      if (!s) return false;
+      if (s.includes("GOUKA_AUCTION_SETTLEMENT_START") || s.includes("GOUKA_AUCTION_SETTLEMENT_END")) return false;
+      if (s.startsWith("日本拍卖结算：") || s.startsWith("日本拍賣結算：") || s.startsWith("日本拍卖结算:")) return false;
+      if (s.startsWith("落札コード：") || s.startsWith("落札コード:")) return false;
+      if (s.startsWith("落札日：") || s.startsWith("落札日:")) return false;
+      if (s.startsWith("箱番：") || s.startsWith("箱番:")) return false;
+      if (s.startsWith("枝番：") || s.startsWith("枝番:")) return false;
+      if (s.startsWith("拍卖商品名：") || s.startsWith("拍卖商品名:")) return false;
+      if (s.startsWith("落札金額：") || s.startsWith("落札金額:")) return false;
+      if (s.startsWith("落札消費税：") || s.startsWith("落札消費税:")) return false;
+      if (s.startsWith("落札手数料：") || s.startsWith("落札手数料:")) return false;
+      if (s.startsWith("手数料消費税：") || s.startsWith("手数料消費税:")) return false;
+      if (s.startsWith("国内送料：") || s.startsWith("国内送料:")) return false;
+      if (s.startsWith("請求合計：") || s.startsWith("請求合計:")) return false;
+      if (s.startsWith("库存真实成本：") || s.startsWith("库存真实成本:")) return false;
+      if (s.startsWith("消費税控除参考：") || s.startsWith("消費税控除参考:")) return false;
+      return true;
+    })
+    .join("\n")
+    .trim();
+  return text;
+}
+
+function readAuctionFromMemo(memo = "") {
+  const text = String(memo || "");
+  const blockMatch = text.match(new RegExp(`-{2,}\\s*GOUKA_AUCTION_SETTLEMENT_START\\s*-{2,}([\\s\\S]*?)-{2,}\\s*GOUKA_AUCTION_SETTLEMENT_END\\s*-{2,}`));
+  if (blockMatch) {
+    const raw = blockMatch[1].trim();
+    try {
+      const parsed = JSON.parse(raw);
+      return normalizeAuction(parsed);
+    } catch {
+      // 继续按旧文字格式解析
+    }
+  }
+
+  if (!text.includes("日本拍卖") && !text.includes("日本拍賣") && !text.includes("落札")) return null;
+
+  function findValue(labels) {
+    for (const label of labels) {
+      const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const re = new RegExp(`${escaped}\\s*[:：]\\s*([^\\n]+)`);
+      const m = text.match(re);
+      if (m) return m[1].trim();
+    }
+    return "";
+  }
+
+  const platformLine = findValue(["日本拍卖结算", "日本拍賣結算"]);
+  const auction = normalizeAuction({
+    platform: platformLine || "",
+    auctionCode: findValue(["落札コード"]),
+    auctionDate: findValue(["落札日"]),
+    boxNo: findValue(["箱番"]),
+    branchNo: findValue(["枝番"]),
+    itemNameJp: findValue(["拍卖商品名", "拍賣商品名"]),
+    hammerPrice: findValue(["落札金額"]),
+    hammerTax: findValue(["落札消費税"]),
+    buyerFee: findValue(["落札手数料"]),
+    buyerFeeTax: findValue(["手数料消費税"]),
+    domesticShipping: findValue(["国内送料"])
+  });
+  return auction;
+}
+
+function getAuction(item) {
+  return normalizeAuction(item?.auction) || readAuctionFromMemo(item?.memo || "");
+}
+
+function buildAuctionStorageBlock(auction) {
+  const normalized = normalizeAuction(auction);
+  if (!normalized) return "";
+  return `${AUCTION_BLOCK_START}\n${JSON.stringify(normalized)}\n${AUCTION_BLOCK_END}`;
+}
+
+function buildAuctionSummary(auction) {
+  const a = normalizeAuction(auction);
+  if (!a) return "";
+  const parts = [a.platform || "日本拍卖", a.auctionCode ? `落札コード ${a.auctionCode}` : "", a.auctionDate || ""].filter(Boolean);
+  return parts.join(" / ");
+}
+
+function displayMemo(itemOrMemo) {
+  const raw = typeof itemOrMemo === "string" ? itemOrMemo : itemOrMemo?.memo;
+  const auction = typeof itemOrMemo === "string" ? readAuctionFromMemo(raw) : getAuction(itemOrMemo);
+  const userMemo = stripAuctionBlocks(raw || "");
+  const summary = buildAuctionSummary(auction);
+  return [userMemo, summary].filter(Boolean).join(userMemo && summary ? " / " : "");
+}
+
+function auctionDetailText(item) {
+  const a = getAuction(item);
+  if (!a) return "";
+  return [
+    `${a.platform || "日本拍卖"}`,
+    a.auctionCode ? `落札コード：${a.auctionCode}` : "",
+    a.auctionDate ? `落札日：${a.auctionDate}` : "",
+    a.boxNo ? `箱番：${a.boxNo}` : "",
+    a.branchNo ? `枝番：${a.branchNo}` : "",
+    a.itemNameJp ? `拍卖商品名：${a.itemNameJp}` : "",
+    `落札金額：${jpy(a.hammerPrice)}`,
+    `落札消費税：${jpy(a.hammerTax)}`,
+    `落札手数料：${jpy(a.buyerFee)}`,
+    `手数料消費税：${jpy(a.buyerFeeTax)}`,
+    a.domesticShipping ? `国内送料：${jpy(a.domesticShipping)}` : "",
+    `請求合計：${jpy(a.invoiceTotal)}`,
+    `库存真实成本：${jpy(a.inventoryCost)}`,
+    `消費税控除参考：${jpy(a.taxCredit)}`
+  ].filter(Boolean).join("\n");
+}
+
+function memoForCloud(item) {
+  const cleanMemo = stripAuctionBlocks(item?.memo || "");
+  const block = buildAuctionStorageBlock(item?.auction || getAuction(item));
+  return [cleanMemo, block].filter(Boolean).join("\n");
+}
+
+
 
 const emptyForm = {
   purchaseDate: "",
@@ -656,8 +833,9 @@ function loadItems() {
 }
 
 function normalizeItem(x) {
-  const auctionFromMemo = parseAuctionSettlementFromMemo(x?.memo || "");
-  const normalized = {
+  const auction = normalizeAuction(x.auction) || readAuctionFromMemo(x.memo || "");
+  const cleanMemo = stripAuctionBlocks(x.memo || "");
+  return {
     ledgerStatus: x.ledgerStatus || "有效",
     ledgerVoidReason: x.ledgerVoidReason || "",
     ledgerUpdatedAt: x.ledgerUpdatedAt || "",
@@ -677,22 +855,9 @@ function normalizeItem(x) {
     productTitle: x.productTitle || makeAutoTitle(x),
     imageCount: Number(x.imageCount || (Array.isArray(x.images) ? x.images.length : 0)),
     ...x,
+    memo: cleanMemo,
+    auction,
     images: Array.isArray(x.images) ? x.images : []
-  };
-
-  return {
-    ...normalized,
-    auctionPlatform: normalized.auctionPlatform || auctionFromMemo.auctionPlatform || "",
-    auctionCode: normalized.auctionCode || auctionFromMemo.auctionCode || "",
-    auctionDate: normalized.auctionDate || auctionFromMemo.auctionDate || "",
-    auctionBoxNo: normalized.auctionBoxNo || auctionFromMemo.auctionBoxNo || "",
-    auctionBranchNo: normalized.auctionBranchNo || auctionFromMemo.auctionBranchNo || "",
-    auctionItemNameJp: normalized.auctionItemNameJp || auctionFromMemo.auctionItemNameJp || "",
-    auctionHammerPriceJpy: normalized.auctionHammerPriceJpy || auctionFromMemo.auctionHammerPriceJpy || "",
-    auctionHammerTaxJpy: normalized.auctionHammerTaxJpy || auctionFromMemo.auctionHammerTaxJpy || "",
-    auctionBuyerFeeJpy: normalized.auctionBuyerFeeJpy || auctionFromMemo.auctionBuyerFeeJpy || "",
-    auctionBuyerFeeTaxJpy: normalized.auctionBuyerFeeTaxJpy || auctionFromMemo.auctionBuyerFeeTaxJpy || "",
-    auctionDomesticShippingJpy: normalized.auctionDomesticShippingJpy || auctionFromMemo.auctionDomesticShippingJpy || ""
   };
 }
 
@@ -736,137 +901,6 @@ function makeNextId(items) {
   return `${prefix}${String(next).padStart(4, "0")}`;
 }
 
-
-function parseJpyNumber(value) {
-  const cleaned = String(value || "")
-    .replace(/[０-９]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 65248))
-    .replace(/[,，円¥￥\s]/g, "");
-  const n = Number(cleaned);
-  return Number.isFinite(n) ? n : 0;
-}
-
-
-const AUCTION_MEMO_START = "--- GOUKA_AUCTION_SETTLEMENT_START ---";
-const AUCTION_MEMO_END = "--- GOUKA_AUCTION_SETTLEMENT_END ---";
-
-function stripAuctionSettlementMemo(memo) {
-  const text = String(memo || "");
-  const withoutMarked = text.replace(new RegExp(`${AUCTION_MEMO_START}[\\s\\S]*?${AUCTION_MEMO_END}`, "g"), "");
-  const auctionLinePatterns = [
-    /^日本拍卖结算[:：]/,
-    /^落札コード[:：]/,
-    /^落札日[:：]/,
-    /^箱番[:：]/,
-    /^枝番[:：]/,
-    /^拍卖商品名[:：]/,
-    /^落札金額[:：]/,
-    /^落札消費税[:：]/,
-    /^落札手数料[:：]/,
-    /^手数料消費税[:：]/,
-    /^国内送料[:：]/,
-    /^請求合計[:：]/,
-    /^库存真实成本[:：]/,
-    /^消費税控除参考[:：]/,
-    /^消费税控除参考[:：]/,
-    /^可抵扣消费税[:：]/
-  ];
-  return withoutMarked
-    .split("\n")
-    .map((line) => line.trimEnd())
-    .filter((line) => !auctionLinePatterns.some((pattern) => pattern.test(line.trim())))
-    .join("\n")
-    .trim();
-}
-
-function getMemoLineValue(memo, label) {
-  const m = String(memo || "").match(new RegExp(`${label}[:：]\\s*([^\\n\\r]+)`, "i"));
-  return m ? m[1].trim() : "";
-}
-
-function parseAuctionSettlementFromMemo(memo) {
-  const text = String(memo || "");
-  const platformRaw = getMemoLineValue(text, "日本拍卖结算");
-  const platform = platformRaw.replace(/^🏛\s*/, "").trim();
-  const hammerPrice = parseJpyNumber(getMemoLineValue(text, "落札金額"));
-  const hammerTax = parseJpyNumber(getMemoLineValue(text, "落札消費税"));
-  const buyerFee = parseJpyNumber(getMemoLineValue(text, "落札手数料"));
-  const buyerFeeTax = parseJpyNumber(getMemoLineValue(text, "手数料消費税"));
-  const domesticShipping = parseJpyNumber(getMemoLineValue(text, "国内送料"));
-  return {
-    auctionPlatform: platform,
-    auctionCode: getMemoLineValue(text, "落札コード"),
-    auctionDate: getMemoLineValue(text, "落札日"),
-    auctionBoxNo: getMemoLineValue(text, "箱番"),
-    auctionBranchNo: getMemoLineValue(text, "枝番"),
-    auctionItemNameJp: getMemoLineValue(text, "拍卖商品名"),
-    auctionHammerPriceJpy: hammerPrice || "",
-    auctionHammerTaxJpy: hammerTax || "",
-    auctionBuyerFeeJpy: buyerFee || "",
-    auctionBuyerFeeTaxJpy: buyerFeeTax || "",
-    auctionDomesticShippingJpy: domesticShipping || ""
-  };
-}
-
-function buildAuctionSettlementMemo(data) {
-  const hammer = Number(data.auctionHammerPriceJpy || 0);
-  const hammerTax = Number(data.auctionHammerTaxJpy || 0);
-  const buyerFee = Number(data.auctionBuyerFeeJpy || 0);
-  const buyerFeeTax = Number(data.auctionBuyerFeeTaxJpy || 0);
-  const domesticShipping = Number(data.auctionDomesticShippingJpy || 0);
-  const invoiceTotal = hammer + hammerTax + buyerFee + buyerFeeTax + domesticShipping;
-  const inventoryCost = hammer + buyerFee + buyerFeeTax + domesticShipping;
-  const taxCreditRef = hammerTax + buyerFeeTax;
-  return [
-    AUCTION_MEMO_START,
-    `日本拍卖结算：${data.auctionPlatform || ""}`,
-    data.auctionCode ? `落札コード：${data.auctionCode}` : "",
-    data.auctionDate ? `落札日：${data.auctionDate}` : "",
-    data.auctionBoxNo ? `箱番：${data.auctionBoxNo}` : "",
-    data.auctionBranchNo ? `枝番：${data.auctionBranchNo}` : "",
-    data.auctionItemNameJp ? `拍卖商品名：${data.auctionItemNameJp}` : "",
-    `落札金額：${hammer.toLocaleString()}円`,
-    `落札消費税：${hammerTax.toLocaleString()}円`,
-    `落札手数料：${buyerFee.toLocaleString()}円`,
-    `手数料消費税：${buyerFeeTax.toLocaleString()}円`,
-    domesticShipping ? `国内送料：${domesticShipping.toLocaleString()}円` : "",
-    `請求合計：${invoiceTotal.toLocaleString()}円`,
-    `库存真实成本：${inventoryCost.toLocaleString()}円`,
-    `消費税控除参考：${taxCreditRef.toLocaleString()}円`,
-    AUCTION_MEMO_END
-  ].filter(Boolean).join("\n");
-}
-
-function mergeAuctionSettlementMemo(userMemo, data) {
-  const cleanMemo = stripAuctionSettlementMemo(userMemo);
-  const block = buildAuctionSettlementMemo(data);
-  return [cleanMemo, block].filter(Boolean).join("\n");
-}
-
-function auctionTaxCreditFromFields(item) {
-  const hammerTax = Number(item?.auctionHammerTaxJpy || 0);
-  const buyerFeeTax = Number(item?.auctionBuyerFeeTaxJpy || 0);
-  const total = hammerTax + buyerFeeTax;
-  return total > 0 ? total : null;
-}
-
-function extractAuctionTaxCreditRef(item) {
-  const memo = String(item?.memo || "");
-  const patterns = [
-    /消費税控除参考[:：]\s*([0-9０-９,，]+)\s*円?/i,
-    /消费税控除参考[:：]\s*([0-9０-９,，]+)\s*円?/i,
-    /可抵扣消费税[:：]\s*([0-9０-９,，]+)\s*円?/i,
-    /税控除参考[:：]\s*([0-9０-９,，]+)\s*円?/i
-  ];
-  for (const pattern of patterns) {
-    const m = memo.match(pattern);
-    if (m) return parseJpyNumber(m[1]);
-  }
-  const hammerTax = memo.match(/落札消費税[:：]\s*([0-9０-９,，]+)\s*円?/i);
-  const feeTax = memo.match(/手数料消費税[:：]\s*([0-9０-９,，]+)\s*円?/i);
-  const total = parseJpyNumber(hammerTax?.[1]) + parseJpyNumber(feeTax?.[1]);
-  return total > 0 ? total : null;
-}
-
 function calcTax(x) {
   const saleJpy = Number(x.soldPriceJpy || x.saleJpy || 0);
   const baseSmart = smartAmountToJpy(
@@ -886,9 +920,8 @@ function calcTax(x) {
   const extraCostJpy = sumExtraCosts(x);
   const costJpy = baseCostJpy + extraCostJpy;
   const declaredJpy = declaredSmart.value;
-  const auctionTaxCreditRef = auctionTaxCreditFromFields(x) ?? extractAuctionTaxCreditRef(x);
-  const inputTax = auctionTaxCreditRef !== null ? auctionTaxCreditRef : declaredJpy * TAX_RATE;
-  const inputTaxSource = auctionTaxCreditRef !== null ? "日本拍卖消费税控除参考" : "申报金额10%估算";
+  const auction = getAuction(x);
+  const inputTax = auction ? Number(auction.taxCredit || 0) : declaredJpy * TAX_RATE;
   const outputTax = saleJpy * TAX_RATE / (1 + TAX_RATE);
   const saleExTax = saleJpy - outputTax;
   const grossProfit = saleJpy - costJpy;
@@ -896,7 +929,7 @@ function calcTax(x) {
   const profitExTax = saleExTax - costJpy;
   const margin = saleJpy ? grossProfit / saleJpy * 100 : 0;
   const warnings = [baseSmart.warning, declaredSmart.warning].filter(Boolean);
-  return { baseCostJpy, extraCostJpy, costJpy, declaredJpy, inputTax, inputTaxSource, saleJpy, outputTax, saleExTax, grossProfit, taxBalance, profitExTax, margin, warnings };
+  return { baseCostJpy, extraCostJpy, costJpy, declaredJpy, inputTax, saleJpy, outputTax, saleExTax, grossProfit, taxBalance, profitExTax, margin, warnings };
 }
 
 function LoginPage({ onLogin }) {
@@ -1043,7 +1076,7 @@ function App() {
   }
 
   function exportBackup() {
-    const data = { version: "GOUKA-ERP-ENTERPRISE-1.2.4-LISTING-LIGHT", exportedAt: new Date().toISOString(), items, customsBatches, dictionaries, suppliers, deleteLogs };
+    const data = { version: "GOUKA-ERP-ENTERPRISE-2.0-AUCTION-STABLE", exportedAt: new Date().toISOString(), items, customsBatches, dictionaries, suppliers, deleteLogs };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -1128,7 +1161,7 @@ function App() {
       customs_batch_text: x.customsBatchId || "",
       platform: x.platform || "",
       status: x.status || "",
-      memo: x.memo || "",
+      memo: memoForCloud(x),
       sold_date: x.soldDate || null,
       sold_platform: x.soldPlatform || "",
       sold_price_jpy: Number(x.soldPriceJpy || 0),
@@ -1555,7 +1588,7 @@ function App() {
       <div class="pdf-header">
         <div>
           <h1>商品资料 PDF</h1>
-          <p>Product Sheet / GOUKA ERP Enterprise 1.3 Stable</p>
+          <p>Product Sheet / GOUKA ERP Enterprise 2.0</p>
         </div>
         <div class="company">
           <b>豪嘉株式会社</b><br />
@@ -1603,8 +1636,9 @@ function App() {
 
       <div class="section">
         <h2>备注</h2>
-        <div class="memo">${htmlEscape(item.memo || "")}</div>
+        <div class="memo">${htmlEscape(displayMemo(item) || "")}</div>
       </div>
+      ${getAuction(item) ? `<div class="section"><h2>日本拍卖结算</h2><div class="memo">${htmlEscape(auctionDetailText(item))}</div></div>` : ""}
       <div class="footer">此PDF由 GOUKA Luxury ERP 自动生成。金额与消费税为内部参考，正式申告请交由税理士确认。</div>
     `;
     openPdfWindow(`商品资料_${item.id}`, body);
@@ -1650,7 +1684,7 @@ function App() {
         <div class="field"><small>预计净利润</small><b>${jpy(sum.profit)}</b></div>
       </div></div>
       <div class="section"><h2>库存明细</h2><table><thead><tr><th>图</th><th>商品编号</th><th>入库日</th><th>品牌</th><th>商品</th><th>状态</th><th>成本</th><th>售价</th><th>利润</th></tr></thead><tbody>${rows}</tbody></table></div>
-      <div class="footer">GOUKA ERP Enterprise 1.3 Stable / Generated by GOUKA ERP. 金额与消费税为内部参考，正式申告请交由税理士确认。</div>
+      <div class="footer">GOUKA ERP Enterprise 2.0 / Generated by GOUKA ERP. 金额与消费税为内部参考，正式申告请交由税理士确认。</div>
     `;
     openPdfWindow(`${label}_${new Date().toISOString().slice(0,10)}`, body);
   }
@@ -1760,7 +1794,7 @@ function App() {
           <Building2 size={24} />
           <div>
             <b>豪嘉株式会社</b>
-            <span>GOUKA ERP Enterprise 1.3 Stable</span>
+            <span>GOUKA ERP Enterprise 2.0</span>
           </div>
         </div>
 
@@ -1776,7 +1810,7 @@ function App() {
       <main>
         <header>
           <div>
-            <h1>豪嘉ERP Enterprise 1.3 Stable Dashboard Fix</h1>
+            <h1>豪嘉ERP Enterprise 2.0 Auction Engine</h1>
             <p>自动保存・云端同步・图片上传・状态筛选・古物台账锁定・EMS报关・利润计算</p>
           </div>
           <div className="action-row">
@@ -1859,31 +1893,19 @@ function Dashboard({ totals, items, setTab, exportBackup }) {
   const today = new Date().toISOString().slice(0, 10);
 
   const todayIn = items.filter((x) => (x.purchaseDate || "") === today);
+  const todaySold = items.filter((x) => (x.soldDate || "") === today || (isSoldStatus(x.status) && !(x.soldDate)));
   const todayPurchase = todayIn.reduce((a, x) => a + calcTax(x).costJpy, 0);
-
-  // Dashboard 统计规则：库存预计与实际经营分开。
-  // 实际销售/利润只统计「已售出 / 已发货」且有成交金额的商品，未售库存不再把成本算成负利润。
-  const actualSoldItems = items.filter((x) => isSoldStatus(x.status) && Number(x.soldPriceJpy || x.saleJpy || 0) > 0);
-  const todaySold = actualSoldItems.filter((x) => (x.soldDate || "") === today);
   const todaySale = todaySold.reduce((a, x) => a + calcTax(x).saleJpy, 0);
   const todayProfit = todaySold.reduce((a, x) => a + calcTax(x).profitExTax, 0);
 
   const monthIn = items.filter((x) => (x.purchaseDate || "").startsWith(month));
-  const monthSold = actualSoldItems.filter((x) => (x.soldDate || "").startsWith(month));
+  const monthSold = items.filter((x) => (x.soldDate || "").startsWith(month) || (isSoldStatus(x.status) && !(x.soldDate)));
   const monthSale = monthSold.reduce((a, x) => a + calcTax(x).saleJpy, 0);
   const monthProfit = monthSold.reduce((a, x) => a + calcTax(x).profitExTax, 0);
   const recent = items.slice(0, 5);
 
-  const stockCost = activeItems.reduce((a, x) => a + calcTax(x).costJpy, 0);
-  const stockExpectedSale = activeItems.reduce((a, x) => a + Number(x.saleJpy || 0), 0);
-  const stockExpectedProfit = activeItems.reduce((a, x) => {
-    const t = calcTax(x);
-    return a + (Number(t.saleJpy || 0) > 0 ? t.profitExTax : 0);
-  }, 0);
-  const stockExpectedMargin = stockExpectedSale ? (stockExpectedProfit / stockExpectedSale) * 100 : 0;
-  const soldOutputTax = actualSoldItems.reduce((a, x) => a + calcTax(x).outputTax, 0);
-  const inputTaxRef = items.reduce((a, x) => a + calcTax(x).inputTax, 0);
-  const actualTaxBalanceRef = soldOutputTax - inputTaxRef;
+  const expectedNetProfit = totals.profit;
+  const expectedMargin = totals.sale ? (expectedNetProfit / totals.sale) * 100 : 0;
 
   const todoCustoms = items.filter((x) => x.status === "报关准备").length;
   const todoListing = items.filter((x) => x.status === "已入库" || x.status === "待出品").length;
@@ -1956,8 +1978,8 @@ function Dashboard({ totals, items, setTab, exportBackup }) {
     <section className="v3-dashboard">
       <div className="v3-hero">
         <div>
-          <span className="v3-kicker">GOUKA ERP Enterprise 1.3 Stable</span>
-          <h1>经营驾驶舱 · Enterprise 1.3 Stable</h1>
+          <span className="v3-kicker">GOUKA ERP Enterprise 2.0</span>
+          <h1>经营驾驶舱 · Enterprise 2.0</h1>
           <p>今日经营、库存预警、品牌利润、供应商利润集中显示。老板打开第一页就知道该赚钱、该出品、该清库存。</p>
           <div className="v3-hero-actions">
             <button onClick={() => setTab("add")}>新增商品</button>
@@ -1966,24 +1988,24 @@ function Dashboard({ totals, items, setTab, exportBackup }) {
           </div>
         </div>
         <div className="v3-hero-right">
-          <p>库存预计利润</p>
-          <h2>{jpy(stockExpectedProfit)}</h2>
-          <span>预计利润率 {stockExpectedMargin.toFixed(1)}% · 当前库存 {activeStock} 件 · 有图 {withImages} 件</span>
+          <p>预计净利润</p>
+          <h2>{jpy(expectedNetProfit)}</h2>
+          <span>利润率 {expectedMargin.toFixed(1)}% · 当前库存 {activeStock} 件 · 有图 {withImages} 件</span>
         </div>
       </div>
 
       <div className="v3-kpi-grid">
-        <div className="v3-kpi blue"><span>💰</span><p>库存总成本</p><h2>{jpy(stockCost)}</h2><small>只统计未售库存成本</small></div>
-        <div className="v3-kpi green"><span>🏷️</span><p>库存预计销售额</p><h2>{jpy(stockExpectedSale)}</h2><small>只统计未售库存预计售价</small></div>
-        <div className="v3-kpi orange"><span>📈</span><p>库存预计利润</p><h2>{jpy(stockExpectedProfit)}</h2><small>未填预计售价的商品不算预计利润</small></div>
-        <div className="v3-kpi purple"><span>📊</span><p>库存预计利润率</p><h2>{stockExpectedMargin.toFixed(1)}%</h2><small>老板判断用</small></div>
+        <div className="v3-kpi blue"><span>💰</span><p>库存总成本</p><h2>{jpy(totals.cost)}</h2><small>采购成本 + 运费关税手续费</small></div>
+        <div className="v3-kpi green"><span>🏷️</span><p>预计销售总额</p><h2>{jpy(totals.sale)}</h2><small>库存预计含税销售额</small></div>
+        <div className="v3-kpi orange"><span>📈</span><p>预计净利润</p><h2>{jpy(expectedNetProfit)}</h2><small>已扣附加成本</small></div>
+        <div className="v3-kpi purple"><span>📊</span><p>预计利润率</p><h2>{expectedMargin.toFixed(1)}%</h2><small>老板判断用</small></div>
       </div>
 
       <div className="v3-money-grid">
         <div className="v3-money-card"><p>今日采购额</p><h2>{jpy(todayPurchase)}</h2><small>今日新增 {todayIn.length} 件</small></div>
         <div className="v3-money-card"><p>今日销售额</p><h2>{jpy(todaySale)}</h2><small>今日售出 {todaySold.length} 件</small></div>
         <div className="v3-money-card"><p>今日净利润</p><h2>{jpy(todayProfit)}</h2><small>已扣真实成本</small></div>
-        <div className="v3-money-card highlight"><p>消费税差额参考</p><h2>{jpy(actualTaxBalanceRef)}</h2><small>销售消费税 - 进项税参考，正式申告交由税理士确认</small></div>
+        <div className="v3-money-card highlight"><p>消费税差额参考</p><h2>{jpy(totals.taxBalance)}</h2><small>正式申告交由税理士确认</small></div>
       </div>
 
       <div className="v3-money-grid">
@@ -2093,7 +2115,7 @@ function Dashboard({ totals, items, setTab, exportBackup }) {
       </div>
       <div className="panel wide">
         <h2>经营提醒</h2>
-        <p>V7.11新增今日经营、库存预警、品牌利润排行、供应商利润排行。Enterprise 1.3 Stable：修正Dashboard统计逻辑，把库存预计利润和实际销售利润分开；未售商品不再计入今日/本月净利润。</p>
+        <p>V7.11新增今日经营、库存预警、品牌利润排行、供应商利润排行。Enterprise 2.0：优化出品管理优先级、统一图片尺寸、菜单按日常业务重新排序；保留云端同步、PDF、古物台账和全页面图片。</p>
       </div>
     </section>
   );
@@ -2111,123 +2133,99 @@ function Card({ icon, title, value }) {
 }
 
 function AuctionSettlementBox({ form, setForm }) {
-  const parsed = parseAuctionSettlementFromMemo(form.memo || "");
-  const initialAuction = {
-    platform: form.auctionPlatform || parsed.auctionPlatform || form.platform || "NBAA",
-    auctionCode: form.auctionCode || parsed.auctionCode || "",
-    auctionDate: form.auctionDate || parsed.auctionDate || form.purchaseDate || new Date().toISOString().slice(0, 10),
-    boxNo: form.auctionBoxNo || parsed.auctionBoxNo || "",
-    branchNo: form.auctionBranchNo || parsed.auctionBranchNo || "",
-    itemNameJp: form.auctionItemNameJp || parsed.auctionItemNameJp || "",
-    hammerPrice: form.auctionHammerPriceJpy || parsed.auctionHammerPriceJpy || "",
-    hammerTax: form.auctionHammerTaxJpy || parsed.auctionHammerTaxJpy || "",
-    buyerFee: form.auctionBuyerFeeJpy || parsed.auctionBuyerFeeJpy || "",
-    buyerFeeTax: form.auctionBuyerFeeTaxJpy || parsed.auctionBuyerFeeTaxJpy || "",
-    domesticShipping: form.auctionDomesticShippingJpy || parsed.auctionDomesticShippingJpy || ""
-  };
-  const [auction, setAuction] = useState(initialAuction);
+  const existingAuction = normalizeAuction(form.auction) || readAuctionFromMemo(form.memo || "");
+  const [auction, setAuction] = useState(() => ({
+    platform: existingAuction?.platform || form.platform || "NBAA",
+    auctionCode: existingAuction?.auctionCode || "",
+    auctionDate: existingAuction?.auctionDate || form.purchaseDate || new Date().toISOString().slice(0, 10),
+    boxNo: existingAuction?.boxNo || "",
+    branchNo: existingAuction?.branchNo || "",
+    itemNameJp: existingAuction?.itemNameJp || "",
+    hammerPrice: existingAuction?.hammerPrice || "",
+    hammerTax: existingAuction?.hammerTax || "",
+    buyerFee: existingAuction?.buyerFee || "",
+    buyerFeeTax: existingAuction?.buyerFeeTax || "",
+    domesticShipping: existingAuction?.domesticShipping || ""
+  }));
 
   React.useEffect(() => {
-    const latest = parseAuctionSettlementFromMemo(form.memo || "");
-    const shouldRefresh = !auction.hammerPrice && (form.auctionHammerPriceJpy || latest.auctionHammerPriceJpy);
-    if (shouldRefresh) {
-      setAuction({
-        platform: form.auctionPlatform || latest.auctionPlatform || form.platform || "NBAA",
-        auctionCode: form.auctionCode || latest.auctionCode || "",
-        auctionDate: form.auctionDate || latest.auctionDate || form.purchaseDate || new Date().toISOString().slice(0, 10),
-        boxNo: form.auctionBoxNo || latest.auctionBoxNo || "",
-        branchNo: form.auctionBranchNo || latest.auctionBranchNo || "",
-        itemNameJp: form.auctionItemNameJp || latest.auctionItemNameJp || "",
-        hammerPrice: form.auctionHammerPriceJpy || latest.auctionHammerPriceJpy || "",
-        hammerTax: form.auctionHammerTaxJpy || latest.auctionHammerTaxJpy || "",
-        buyerFee: form.auctionBuyerFeeJpy || latest.auctionBuyerFeeJpy || "",
-        buyerFeeTax: form.auctionBuyerFeeTaxJpy || latest.auctionBuyerFeeTaxJpy || "",
-        domesticShipping: form.auctionDomesticShippingJpy || latest.auctionDomesticShippingJpy || ""
-      });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [form.id, form.memo]);
+    const next = normalizeAuction(form.auction) || readAuctionFromMemo(form.memo || "");
+    if (!next) return;
+    setAuction({
+      platform: next.platform || form.platform || "NBAA",
+      auctionCode: next.auctionCode || "",
+      auctionDate: next.auctionDate || form.purchaseDate || new Date().toISOString().slice(0, 10),
+      boxNo: next.boxNo || "",
+      branchNo: next.branchNo || "",
+      itemNameJp: next.itemNameJp || "",
+      hammerPrice: next.hammerPrice || "",
+      hammerTax: next.hammerTax || "",
+      buyerFee: next.buyerFee || "",
+      buyerFeeTax: next.buyerFeeTax || "",
+      domesticShipping: next.domesticShipping || ""
+    });
+  }, [form.auction, form.memo, form.platform, form.purchaseDate]);
 
   const setAuctionValue = (k, v) => setAuction({ ...auction, [k]: v });
-  const hammer = Number(auction.hammerPrice || 0);
-  const hammerTax = Number(auction.hammerTax || 0);
-  const buyerFee = Number(auction.buyerFee || 0);
-  const buyerFeeTax = Number(auction.buyerFeeTax || 0);
-  const domesticShipping = Number(auction.domesticShipping || 0);
-  const invoiceTotal = hammer + hammerTax + buyerFee + buyerFeeTax + domesticShipping;
-  const taxCreditRef = hammerTax + buyerFeeTax;
-  const inventoryCost = hammer + buyerFee + buyerFeeTax + domesticShipping;
+  const normalizedAuction = normalizeAuction(auction);
+  const totals = calculateAuctionTotals(auction);
 
   function calcTax10FromHammer() {
     setAuction({
       ...auction,
-      hammerTax: Math.round(hammer * 0.1),
-      buyerFeeTax: Math.round(buyerFee * 0.1)
+      hammerTax: Math.round(parseMoneyNumber(auction.hammerPrice) * 0.1),
+      buyerFeeTax: Math.round(parseMoneyNumber(auction.buyerFee) * 0.1)
     });
-  }
-
-  function clearAuctionSettlement() {
-    if (!window.confirm("确认清除当前商品的日本拍卖结算信息吗？商品基本资料不会删除。")) return;
-    setForm({
-      ...form,
-      auctionPlatform: "",
-      auctionCode: "",
-      auctionDate: "",
-      auctionBoxNo: "",
-      auctionBranchNo: "",
-      auctionItemNameJp: "",
-      auctionHammerPriceJpy: "",
-      auctionHammerTaxJpy: "",
-      auctionBuyerFeeJpy: "",
-      auctionBuyerFeeTaxJpy: "",
-      auctionDomesticShippingJpy: "",
-      memo: stripAuctionSettlementMemo(form.memo || "")
-    });
-    setAuction({ ...initialAuction, hammerPrice: "", hammerTax: "", buyerFee: "", buyerFeeTax: "", domesticShipping: "" });
   }
 
   function applyAuctionSettlement() {
-    if (!hammer) return alert("请先填写落札金额。例：44000");
-
-    const auctionData = {
-      auctionPlatform: auction.platform || form.platform || "NBAA",
-      auctionCode: auction.auctionCode || "",
-      auctionDate: auction.auctionDate || form.purchaseDate || new Date().toISOString().slice(0, 10),
-      auctionBoxNo: auction.boxNo || "",
-      auctionBranchNo: auction.branchNo || "",
-      auctionItemNameJp: auction.itemNameJp || "",
-      auctionHammerPriceJpy: hammer,
-      auctionHammerTaxJpy: hammerTax,
-      auctionBuyerFeeJpy: buyerFee,
-      auctionBuyerFeeTaxJpy: buyerFeeTax,
-      auctionDomesticShippingJpy: domesticShipping
-    };
+    const nextAuction = normalizeAuction(auction);
+    if (!nextAuction?.hammerPrice) return alert("请先填写落札金额。例：44000");
+    const cleanMemo = stripAuctionBlocks(form.memo || "");
 
     setForm({
       ...form,
-      ...auctionData,
-      purchaseDate: auctionData.auctionDate,
+      auction: nextAuction,
+      purchaseDate: nextAuction.auctionDate || form.purchaseDate || new Date().toISOString().slice(0, 10),
       purchaseCurrency: "JPY",
-      purchaseCny: hammer,
+      purchaseCny: nextAuction.hammerPrice,
       purchaseRateToJpy: 1,
       declaredCurrency: "JPY",
-      declaredCny: hammer + buyerFee,
+      declaredCny: nextAuction.hammerPrice + nextAuction.buyerFee,
       declaredRateToJpy: 1,
       rate: 1,
-      platform: auctionData.auctionPlatform,
-      source: form.source || auctionData.auctionPlatform || "日本拍卖",
-      platformFeeJpy: buyerFee,
-      otherCostJpy: buyerFeeTax + domesticShipping,
-      memo: mergeAuctionSettlementMemo(form.memo || "", auctionData)
+      platform: nextAuction.platform || form.platform || "NBAA",
+      source: form.source || nextAuction.platform || "日本拍卖",
+      platformFeeJpy: nextAuction.buyerFee,
+      otherCostJpy: nextAuction.buyerFeeTax + nextAuction.domesticShipping,
+      memo: cleanMemo
     });
 
-    alert(`已按日本拍卖结算填入。\n\n采购金额：${hammer.toLocaleString()} JPY\n拍卖手续费：${buyerFee.toLocaleString()} JPY\n库存真实成本：${inventoryCost.toLocaleString()} JPY\n实际支付合计：${invoiceTotal.toLocaleString()} JPY\n消费税控除参考：${taxCreditRef.toLocaleString()} JPY\n\n已自动清理旧的重复结算备注，只保留一份系统结算区块。`);
+    alert(`已按日本拍卖结算填入。\n\n采购金额：${nextAuction.hammerPrice.toLocaleString()} JPY\n拍卖手续费：${nextAuction.buyerFee.toLocaleString()} JPY\n库存真实成本：${nextAuction.inventoryCost.toLocaleString()} JPY\n实际支付合计：${nextAuction.invoiceTotal.toLocaleString()} JPY\n消费税控除参考：${nextAuction.taxCredit.toLocaleString()} JPY`);
+  }
+
+  function clearAuctionSettlement() {
+    if (!window.confirm("确认清除当前商品的日本拍卖结算数据吗？金额字段不会自动清空，请人工确认。")) return;
+    setAuction({
+      platform: form.platform || "NBAA",
+      auctionCode: "",
+      auctionDate: form.purchaseDate || new Date().toISOString().slice(0, 10),
+      boxNo: "",
+      branchNo: "",
+      itemNameJp: "",
+      hammerPrice: "",
+      hammerTax: "",
+      buyerFee: "",
+      buyerFeeTax: "",
+      domesticShipping: ""
+    });
+    setForm({ ...form, auction: null, memo: stripAuctionBlocks(form.memo || "") });
   }
 
   return (
     <div className="full panel" style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", padding: "16px" }}>
-      <h3 style={{ marginTop: 0 }}>🏛 日本拍卖结算（正式结构化）</h3>
-      <p className="note">Enterprise 1.3：拍卖结算不再反复追加备注。系统会保留正式字段，并自动替换旧结算区块，只保留一份。库存真实成本 = 落札金額 + 落札手数料 + 手数料消費税 + 国内送料；消费税控除参考 = 落札消費税 + 手数料消費税。</p>
+      <h3 style={{ marginTop: 0 }}>🏛 日本拍卖结算（结构化数据 / Enterprise 2.0）</h3>
+      <p className="note">不再把拍卖明细塞进备注。系统会保存为 auction 数据，古物台账只显示摘要，详情/PDF/消费税直接读取结构化数据。</p>
       <div className="formgrid">
         <SelectWithOther label="拍卖平台" value={auction.platform} onChange={(v) => setAuctionValue("platform", v)} options={["NBAA", "OBA", "ECO Ring", "JBA", "AUCNET", "Star Buyers", "其他"]} placeholder="选择或输入拍卖平台" />
         <Input label="落札コード" value={auction.auctionCode} onChange={(v) => setAuctionValue("auctionCode", v)} placeholder="例：390054" />
@@ -2242,31 +2240,26 @@ function AuctionSettlementBox({ form, setForm }) {
         <Input label="国内送料 JPY（有就填）" type="number" value={auction.domesticShipping} onChange={(v) => setAuctionValue("domesticShipping", v)} placeholder="例：0" />
       </div>
       <div className="grid4" style={{ marginTop: "12px" }}>
-        <Card icon={<Calculator />} title="請求合計" value={jpy(invoiceTotal)} />
-        <Card icon={<Calculator />} title="库存真实成本" value={jpy(inventoryCost)} />
-        <Card icon={<Calculator />} title="消费税控除参考" value={jpy(taxCreditRef)} />
-        <Card icon={<Calculator />} title="系统采购金额" value={jpy(hammer)} />
+        <Card icon={<Calculator />} title="請求合計" value={jpy(totals.invoiceTotal)} />
+        <Card icon={<Calculator />} title="库存真实成本" value={jpy(totals.inventoryCost)} />
+        <Card icon={<Calculator />} title="消费税控除参考" value={jpy(totals.taxCredit)} />
+        <Card icon={<Calculator />} title="系统采购金额" value={jpy(totals.hammerPrice)} />
       </div>
+      {normalizedAuction && (
+        <div className="note" style={{ marginTop: "10px", whiteSpace: "pre-wrap", background: "#fff", padding: "10px", borderRadius: "10px" }}>
+          {auctionDetailText({ auction: normalizedAuction })}
+        </div>
+      )}
       <div className="action-row" style={{ marginTop: "12px", flexWrap: "wrap" }}>
         <button className="ghost" type="button" onClick={calcTax10FromHammer}>按10%自动算消费税</button>
         <button className="primary" type="button" onClick={applyAuctionSettlement}>应用到商品金额</button>
-        <button className="ghost" type="button" onClick={clearAuctionSettlement}>清除拍卖结算</button>
+        <button className="danger" type="button" onClick={clearAuctionSettlement}>清除拍卖结算</button>
       </div>
       <p className="note">例：請求合計 48,884円；库存真实成本 44,484円；消费税控除参考 4,444円。实际税务处理以税理士为准。</p>
     </div>
   );
 }
 
-
-
-function FormSectionTitle({ title, note }) {
-  return (
-    <div className="form-section-title" style={{ gridColumn: "1 / -1", marginTop: "18px", padding: "12px 14px", borderRadius: "14px", background: "#f8fafc", border: "1px solid #e5e7eb" }}>
-      <h3 style={{ margin: 0, fontSize: "16px", color: "#0f172a" }}>{title}</h3>
-      {note && <p className="note" style={{ margin: "6px 0 0" }}>{note}</p>}
-    </div>
-  );
-}
 
 function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, removeImage, dictionaries, suppliers, customsBatches }) {
   const set = (k, v) => setForm({ ...form, [k]: v });
@@ -2315,19 +2308,7 @@ function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, 
         <Plus size={20} /> {editingId ? `编辑商品：${editingId}` : "新增商品"}
       </h2>
 
-      <div className="panel" style={{ background: "#f8fafc", padding: "14px", marginBottom: "16px" }}>
-        <div className="action-row" style={{ flexWrap: "wrap" }}>
-          <span className="pill">① 基本信息</span>
-          <span className="pill">② 金额成本</span>
-          <span className="pill">③ 来源状态</span>
-          <span className="pill">④ 日本拍卖</span>
-          <span className="pill">⑤ 图片备注</span>
-        </div>
-        <p className="note" style={{ marginBottom: 0 }}>按这个顺序填写即可。日本拍卖货先填基本信息，再用「日本拍卖结算」自动带入金额。</p>
-      </div>
-
       <div className="formgrid">
-        <FormSectionTitle title="① 基本信息" note="先确认商品、材质、颜色、产地和数量。" />
         <Input label="仕入日" type="date" value={form.purchaseDate} onChange={(v) => set("purchaseDate", v)} />
 
         <Select label="品类" value={form.category} onChange={(v) => set("category", v)} options={["バッグ類", "財布・小物類", "時計類", "宝飾品類", "アクセサリー類", "時計", "アパレル", "その他"]} />
@@ -2346,8 +2327,6 @@ function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, 
 
         <Input label="数量 Qty" type="number" value={form.qty} onChange={(v) => set("qty", v)} />
 
-        <FormSectionTitle title="② 金额 / 成本" note="普通采购直接填写采购金额；日本拍卖可以先空着，下面结算模块会自动填。" />
-
         <Select label="采购币种" value={form.purchaseCurrency || "CNY"} onChange={setPurchaseCurrency} options={CURRENCY_OPTIONS} />
         <Input label={`采购金额 ${form.purchaseCurrency || "CNY"}`} type="number" value={form.purchaseCny} onChange={(v) => set("purchaseCny", v)} />
         <Input label={`${form.purchaseCurrency || "CNY"}→JPY 汇率`} type="number" value={form.purchaseRateToJpy || defaultRateFor(form.purchaseCurrency || "CNY")} onChange={(v) => set("purchaseRateToJpy", v)} />
@@ -2364,8 +2343,6 @@ function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, 
         <Input label="拍卖/平台手续费 JPY" type="number" value={form.platformFeeJpy || ""} onChange={(v) => set("platformFeeJpy", v)} />
         <Input label="其他费用 JPY" type="number" value={form.otherCostJpy || ""} onChange={(v) => set("otherCostJpy", v)} />
 
-        <FormSectionTitle title="③ 来源 / 报关 / 状态" note="中国进口货平台建议选 EMS；日本拍卖货选 NBAA / OBA / ECO 等，不会进入 EMS 报关。" />
-
         <SelectWithOther label="仕入先 / 来源" value={form.source} onChange={setSourceFromSupplier} options={sourceOptions} placeholder="选择供应商或输入来源" />
 
         <Input label="供应商地址" value={form.address} onChange={(v) => set("address", v)} placeholder="China / Japan address" />
@@ -2378,11 +2355,7 @@ function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, 
 
         <Select label="所属报关批次" value={form.customsBatchId || ""} onChange={(v) => set("customsBatchId", v)} options={["", ...(customsBatches || []).map((b) => b.id)]} />
 
-        <FormSectionTitle title="④ 日本拍卖结算" note="NBAA / OBA / ECO / JBA 等日本国内拍卖，用这里录入结算单最稳。" />
-
         <AuctionSettlementBox form={form} setForm={setForm} />
-
-        <FormSectionTitle title="⑤ 利润预览" note="保存前先看真实成本、预计毛利和消费税参考。" />
 
         <div className="full panel" style={{ background: "#f8fafc", padding: "16px" }}>
           <h3 style={{ marginTop: 0 }}>实时利润预览</h3>
@@ -2409,7 +2382,6 @@ function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, 
 
         {isSoldStatus(form.status) && (
           <>
-            <FormSectionTitle title="⑥ 销售信息" note="状态为已售出/已发货时填写成交价、销售平台和销售备注。" />
             <Input label="销售日期" type="date" value={form.soldDate || ""} onChange={(v) => set("soldDate", v)} />
             <Input label="销售平台" value={form.soldPlatform || ""} onChange={(v) => set("soldPlatform", v)} placeholder="EcoRing / Mercari / 店铺 / 其他" />
             <Input label="实际销售额 JPY（税込）" type="number" value={form.soldPriceJpy || ""} onChange={(v) => set("soldPriceJpy", v)} />
@@ -2419,8 +2391,6 @@ function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, 
             </label>
           </>
         )}
-
-        <FormSectionTitle title="⑦ 图片 / 备注" note="每件商品最多3张图片，建议第一张放正面图，方便库存、出品、PDF统一显示。" />
 
         <label
           className="full"
@@ -2579,7 +2549,9 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
             <p><b>供应商地址：</b>{detailItem.address}</p>
             <p><b>平台/运输：</b>{detailItem.platform}</p>
             <p><b>费用：</b>单件运费 {jpy(detailItem.shippingJpy)} / 单件关税 {jpy(detailItem.dutyJpy)} / 批次分摊关税 {jpy(detailItem.batchAllocatedDutyJpy)} / 批次分摊运费 {jpy(detailItem.batchAllocatedShippingJpy)} / 报关 {jpy(Number(detailItem.customsFeeJpy || 0) + Number(detailItem.batchAllocatedCustomsFeeJpy || 0))} / 手续费 {jpy(detailItem.platformFeeJpy)} / 其他 {jpy(Number(detailItem.otherCostJpy || 0) + Number(detailItem.batchAllocatedOtherCostJpy || 0))}</p>
-            <p><b>备注：</b>{detailItem.memo}</p>
+            <p><b>备注：</b>{displayMemo(detailItem) || "—"}</p>
+            {getAuction(detailItem) && <p style={{whiteSpace:"pre-wrap"}}><b>日本拍卖：</b>
+{auctionDetailText(detailItem)}</p>}
           </div>
         </div>
       )}
@@ -2692,7 +2664,7 @@ function Ledger({ items, setItems, isOwner, downloadCSV }) {
     x.address,
     x.idCheck,
     "",
-    x.memo,
+    displayMemo(x),
     x.ledgerStatus || "有效",
     (x.ledgerHistory || []).slice(-3).map((h) => `${(h.date || "").slice(0,10)} ${h.action}`).join(" / "),
     <div className="table-actions">
@@ -2903,15 +2875,15 @@ function Profit({ items }) {
 }
 
 function TaxReport({ items, totals, customsBatches, downloadCSV }) {
-  const headers = ["图片", "商品编号", "品牌", "商品名", "申报JPY", "进项消费税/控除参考", "销售JPY（税込）", "销售不含税", "销售消费税", "消费税差额参考", "计算来源"];
+  const headers = ["图片", "商品编号", "品牌", "商品名", "申报JPY", "进项消费税估算", "销售JPY（税込）", "销售不含税", "销售消费税", "消费税差额参考", "检查提示"];
   const csvHeaders = headers.filter((h) => h !== "图片");
   const rows = items.map((x) => {
     const t = calcTax(x);
-    return [<ProductThumb item={x} />, x.id, x.brand, x.item, Math.round(t.declaredJpy), Math.round(t.inputTax), Math.round(t.saleJpy), Math.round(t.saleExTax), Math.round(t.outputTax), Math.round(t.taxBalance), t.inputTaxSource || ""];
+    return [<ProductThumb item={x} />, x.id, x.brand, x.item, Math.round(t.declaredJpy), Math.round(t.inputTax), Math.round(t.saleJpy), Math.round(t.saleExTax), Math.round(t.outputTax), Math.round(t.taxBalance), ""];
   });
   const csvRows = items.map((x) => {
     const t = calcTax(x);
-    return [x.id, x.brand, x.item, Math.round(t.declaredJpy), Math.round(t.inputTax), Math.round(t.saleJpy), Math.round(t.saleExTax), Math.round(t.outputTax), Math.round(t.taxBalance), t.inputTaxSource || ""];
+    return [x.id, x.brand, x.item, Math.round(t.declaredJpy), Math.round(t.inputTax), Math.round(t.saleJpy), Math.round(t.saleExTax), Math.round(t.outputTax), Math.round(t.taxBalance), ""];
   });
 
   const csv = [csvHeaders, ...csvRows, [], ["合计", "", "", Math.round(totals.inputTax), Math.round(totals.sale), "", Math.round(totals.outputTax), Math.round(totals.taxBalance)]];
@@ -2919,13 +2891,13 @@ function TaxReport({ items, totals, customsBatches, downloadCSV }) {
   return (
     <div className="panel">
       <Toolbar title="消费税参考表" onDownload={() => downloadCSV(csv, "gouka_consumption_tax_reference.csv")} />
-      <p className="note">课税事业者参考：销售消费税按含税销售额倒算10/110；日本拍卖商品优先读取备注里的「消費税控除参考」，普通进口商品按申报JPY×10%估算。实际申告请交由税理士确认。</p>
+      <p className="note">课税事业者参考：销售消费税按含税销售额倒算 10/110，进项消费税按申报JPY × 10% 参考。实际申告请交由税理士确认。</p>
       <Table headers={headers} rows={rows} />
       <h3>报关批次抵扣</h3>
       <Table headers={["批次号", "报关日期", "关税合计", "进口消费税合计", "备注"]} rows={(customsBatches || []).map((b) => [b.id, b.importDate || "", Math.round(Number(b.dutyJpy || 0)), Math.round(Number(b.importConsumptionTaxJpy || 0)), b.memo || ""])} />
       <h3>合计</h3>
       <p>销售消费税参考：{jpy(totals.outputTax)}</p>
-      <p>进项消费税/控除参考：{jpy(totals.inputTax)}</p>
+      <p>进项消费税估算：{jpy(totals.inputTax)}</p>
       <p>消费税差额参考：{jpy(totals.taxBalance)}</p>
     </div>
   );
@@ -2937,13 +2909,10 @@ function ListingManagement({ items, updateListingItem, editItem, setPreviewImage
   const [platformFilter, setPlatformFilter] = useState("全部");
   const [editingPlatformId, setEditingPlatformId] = useState(null);
   const [platformDraft, setPlatformDraft] = useState({ platform: "", customPlatform: "", saleJpy: "", soldPriceJpy: "" });
-  const [selectedIds, setSelectedIds] = useState([]);
-  const [visibleCounts, setVisibleCounts] = useState({});
 
   const q = query.toLowerCase();
   const kanbanStatuses = ["已入库", "待出品", "已出品", "已售出", "已发货"];
   const platforms = ["全部", ...LISTING_PLATFORMS];
-  const columnLimit = 30;
 
   const filteredItems = (items || []).filter((x) => {
     const text = [x.id, x.brand, x.item, x.material, x.color, x.platform, x.status, x.memo].join(" ").toLowerCase();
@@ -2954,42 +2923,6 @@ function ListingManagement({ items, updateListingItem, editItem, setPreviewImage
 
   function itemsByStatus(status) {
     return filteredItems.filter((x) => x.status === status);
-  }
-
-  function visibleItemsByStatus(status) {
-    const limit = visibleCounts[status] || columnLimit;
-    return itemsByStatus(status).slice(0, limit);
-  }
-
-  function columnStats(status) {
-    const arr = itemsByStatus(status);
-    return arr.reduce((a, x) => {
-      const t = calcTax(x);
-      a.count += 1;
-      a.cost += Number(t.costJpy || 0);
-      a.sale += Number(x.soldPriceJpy || x.saleJpy || 0);
-      a.profit += Number(t.profitExTax || 0);
-      return a;
-    }, { count: 0, cost: 0, sale: 0, profit: 0 });
-  }
-
-  function toggleSelect(id) {
-    setSelectedIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
-  }
-
-  function clearSelection() {
-    setSelectedIds([]);
-  }
-
-  async function bulkUpdate(patch, actionText) {
-    const ids = selectedIds.filter((id) => filteredItems.some((x) => x.id === id));
-    if (!ids.length) return alert("请先勾选商品。");
-    if (!window.confirm(`确认批量更新 ${ids.length} 件商品吗？`)) return;
-    for (const id of ids) {
-      await updateListingItem(id, patch, actionText);
-    }
-    setSelectedIds([]);
-    alert(`已批量更新 ${ids.length} 件商品。`);
   }
 
   function openPlatformEditor(item) {
@@ -3036,12 +2969,11 @@ function ListingManagement({ items, updateListingItem, editItem, setPreviewImage
   }
 
   const counts = kanbanStatuses.reduce((a, st) => ({ ...a, [st]: itemsByStatus(st).length }), {});
-  const selectedCount = selectedIds.length;
 
   return (
     <div className="panel">
       <h2><Package size={20} /> 出品管理</h2>
-      <p className="note">Enterprise 1.2.5：录入页整理 + 出品管理轻量优化。每列默认显示30件，显示件数与总成本；卡片压缩；支持勾选后批量加入 NBAA / OBA / ECO 或批量改状态。</p>
+      <p className="note">Enterprise 2.0：出品管理优先优化。平台支持 NBAA / OBA / ECO Ring / JBA / AUCNET / Star Buyers / Mercari / Yahoo / 楽天 / 店铺，也可以手动输入。可快速把已入库商品加入待出品。</p>
 
       <div className="grid4" style={{marginBottom:"16px"}}>
         <Card icon={<Package />} title="已入库" value={`${counts["已入库"] || 0} 件`} />
@@ -3050,7 +2982,7 @@ function ListingManagement({ items, updateListingItem, editItem, setPreviewImage
         <Card icon={<Calculator />} title="已售/已发货" value={`${(counts["已售出"] || 0) + (counts["已发货"] || 0)} 件`} />
       </div>
 
-      <div className="toolbar" style={{marginBottom:"12px"}}>
+      <div className="toolbar" style={{marginBottom:"16px"}}>
         <h2>流程看板</h2>
         <div className="toolbar-right">
           <div className="search">
@@ -3060,103 +2992,74 @@ function ListingManagement({ items, updateListingItem, editItem, setPreviewImage
           <select value={platformFilter} onChange={(e) => setPlatformFilter(e.target.value)}>
             {platforms.map((p) => <option key={p}>{p}</option>)}
           </select>
-          <button onClick={() => { setQuery(""); setPlatformFilter("全部"); clearSelection(); }}>清除</button>
-        </div>
-      </div>
-
-      <div className="panel" style={{background:"#f8fafc", padding:"12px", marginBottom:"14px"}}>
-        <div className="action-row" style={{flexWrap:"wrap"}}>
-          <span className="pill">已勾选 {selectedCount} 件</span>
-          <button className="ghost" onClick={() => bulkUpdate({ platform: "NBAA", status: "待出品" }, "批量加入NBAA待出品")}>加入 NBAA</button>
-          <button className="ghost" onClick={() => bulkUpdate({ platform: "OBA", status: "待出品" }, "批量加入OBA待出品")}>加入 OBA</button>
-          <button className="ghost" onClick={() => bulkUpdate({ platform: "ECO Ring", status: "待出品" }, "批量加入ECO待出品")}>加入 ECO</button>
-          <button className="ghost" onClick={() => bulkUpdate({ status: "已出品" }, "批量改为已出品")}>改为已出品</button>
-          <button className="ghost" onClick={() => bulkUpdate({ status: "已售出", soldDate: new Date().toISOString().slice(0, 10) }, "批量改为已售出")}>改为已售出</button>
-          <button className="ghost" onClick={clearSelection}>取消勾选</button>
+          <button onClick={() => { setQuery(""); setPlatformFilter("全部"); }}>清除</button>
         </div>
       </div>
 
       <div style={{display:"grid", gridTemplateColumns:"repeat(5, minmax(220px, 1fr))", gap:"12px", alignItems:"start", overflowX:"auto", paddingBottom:"8px"}}>
-        {kanbanStatuses.map((status, idx) => {
-          const stats = columnStats(status);
-          const allInColumn = itemsByStatus(status);
-          const visible = visibleItemsByStatus(status);
-          const currentLimit = visibleCounts[status] || columnLimit;
-          return (
-            <div key={status} style={{background:"#f8fafc", border:"1px solid #e5e7eb", borderRadius:"16px", padding:"12px", minHeight:"420px"}}>
-              <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"8px"}}>
-                <b>{idx + 1}. {status}</b>
-                <span className="pill">{stats.count} 件</span>
-              </div>
-              <div style={{fontSize:"12px", color:"#475569", lineHeight:1.6, marginBottom:"10px", borderBottom:"1px solid #e5e7eb", paddingBottom:"8px"}}>
-                <div>总成本：<b>{jpy(stats.cost)}</b></div>
-                <div>预计/成交：<b>{jpy(stats.sale)}</b></div>
-                <div>参考利润：<b>{jpy(stats.profit)}</b></div>
-              </div>
-              <div style={{display:"flex", flexDirection:"column", gap:"10px"}}>
-                {visible.map((item) => {
-                  const t = calcTax(item);
-                  const nextStatus = status === "已入库" ? "待出品" : status === "待出品" ? "已出品" : status === "已出品" ? "已售出" : status === "已售出" ? "已发货" : "";
-                  const checked = selectedIds.includes(item.id);
-                  return (
-                    <div key={item.id} style={{background: checked ? "#eff6ff" : "#fff", border: checked ? "1px solid #60a5fa" : "1px solid #e5e7eb", borderRadius:"14px", padding:"10px", boxShadow:"0 8px 18px rgba(15,23,42,.05)"}}>
-                      <div style={{display:"flex", gap:"10px", alignItems:"flex-start"}}>
-                        <input type="checkbox" checked={checked} onChange={() => toggleSelect(item.id)} style={{marginTop:"4px"}} />
-                        <div style={{width:"64px", height:"64px", borderRadius:"12px", background:"#eef2ff", overflow:"hidden", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0}}>
-                          {item.images?.[0] ? <img src={item.images[0]} alt={item.item} style={{width:"100%", height:"100%", objectFit:"cover", cursor:"pointer"}} onClick={() => { setPreviewScale(1); setPreviewImage(item.images[0]); }} /> : "📦"}
-                        </div>
-                        <div style={{minWidth:0, flex:1}}>
-                          <b style={{display:"block", fontSize:"13px", lineHeight:1.35}}>{item.brand} {item.item}</b>
-                          <small style={{color:"#64748b"}}>{item.id}</small>
-                          <div style={{marginTop:"5px"}}><StatusBadge status={item.status} /></div>
-                        </div>
-                      </div>
-
-                      <div style={{fontSize:"12px", color:"#475569", marginTop:"10px", lineHeight:1.65}}>
-                        <div><b>平台：</b>{item.platform || "未设置"}</div>
-                        <div><b>成本：</b>{jpy(t.costJpy)}</div>
-                        <div><b>预计：</b>{jpy(item.saleJpy)}</div>
-                        <div><b>成交：</b>{jpy(item.soldPriceJpy || 0)}</div>
-                        <div><b>利润：</b>{jpy(t.profitExTax)}</div>
-                      </div>
-
-                      {editingPlatformId === item.id ? (
-                        <div style={{marginTop:"10px", display:"grid", gap:"8px"}}>
-                          <select value={platformDraft.platform} onChange={(e) => setPlatformDraft({ ...platformDraft, platform: e.target.value })}>
-                            <option value="">选择平台</option>
-                            {LISTING_PLATFORMS.map((p) => <option key={p}>{p}</option>)}
-                          </select>
-                          {platformDraft.platform === "其他" && <input value={platformDraft.customPlatform} onChange={(e) => setPlatformDraft({ ...platformDraft, customPlatform: e.target.value })} placeholder="手动输入平台 / 拍卖会 / 客户" />}
-                          <input type="number" value={platformDraft.saleJpy} onChange={(e) => setPlatformDraft({ ...platformDraft, saleJpy: e.target.value })} placeholder="预计出品价 JPY" />
-                          <input type="number" value={platformDraft.soldPriceJpy} onChange={(e) => setPlatformDraft({ ...platformDraft, soldPriceJpy: e.target.value })} placeholder="实际成交价 JPY" />
-                          <div className="action-row">
-                            <button className="primary" onClick={() => savePlatform(item)}>保存</button>
-                            <button className="ghost" onClick={() => setEditingPlatformId(null)}>取消</button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="action-row" style={{marginTop:"10px", flexWrap:"wrap"}}>
-                          <button className="ghost" onClick={() => quickSetPlatform(item, "NBAA")}>NBAA</button>
-                          <button className="ghost" onClick={() => quickSetPlatform(item, "OBA")}>OBA</button>
-                          <button className="ghost" onClick={() => quickSetPlatform(item, "ECO Ring")}>ECO</button>
-                          <button className="ghost" onClick={() => openPlatformEditor(item)}>平台/价格</button>
-                          {nextStatus && <button className="primary" onClick={() => moveStatus(item, nextStatus)}>移到{nextStatus}</button>}
-                          <button className="edit" onClick={() => editItem(item)}>编辑</button>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-                {!visible.length && <p className="note">暂无商品</p>}
-                {allInColumn.length > currentLimit && (
-                  <button className="ghost" onClick={() => setVisibleCounts((prev) => ({ ...prev, [status]: currentLimit + columnLimit }))}>
-                    查看更多（还有 {allInColumn.length - currentLimit} 件）
-                  </button>
-                )}
-              </div>
+        {kanbanStatuses.map((status, idx) => (
+          <div key={status} style={{background:"#f8fafc", border:"1px solid #e5e7eb", borderRadius:"16px", padding:"12px", minHeight:"420px"}}>
+            <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"10px"}}>
+              <b>{idx + 1}. {status}</b>
+              <span className="pill">{itemsByStatus(status).length} 件</span>
             </div>
-          );
-        })}
+            <div style={{display:"flex", flexDirection:"column", gap:"10px"}}>
+              {itemsByStatus(status).map((item) => {
+                const t = calcTax(item);
+                const nextStatus = status === "已入库" ? "待出品" : status === "待出品" ? "已出品" : status === "已出品" ? "已售出" : status === "已售出" ? "已发货" : "";
+                return (
+                  <div key={item.id} style={{background:"#fff", border:"1px solid #e5e7eb", borderRadius:"14px", padding:"10px", boxShadow:"0 8px 18px rgba(15,23,42,.05)"}}>
+                    <div style={{display:"flex", gap:"10px", alignItems:"flex-start"}}>
+                      <div style={{width:"74px", height:"74px", borderRadius:"12px", background:"#eef2ff", overflow:"hidden", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0}}>
+                        {item.images?.[0] ? <img src={item.images[0]} alt={item.item} style={{width:"100%", height:"100%", objectFit:"cover", cursor:"pointer"}} onClick={() => { setPreviewScale(1); setPreviewImage(item.images[0]); }} /> : "📦"}
+                      </div>
+                      <div style={{minWidth:0}}>
+                        <b style={{display:"block", fontSize:"13px", lineHeight:1.35}}>{item.brand} {item.item}</b>
+                        <small style={{color:"#64748b"}}>{item.id}</small>
+                        <div style={{marginTop:"5px"}}><StatusBadge status={item.status} /></div>
+                      </div>
+                    </div>
+
+                    <div style={{fontSize:"12px", color:"#475569", marginTop:"10px", lineHeight:1.6}}>
+                      <div><b>平台：</b>{item.platform || "未设置"}</div>
+                      <div><b>预计价：</b>{jpy(item.saleJpy)}</div>
+                      <div><b>成交价：</b>{jpy(item.soldPriceJpy || 0)}</div>
+                      <div><b>销售日：</b>{item.soldDate || "—"}</div>
+                      <div><b>发货：</b>{String(item.soldMemo || "").includes("発送済") ? "発送済" : "未确认"}</div>
+                      <div><b>参考利润：</b>{jpy(t.profitExTax)}</div>
+                    </div>
+
+                    {editingPlatformId === item.id ? (
+                      <div style={{marginTop:"10px", display:"grid", gap:"8px"}}>
+                        <select value={platformDraft.platform} onChange={(e) => setPlatformDraft({ ...platformDraft, platform: e.target.value })}>
+                          <option value="">选择平台</option>
+                          {LISTING_PLATFORMS.map((p) => <option key={p}>{p}</option>)}
+                        </select>
+                        {platformDraft.platform === "其他" && <input value={platformDraft.customPlatform} onChange={(e) => setPlatformDraft({ ...platformDraft, customPlatform: e.target.value })} placeholder="手动输入平台 / 拍卖会 / 客户" />}
+                        <input type="number" value={platformDraft.saleJpy} onChange={(e) => setPlatformDraft({ ...platformDraft, saleJpy: e.target.value })} placeholder="预计出品价 JPY" />
+                        <input type="number" value={platformDraft.soldPriceJpy} onChange={(e) => setPlatformDraft({ ...platformDraft, soldPriceJpy: e.target.value })} placeholder="实际成交价 JPY" />
+                        <div className="action-row">
+                          <button className="primary" onClick={() => savePlatform(item)}>保存</button>
+                          <button className="ghost" onClick={() => setEditingPlatformId(null)}>取消</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="action-row" style={{marginTop:"10px", flexWrap:"wrap"}}>
+                        <button className="ghost" onClick={() => quickSetPlatform(item, "NBAA")}>NBAA</button>
+                        <button className="ghost" onClick={() => quickSetPlatform(item, "OBA")}>OBA</button>
+                        <button className="ghost" onClick={() => quickSetPlatform(item, "ECO Ring")}>ECO</button>
+                        <button className="ghost" onClick={() => openPlatformEditor(item)}>平台/价格</button>
+                        {nextStatus && <button className="primary" onClick={() => moveStatus(item, nextStatus)}>移到{nextStatus}</button>}
+                        <button className="edit" onClick={() => editItem(item)}>编辑</button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+              {!itemsByStatus(status).length && <p className="note">暂无商品</p>}
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -3297,7 +3200,7 @@ function PdfExportPanel({ items, totals, exportInventoryPdf }) {
   return (
     <div className="panel">
       <h2><FileText size={20} /> PDF导出中心</h2>
-      <p className="note">Enterprise 1.2.4 PDF：使用公司正式抬头、电子公章、適格請求書登録番号。支持全部导出、勾选导出、按日期导出。</p>
+      <p className="note">Enterprise 1.1 PDF：使用公司正式抬头、电子公章、適格請求書登録番号。支持全部导出、勾选导出、按日期导出。</p>
 
       <div className="grid4" style={{marginTop:"16px"}}>
         <Card icon={<Package />} title="商品记录" value={`${items.length} 件`} />
@@ -4048,6 +3951,15 @@ function Table({ headers, rows }) {
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+function FormSectionTitle({ title, subtitle }) {
+  return (
+    <div className="full" style={{ marginTop: "10px", padding: "10px 12px", borderLeft: "4px solid #2563eb", background: "#eff6ff", borderRadius: "10px" }}>
+      <b>{title}</b>
+      {subtitle && <p className="note" style={{ margin: "4px 0 0" }}>{subtitle}</p>}
     </div>
   );
 }
