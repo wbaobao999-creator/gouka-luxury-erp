@@ -656,7 +656,8 @@ function loadItems() {
 }
 
 function normalizeItem(x) {
-  return {
+  const auctionFromMemo = parseAuctionSettlementFromMemo(x?.memo || "");
+  const normalized = {
     ledgerStatus: x.ledgerStatus || "有效",
     ledgerVoidReason: x.ledgerVoidReason || "",
     ledgerUpdatedAt: x.ledgerUpdatedAt || "",
@@ -677,6 +678,21 @@ function normalizeItem(x) {
     imageCount: Number(x.imageCount || (Array.isArray(x.images) ? x.images.length : 0)),
     ...x,
     images: Array.isArray(x.images) ? x.images : []
+  };
+
+  return {
+    ...normalized,
+    auctionPlatform: normalized.auctionPlatform || auctionFromMemo.auctionPlatform || "",
+    auctionCode: normalized.auctionCode || auctionFromMemo.auctionCode || "",
+    auctionDate: normalized.auctionDate || auctionFromMemo.auctionDate || "",
+    auctionBoxNo: normalized.auctionBoxNo || auctionFromMemo.auctionBoxNo || "",
+    auctionBranchNo: normalized.auctionBranchNo || auctionFromMemo.auctionBranchNo || "",
+    auctionItemNameJp: normalized.auctionItemNameJp || auctionFromMemo.auctionItemNameJp || "",
+    auctionHammerPriceJpy: normalized.auctionHammerPriceJpy || auctionFromMemo.auctionHammerPriceJpy || "",
+    auctionHammerTaxJpy: normalized.auctionHammerTaxJpy || auctionFromMemo.auctionHammerTaxJpy || "",
+    auctionBuyerFeeJpy: normalized.auctionBuyerFeeJpy || auctionFromMemo.auctionBuyerFeeJpy || "",
+    auctionBuyerFeeTaxJpy: normalized.auctionBuyerFeeTaxJpy || auctionFromMemo.auctionBuyerFeeTaxJpy || "",
+    auctionDomesticShippingJpy: normalized.auctionDomesticShippingJpy || auctionFromMemo.auctionDomesticShippingJpy || ""
   };
 }
 
@@ -729,6 +745,110 @@ function parseJpyNumber(value) {
   return Number.isFinite(n) ? n : 0;
 }
 
+
+const AUCTION_MEMO_START = "--- GOUKA_AUCTION_SETTLEMENT_START ---";
+const AUCTION_MEMO_END = "--- GOUKA_AUCTION_SETTLEMENT_END ---";
+
+function stripAuctionSettlementMemo(memo) {
+  const text = String(memo || "");
+  const withoutMarked = text.replace(new RegExp(`${AUCTION_MEMO_START}[\\s\\S]*?${AUCTION_MEMO_END}`, "g"), "");
+  const auctionLinePatterns = [
+    /^日本拍卖结算[:：]/,
+    /^落札コード[:：]/,
+    /^落札日[:：]/,
+    /^箱番[:：]/,
+    /^枝番[:：]/,
+    /^拍卖商品名[:：]/,
+    /^落札金額[:：]/,
+    /^落札消費税[:：]/,
+    /^落札手数料[:：]/,
+    /^手数料消費税[:：]/,
+    /^国内送料[:：]/,
+    /^請求合計[:：]/,
+    /^库存真实成本[:：]/,
+    /^消費税控除参考[:：]/,
+    /^消费税控除参考[:：]/,
+    /^可抵扣消费税[:：]/
+  ];
+  return withoutMarked
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .filter((line) => !auctionLinePatterns.some((pattern) => pattern.test(line.trim())))
+    .join("\n")
+    .trim();
+}
+
+function getMemoLineValue(memo, label) {
+  const m = String(memo || "").match(new RegExp(`${label}[:：]\\s*([^\\n\\r]+)`, "i"));
+  return m ? m[1].trim() : "";
+}
+
+function parseAuctionSettlementFromMemo(memo) {
+  const text = String(memo || "");
+  const platformRaw = getMemoLineValue(text, "日本拍卖结算");
+  const platform = platformRaw.replace(/^🏛\s*/, "").trim();
+  const hammerPrice = parseJpyNumber(getMemoLineValue(text, "落札金額"));
+  const hammerTax = parseJpyNumber(getMemoLineValue(text, "落札消費税"));
+  const buyerFee = parseJpyNumber(getMemoLineValue(text, "落札手数料"));
+  const buyerFeeTax = parseJpyNumber(getMemoLineValue(text, "手数料消費税"));
+  const domesticShipping = parseJpyNumber(getMemoLineValue(text, "国内送料"));
+  return {
+    auctionPlatform: platform,
+    auctionCode: getMemoLineValue(text, "落札コード"),
+    auctionDate: getMemoLineValue(text, "落札日"),
+    auctionBoxNo: getMemoLineValue(text, "箱番"),
+    auctionBranchNo: getMemoLineValue(text, "枝番"),
+    auctionItemNameJp: getMemoLineValue(text, "拍卖商品名"),
+    auctionHammerPriceJpy: hammerPrice || "",
+    auctionHammerTaxJpy: hammerTax || "",
+    auctionBuyerFeeJpy: buyerFee || "",
+    auctionBuyerFeeTaxJpy: buyerFeeTax || "",
+    auctionDomesticShippingJpy: domesticShipping || ""
+  };
+}
+
+function buildAuctionSettlementMemo(data) {
+  const hammer = Number(data.auctionHammerPriceJpy || 0);
+  const hammerTax = Number(data.auctionHammerTaxJpy || 0);
+  const buyerFee = Number(data.auctionBuyerFeeJpy || 0);
+  const buyerFeeTax = Number(data.auctionBuyerFeeTaxJpy || 0);
+  const domesticShipping = Number(data.auctionDomesticShippingJpy || 0);
+  const invoiceTotal = hammer + hammerTax + buyerFee + buyerFeeTax + domesticShipping;
+  const inventoryCost = hammer + buyerFee + buyerFeeTax + domesticShipping;
+  const taxCreditRef = hammerTax + buyerFeeTax;
+  return [
+    AUCTION_MEMO_START,
+    `日本拍卖结算：${data.auctionPlatform || ""}`,
+    data.auctionCode ? `落札コード：${data.auctionCode}` : "",
+    data.auctionDate ? `落札日：${data.auctionDate}` : "",
+    data.auctionBoxNo ? `箱番：${data.auctionBoxNo}` : "",
+    data.auctionBranchNo ? `枝番：${data.auctionBranchNo}` : "",
+    data.auctionItemNameJp ? `拍卖商品名：${data.auctionItemNameJp}` : "",
+    `落札金額：${hammer.toLocaleString()}円`,
+    `落札消費税：${hammerTax.toLocaleString()}円`,
+    `落札手数料：${buyerFee.toLocaleString()}円`,
+    `手数料消費税：${buyerFeeTax.toLocaleString()}円`,
+    domesticShipping ? `国内送料：${domesticShipping.toLocaleString()}円` : "",
+    `請求合計：${invoiceTotal.toLocaleString()}円`,
+    `库存真实成本：${inventoryCost.toLocaleString()}円`,
+    `消費税控除参考：${taxCreditRef.toLocaleString()}円`,
+    AUCTION_MEMO_END
+  ].filter(Boolean).join("\n");
+}
+
+function mergeAuctionSettlementMemo(userMemo, data) {
+  const cleanMemo = stripAuctionSettlementMemo(userMemo);
+  const block = buildAuctionSettlementMemo(data);
+  return [cleanMemo, block].filter(Boolean).join("\n");
+}
+
+function auctionTaxCreditFromFields(item) {
+  const hammerTax = Number(item?.auctionHammerTaxJpy || 0);
+  const buyerFeeTax = Number(item?.auctionBuyerFeeTaxJpy || 0);
+  const total = hammerTax + buyerFeeTax;
+  return total > 0 ? total : null;
+}
+
 function extractAuctionTaxCreditRef(item) {
   const memo = String(item?.memo || "");
   const patterns = [
@@ -766,7 +886,7 @@ function calcTax(x) {
   const extraCostJpy = sumExtraCosts(x);
   const costJpy = baseCostJpy + extraCostJpy;
   const declaredJpy = declaredSmart.value;
-  const auctionTaxCreditRef = extractAuctionTaxCreditRef(x);
+  const auctionTaxCreditRef = auctionTaxCreditFromFields(x) ?? extractAuctionTaxCreditRef(x);
   const inputTax = auctionTaxCreditRef !== null ? auctionTaxCreditRef : declaredJpy * TAX_RATE;
   const inputTaxSource = auctionTaxCreditRef !== null ? "日本拍卖消费税控除参考" : "申报金额10%估算";
   const outputTax = saleJpy * TAX_RATE / (1 + TAX_RATE);
@@ -1435,7 +1555,7 @@ function App() {
       <div class="pdf-header">
         <div>
           <h1>商品资料 PDF</h1>
-          <p>Product Sheet / GOUKA ERP Enterprise 1.2.7</p>
+          <p>Product Sheet / GOUKA ERP Enterprise 1.3.0</p>
         </div>
         <div class="company">
           <b>豪嘉株式会社</b><br />
@@ -1530,7 +1650,7 @@ function App() {
         <div class="field"><small>预计净利润</small><b>${jpy(sum.profit)}</b></div>
       </div></div>
       <div class="section"><h2>库存明细</h2><table><thead><tr><th>图</th><th>商品编号</th><th>入库日</th><th>品牌</th><th>商品</th><th>状态</th><th>成本</th><th>售价</th><th>利润</th></tr></thead><tbody>${rows}</tbody></table></div>
-      <div class="footer">GOUKA ERP Enterprise 1.2.7 / Generated by GOUKA ERP. 金额与消费税为内部参考，正式申告请交由税理士确认。</div>
+      <div class="footer">GOUKA ERP Enterprise 1.3.0 / Generated by GOUKA ERP. 金额与消费税为内部参考，正式申告请交由税理士确认。</div>
     `;
     openPdfWindow(`${label}_${new Date().toISOString().slice(0,10)}`, body);
   }
@@ -1640,7 +1760,7 @@ function App() {
           <Building2 size={24} />
           <div>
             <b>豪嘉株式会社</b>
-            <span>GOUKA ERP Enterprise 1.2.7</span>
+            <span>GOUKA ERP Enterprise 1.3.0</span>
           </div>
         </div>
 
@@ -1656,7 +1776,7 @@ function App() {
       <main>
         <header>
           <div>
-            <h1>豪嘉ERP Enterprise 1.2.7 Dashboard Fix</h1>
+            <h1>豪嘉ERP Enterprise 1.3.0 Dashboard Fix</h1>
             <p>自动保存・云端同步・图片上传・状态筛选・古物台账锁定・EMS报关・利润计算</p>
           </div>
           <div className="action-row">
@@ -1836,8 +1956,8 @@ function Dashboard({ totals, items, setTab, exportBackup }) {
     <section className="v3-dashboard">
       <div className="v3-hero">
         <div>
-          <span className="v3-kicker">GOUKA ERP Enterprise 1.2.7</span>
-          <h1>经营驾驶舱 · Enterprise 1.2.7</h1>
+          <span className="v3-kicker">GOUKA ERP Enterprise 1.3.0</span>
+          <h1>经营驾驶舱 · Enterprise 1.3.0</h1>
           <p>今日经营、库存预警、品牌利润、供应商利润集中显示。老板打开第一页就知道该赚钱、该出品、该清库存。</p>
           <div className="v3-hero-actions">
             <button onClick={() => setTab("add")}>新增商品</button>
@@ -1973,7 +2093,7 @@ function Dashboard({ totals, items, setTab, exportBackup }) {
       </div>
       <div className="panel wide">
         <h2>经营提醒</h2>
-        <p>V7.11新增今日经营、库存预警、品牌利润排行、供应商利润排行。Enterprise 1.2.7：修正Dashboard统计逻辑，把库存预计利润和实际销售利润分开；未售商品不再计入今日/本月净利润。</p>
+        <p>V7.11新增今日经营、库存预警、品牌利润排行、供应商利润排行。Enterprise 1.3.0：修正Dashboard统计逻辑，把库存预计利润和实际销售利润分开；未售商品不再计入今日/本月净利润。</p>
       </div>
     </section>
   );
@@ -1991,19 +2111,42 @@ function Card({ icon, title, value }) {
 }
 
 function AuctionSettlementBox({ form, setForm }) {
-  const [auction, setAuction] = useState({
-    platform: form.platform || "NBAA",
-    auctionCode: "",
-    auctionDate: form.purchaseDate || new Date().toISOString().slice(0, 10),
-    boxNo: "",
-    branchNo: "",
-    itemNameJp: "",
-    hammerPrice: "",
-    hammerTax: "",
-    buyerFee: "",
-    buyerFeeTax: "",
-    domesticShipping: ""
-  });
+  const parsed = parseAuctionSettlementFromMemo(form.memo || "");
+  const initialAuction = {
+    platform: form.auctionPlatform || parsed.auctionPlatform || form.platform || "NBAA",
+    auctionCode: form.auctionCode || parsed.auctionCode || "",
+    auctionDate: form.auctionDate || parsed.auctionDate || form.purchaseDate || new Date().toISOString().slice(0, 10),
+    boxNo: form.auctionBoxNo || parsed.auctionBoxNo || "",
+    branchNo: form.auctionBranchNo || parsed.auctionBranchNo || "",
+    itemNameJp: form.auctionItemNameJp || parsed.auctionItemNameJp || "",
+    hammerPrice: form.auctionHammerPriceJpy || parsed.auctionHammerPriceJpy || "",
+    hammerTax: form.auctionHammerTaxJpy || parsed.auctionHammerTaxJpy || "",
+    buyerFee: form.auctionBuyerFeeJpy || parsed.auctionBuyerFeeJpy || "",
+    buyerFeeTax: form.auctionBuyerFeeTaxJpy || parsed.auctionBuyerFeeTaxJpy || "",
+    domesticShipping: form.auctionDomesticShippingJpy || parsed.auctionDomesticShippingJpy || ""
+  };
+  const [auction, setAuction] = useState(initialAuction);
+
+  React.useEffect(() => {
+    const latest = parseAuctionSettlementFromMemo(form.memo || "");
+    const shouldRefresh = !auction.hammerPrice && (form.auctionHammerPriceJpy || latest.auctionHammerPriceJpy);
+    if (shouldRefresh) {
+      setAuction({
+        platform: form.auctionPlatform || latest.auctionPlatform || form.platform || "NBAA",
+        auctionCode: form.auctionCode || latest.auctionCode || "",
+        auctionDate: form.auctionDate || latest.auctionDate || form.purchaseDate || new Date().toISOString().slice(0, 10),
+        boxNo: form.auctionBoxNo || latest.auctionBoxNo || "",
+        branchNo: form.auctionBranchNo || latest.auctionBranchNo || "",
+        itemNameJp: form.auctionItemNameJp || latest.auctionItemNameJp || "",
+        hammerPrice: form.auctionHammerPriceJpy || latest.auctionHammerPriceJpy || "",
+        hammerTax: form.auctionHammerTaxJpy || latest.auctionHammerTaxJpy || "",
+        buyerFee: form.auctionBuyerFeeJpy || latest.auctionBuyerFeeJpy || "",
+        buyerFeeTax: form.auctionBuyerFeeTaxJpy || latest.auctionBuyerFeeTaxJpy || "",
+        domesticShipping: form.auctionDomesticShippingJpy || latest.auctionDomesticShippingJpy || ""
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.id, form.memo]);
 
   const setAuctionValue = (k, v) => setAuction({ ...auction, [k]: v });
   const hammer = Number(auction.hammerPrice || 0);
@@ -2014,7 +2157,6 @@ function AuctionSettlementBox({ form, setForm }) {
   const invoiceTotal = hammer + hammerTax + buyerFee + buyerFeeTax + domesticShipping;
   const taxCreditRef = hammerTax + buyerFeeTax;
   const inventoryCost = hammer + buyerFee + buyerFeeTax + domesticShipping;
-  const taxExcludedCost = inventoryCost;
 
   function calcTax10FromHammer() {
     setAuction({
@@ -2024,29 +2166,47 @@ function AuctionSettlementBox({ form, setForm }) {
     });
   }
 
+  function clearAuctionSettlement() {
+    if (!window.confirm("确认清除当前商品的日本拍卖结算信息吗？商品基本资料不会删除。")) return;
+    setForm({
+      ...form,
+      auctionPlatform: "",
+      auctionCode: "",
+      auctionDate: "",
+      auctionBoxNo: "",
+      auctionBranchNo: "",
+      auctionItemNameJp: "",
+      auctionHammerPriceJpy: "",
+      auctionHammerTaxJpy: "",
+      auctionBuyerFeeJpy: "",
+      auctionBuyerFeeTaxJpy: "",
+      auctionDomesticShippingJpy: "",
+      memo: stripAuctionSettlementMemo(form.memo || "")
+    });
+    setAuction({ ...initialAuction, hammerPrice: "", hammerTax: "", buyerFee: "", buyerFeeTax: "", domesticShipping: "" });
+  }
+
   function applyAuctionSettlement() {
     if (!hammer) return alert("请先填写落札金额。例：44000");
-    const auctionMemo = [
-      form.memo || "",
-      `日本拍卖结算：${auction.platform || ""}`,
-      auction.auctionCode ? `落札コード：${auction.auctionCode}` : "",
-      auction.auctionDate ? `落札日：${auction.auctionDate}` : "",
-      auction.boxNo ? `箱番：${auction.boxNo}` : "",
-      auction.branchNo ? `枝番：${auction.branchNo}` : "",
-      auction.itemNameJp ? `拍卖商品名：${auction.itemNameJp}` : "",
-      `落札金額：${hammer.toLocaleString()}円` ,
-      `落札消費税：${hammerTax.toLocaleString()}円`,
-      `落札手数料：${buyerFee.toLocaleString()}円`,
-      `手数料消費税：${buyerFeeTax.toLocaleString()}円`,
-      domesticShipping ? `国内送料：${domesticShipping.toLocaleString()}円` : "",
-      `請求合計：${invoiceTotal.toLocaleString()}円`,
-      `库存真实成本：${inventoryCost.toLocaleString()}円`,
-      `消費税控除参考：${taxCreditRef.toLocaleString()}円`
-    ].filter(Boolean).join("\n");
+
+    const auctionData = {
+      auctionPlatform: auction.platform || form.platform || "NBAA",
+      auctionCode: auction.auctionCode || "",
+      auctionDate: auction.auctionDate || form.purchaseDate || new Date().toISOString().slice(0, 10),
+      auctionBoxNo: auction.boxNo || "",
+      auctionBranchNo: auction.branchNo || "",
+      auctionItemNameJp: auction.itemNameJp || "",
+      auctionHammerPriceJpy: hammer,
+      auctionHammerTaxJpy: hammerTax,
+      auctionBuyerFeeJpy: buyerFee,
+      auctionBuyerFeeTaxJpy: buyerFeeTax,
+      auctionDomesticShippingJpy: domesticShipping
+    };
 
     setForm({
       ...form,
-      purchaseDate: auction.auctionDate || form.purchaseDate || new Date().toISOString().slice(0, 10),
+      ...auctionData,
+      purchaseDate: auctionData.auctionDate,
       purchaseCurrency: "JPY",
       purchaseCny: hammer,
       purchaseRateToJpy: 1,
@@ -2054,20 +2214,20 @@ function AuctionSettlementBox({ form, setForm }) {
       declaredCny: hammer + buyerFee,
       declaredRateToJpy: 1,
       rate: 1,
-      platform: auction.platform || form.platform || "NBAA",
-      source: form.source || auction.platform || "日本拍卖",
+      platform: auctionData.auctionPlatform,
+      source: form.source || auctionData.auctionPlatform || "日本拍卖",
       platformFeeJpy: buyerFee,
       otherCostJpy: buyerFeeTax + domesticShipping,
-      memo: auctionMemo
+      memo: mergeAuctionSettlementMemo(form.memo || "", auctionData)
     });
 
-    alert(`已按日本拍卖结算填入。\n\n采购金额：${hammer.toLocaleString()} JPY\n拍卖手续费：${buyerFee.toLocaleString()} JPY\n库存真实成本：${inventoryCost.toLocaleString()} JPY\n实际支付合计：${invoiceTotal.toLocaleString()} JPY\n消费税控除参考：${taxCreditRef.toLocaleString()} JPY`);
+    alert(`已按日本拍卖结算填入。\n\n采购金额：${hammer.toLocaleString()} JPY\n拍卖手续费：${buyerFee.toLocaleString()} JPY\n库存真实成本：${inventoryCost.toLocaleString()} JPY\n实际支付合计：${invoiceTotal.toLocaleString()} JPY\n消费税控除参考：${taxCreditRef.toLocaleString()} JPY\n\n已自动清理旧的重复结算备注，只保留一份系统结算区块。`);
   }
 
   return (
     <div className="full panel" style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", padding: "16px" }}>
-      <h3 style={{ marginTop: 0 }}>🏛 日本拍卖结算（NBAA / OBA / ECO / JBA）</h3>
-      <p className="note">按结算单填写。库存真实成本 = 落札金額 + 落札手数料 + 手数料消費税 + 国内送料；消费税控除参考 = 落札消費税 + 手数料消費税。</p>
+      <h3 style={{ marginTop: 0 }}>🏛 日本拍卖结算（正式结构化）</h3>
+      <p className="note">Enterprise 1.3：拍卖结算不再反复追加备注。系统会保留正式字段，并自动替换旧结算区块，只保留一份。库存真实成本 = 落札金額 + 落札手数料 + 手数料消費税 + 国内送料；消费税控除参考 = 落札消費税 + 手数料消費税。</p>
       <div className="formgrid">
         <SelectWithOther label="拍卖平台" value={auction.platform} onChange={(v) => setAuctionValue("platform", v)} options={["NBAA", "OBA", "ECO Ring", "JBA", "AUCNET", "Star Buyers", "其他"]} placeholder="选择或输入拍卖平台" />
         <Input label="落札コード" value={auction.auctionCode} onChange={(v) => setAuctionValue("auctionCode", v)} placeholder="例：390054" />
@@ -2090,21 +2250,13 @@ function AuctionSettlementBox({ form, setForm }) {
       <div className="action-row" style={{ marginTop: "12px", flexWrap: "wrap" }}>
         <button className="ghost" type="button" onClick={calcTax10FromHammer}>按10%自动算消费税</button>
         <button className="primary" type="button" onClick={applyAuctionSettlement}>应用到商品金额</button>
+        <button className="ghost" type="button" onClick={clearAuctionSettlement}>清除拍卖结算</button>
       </div>
       <p className="note">例：請求合計 48,884円；库存真实成本 44,484円；消费税控除参考 4,444円。实际税务处理以税理士为准。</p>
     </div>
   );
 }
 
-
-function FormSectionTitle({ title, note }) {
-  return (
-    <div className="full" style={{ marginTop: "8px", padding: "12px 14px", borderRadius: "14px", background: "#f8fafc", border: "1px solid #e5e7eb" }}>
-      <b>{title}</b>
-      {note && <p className="note" style={{ margin: "6px 0 0" }}>{note}</p>}
-    </div>
-  );
-}
 
 function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, removeImage, dictionaries, suppliers, customsBatches }) {
   const set = (k, v) => setForm({ ...form, [k]: v });
