@@ -719,11 +719,10 @@ function auctionDetailText(item) {
 }
 
 function memoForCloud(item) {
-  const cleanMemo = stripAuctionBlocks(item?.memo || "");
-  const block = buildAuctionStorageBlock(item?.auction || getAuction(item));
-  return [cleanMemo, block].filter(Boolean).join("\n");
+  // Enterprise rule: new saves keep auction data in item.auction only.
+  // memo is reserved for human notes. Old memo auction blocks are still readable by readAuctionFromMemo().
+  return stripAuctionBlocks(item?.memo || "");
 }
-
 
 
 const emptyForm = {
@@ -1188,6 +1187,7 @@ function App() {
       platform: x.platform || "",
       status: x.status || "",
       memo: memoForCloud(x),
+      auction_json: getAuction(x) || null,
       sold_date: x.soldDate || null,
       sold_platform: x.soldPlatform || "",
       sold_price_jpy: Number(x.soldPriceJpy || 0),
@@ -1229,6 +1229,7 @@ function App() {
       platform: x.platform || "",
       status: x.status || "已入库",
       memo: x.memo || "",
+      auction: x.auction_json || x.auction || null,
       soldDate: x.sold_date || "",
       soldPlatform: x.sold_platform || "",
       soldPriceJpy: x.sold_price_jpy || 0,
