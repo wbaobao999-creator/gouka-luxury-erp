@@ -256,3 +256,62 @@
   .v3-recent-item { grid-template-columns: 58px minmax(0, 1fr); }
   .v3-recent-date { display: none; }
 }
+
+/* GOUKA Enterprise 4.0 - effective root style patch */
+.main {
+  min-width: 0;
+  overflow-x: hidden;
+}
+.panel {
+  max-width: 1480px;
+  margin-left: auto;
+  margin-right: auto;
+}
+.v3-dashboard {
+  width: min(100%, 1480px);
+  margin: 0 auto;
+  display: grid;
+  gap: 14px;
+}
+.v3-hero {
+  min-height: 138px;
+  padding: 24px 28px;
+  border-radius: 18px;
+  background: linear-gradient(105deg, #16243f 0%, #1f3d8a 58%, #2f80ed 100%);
+  color: #fff;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 260px;
+  gap: 18px;
+  align-items: center;
+  overflow: hidden;
+}
+.v3-kicker { display:inline-flex; width:fit-content; padding:4px 10px; border-radius:999px; background:rgba(255,255,255,.15); font-size:12px; font-weight:800; margin-bottom:8px; }
+.v3-hero h1 { margin:0; font-size:26px; line-height:1.2; }
+.v3-hero p { max-width:760px; margin:8px 0 0; color:rgba(255,255,255,.84); line-height:1.55; }
+.v3-hero-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:14px; }
+.v3-hero-actions button { min-height:32px; padding:6px 12px; border-radius:8px; font-weight:800; }
+.v3-hero-right { border:1px solid rgba(255,255,255,.18); background:rgba(255,255,255,.13); border-radius:14px; padding:16px; }
+.v3-hero-right p,.v3-hero-right h2 { margin:0; }
+.v3-hero-right h2 { margin-top:6px; font-size:26px; }
+.v3-hero-right span { display:block; margin-top:8px; color:rgba(255,255,255,.82); font-size:12px; }
+.v3-kpi-grid,.v3-money-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; }
+.v3-kpi,.v3-money-card,.v3-panel { background:#fff; border:1px solid #e2e8f0; border-radius:14px; box-shadow:0 8px 22px rgba(15,23,42,.05); }
+.v3-kpi,.v3-money-card { min-height:104px; padding:16px; }
+.v3-kpi h2,.v3-money-card h2 { margin:5px 0 0; font-size:24px; line-height:1.2; overflow-wrap:anywhere; }
+.v3-layout { display:grid; grid-template-columns:minmax(0,1.35fr) minmax(320px,.65fr); gap:12px; align-items:start; }
+.v3-panel { padding:16px; min-width:0; }
+.tablewrap { width:100%; overflow-x:auto; overflow-y:hidden; border-radius:8px; }
+.tablewrap table { min-width:1040px; }
+.table-empty { text-align:center; color:#64748b; background:#f8fafc; padding:24px !important; font-weight:700; }
+.formgrid { max-width:1480px; margin-left:auto; margin-right:auto; }
+.nbaa-record { max-width:1180px; margin:0 auto; }
+@media (max-width:1320px) {
+  .v3-dashboard,.panel { max-width:100%; }
+  .v3-kpi-grid,.v3-money-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .v3-layout { grid-template-columns:1fr; }
+}
+@media (max-width:760px) {
+  .v3-hero { grid-template-columns:1fr; padding:18px; }
+  .v3-kpi-grid,.v3-money-grid { grid-template-columns:1fr; }
+  .tablewrap table { min-width:860px; }
+}
