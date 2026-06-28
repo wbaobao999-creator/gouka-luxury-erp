@@ -3208,6 +3208,7 @@ function ListingManagement({ items, updateListingItem, editItem, setPreviewImage
               {itemsByStatus(status).map((item) => {
                 const t = calcTax(item);
                 const nextStatus = status === "已入库" ? "待出品" : status === "待出品" ? "已出品" : status === "已出品" ? "已售出" : status === "已售出" ? "已发货" : "";
+                const prevStatus = status === "待出品" ? "已入库" : status === "已出品" ? "待出品" : status === "已售出" ? "已出品" : status === "已发货" ? "已售出" : "";
                 return (
                   <div key={item.id} style={{background:"#fff", border:"1px solid #e5e7eb", borderRadius:"14px", padding:"10px", boxShadow:"0 8px 18px rgba(15,23,42,.05)"}}>
                     <div style={{display:"flex", gap:"10px", alignItems:"flex-start"}}>
@@ -3250,7 +3251,8 @@ function ListingManagement({ items, updateListingItem, editItem, setPreviewImage
                         <button className="ghost" onClick={() => quickSetPlatform(item, "OBA")}>OBA</button>
                         <button className="ghost" onClick={() => quickSetPlatform(item, "ECO Ring")}>ECO</button>
                         <button className="ghost" onClick={() => openPlatformEditor(item)}>平台/价格</button>
-                        {nextStatus && <button className="primary" onClick={() => moveStatus(item, nextStatus)}>移到{nextStatus}</button>}
+                        {prevStatus && <button className="ghost" onClick={() => moveStatus(item, prevStatus)}>← {prevStatus}</button>}
+                        {nextStatus && <button className="primary" onClick={() => moveStatus(item, nextStatus)}>{nextStatus} →</button>}
                         <button className="edit" onClick={() => editItem(item)}>编辑</button>
                       </div>
                     )}
