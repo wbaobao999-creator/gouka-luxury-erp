@@ -11,6 +11,22 @@ document.head.appendChild(nbaaStyle);
 const tablePagerStyle = document.createElement("style");
 tablePagerStyle.textContent = ".table-pager{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin:10px 0;color:#475467}.table-pager.single{justify-content:flex-end}.table-pager .pill{background:#f8fafc;border:1px solid #d5dbe5;border-radius:999px;padding:6px 10px;font-size:13px}.table-pager button{min-height:34px;padding:6px 10px}";
 document.head.appendChild(tablePagerStyle);
+const enterpriseDisplayStyle = document.createElement("style");
+enterpriseDisplayStyle.textContent = `
+.money-negative { color: #dc2626; font-weight: 800; }
+.money-positive { color: #059669; font-weight: 800; }
+.muted-value { color: #94a3b8; font-weight: 700; }
+.product-name-clamp {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  max-width: 360px;
+  line-height: 1.35;
+}
+`;
+document.head.appendChild(enterpriseDisplayStyle);
+
 
 const STORAGE_KEY = "gouka_erp_v2_items";
 const LOGIN_KEY = "gouka_erp_login";
@@ -900,6 +916,20 @@ function cny(n) {
   return "CNY " + money(Number(n || 0));
 }
 
+function moneyCell(value) {
+  const n = Number(value || 0);
+  const cls = n < 0 ? "money-negative" : n > 0 ? "money-positive" : "";
+  return <span className={cls}>{jpy(n)}</span>;
+}
+
+function expectedSaleCell(value) {
+  return Number(value || 0) > 0 ? moneyCell(value) : <span className="muted-value">未定</span>;
+}
+
+function productNameCell(value) {
+  const text = value || "—";
+  return <span className="product-name-clamp" title={String(text)}>{text}</span>;
+}
 function isSoldStatus(status) {
   return status === "已售出" || status === "已发货";
 }
@@ -1861,7 +1891,7 @@ function App() {
       <main>
         <header>
           <div>
-            <h1>豪嘉ERP Enterprise 2.0.3 Auction Engine</h1>
+            <h1>豪嘉ERP Enterprise 4.0 Luxury Trading System</h1>
             <p>自动保存・云端同步・图片上传・状态筛选・古物台账锁定・EMS报关・利润计算</p>
           </div>
           <div className="action-row">
@@ -2030,7 +2060,7 @@ function Dashboard({ totals, items, setTab, exportBackup }) {
       <div className="v3-hero">
         <div>
           <span className="v3-kicker">GOUKA ERP Enterprise 3.0</span>
-          <h1>经营驾驶舱 · Enterprise 2.0.3</h1>
+          <h1>经营驾驶舱 · Enterprise 4.0</h1>
           <p>今日经营、库存预警、品牌利润、供应商利润集中显示。老板打开第一页就知道该赚钱、该出品、该清库存。</p>
           <div className="v3-hero-actions">
             <button onClick={() => setTab("add")}>新增商品</button>
@@ -2275,7 +2305,7 @@ function AuctionSettlementBox({ form, setForm }) {
 
   return (
     <div className="full panel" style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", padding: "16px" }}>
-      <h3 style={{ marginTop: 0 }}>🏛 日本拍卖结算（结构化数据 / Enterprise 2.0.3）</h3>
+      <h3 style={{ marginTop: 0 }}>🏛 日本拍卖结算（结构化数据 / Enterprise 4.0）</h3>
       <p className="note">金额分三栏：实际支付＝拍卖公司请款合计；库存成本＝落札金額+落札手数料+国内送料（不含消费税）；可抵扣消费税＝落札消費税+手数料消費税。</p>
       <div className="formgrid">
         <SelectWithOther label="拍卖平台" value={auction.platform} onChange={(v) => setAuctionValue("platform", v)} options={["NBAA", "OBA", "ECO Ring", "JBA", "AUCNET", "Star Buyers", "其他"]} placeholder="选择或输入拍卖平台" />
@@ -2616,12 +2646,12 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
       x.id,
       x.purchaseDate,
       x.brand,
-      x.item,
+      productNameCell(x.item),
       <StatusBadge status={x.status} />,
       x.platform || "—",
-      Math.round(t.costJpy),
-      x.saleJpy,
-      Math.round(t.profitExTax),
+      moneyCell(t.costJpy),
+      expectedSaleCell(x.saleJpy),
+      moneyCell(t.profitExTax),
       <div className="table-actions">
         <button className="ghost" onClick={() => setDetailItem(x)}>详情</button>
         <button className="ghost" onClick={() => exportItemPdf?.(x)}>PDF</button>
