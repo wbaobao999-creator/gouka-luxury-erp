@@ -2,7 +2,7 @@ import React, { useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Package, FileText, Calculator, Search, Plus, Building2, Download, Edit3, Trash2, ImagePlus, Save, X, Lock, Database, Upload } from "lucide-react";
 import "./style.css";
-import { getCloudItems, upsertCloudItem, deleteItemCloud, uploadItemImages, deleteProductImages } from "./itemService.js";
+import { getCloudItems, upsertCloudItem, deleteItemCloud, uploadItemImages, deleteProductImages, upsertCloudMeta, getCloudMeta } from "./itemService.js";
 
 const nbaaStyle = document.createElement("style");
 nbaaStyle.textContent = ".nbaa-sheet{background:#eef4ed;border:1px solid #b7d7bd;border-radius:4px;padding:12px}.nbaa-main{display:grid;grid-template-columns:minmax(0,1fr) 190px;gap:12px}.nbaa-grid{display:grid;grid-template-columns:140px minmax(0,1fr);border-top:1px solid #d7d7d7;border-left:1px solid #d7d7d7;background:#fff}.nbaa-section{grid-column:1/-1;background:#e9f8ec;color:#10852f;font-weight:800;padding:9px 10px;border-right:1px solid #d7d7d7;border-bottom:1px solid #d7d7d7}.nbaa-label{background:#19a83d;color:#fff;font-weight:800;text-align:center;padding:9px 8px;border-right:1px solid #d7d7d7;border-bottom:1px solid #d7d7d7;min-height:38px}.nbaa-value{background:#fff;color:#0f172a;padding:9px 10px;border-bottom:1px solid #d7d7d7;min-height:38px;word-break:break-word}.nbaa-image-pane{background:#fff;border:1px solid #d7d7d7;padding:8px;align-self:start}.nbaa-main-image,.nbaa-no-image{width:160px;height:160px;object-fit:cover;border:1px solid #e5e7eb;background:#f8fafc;display:grid;place-items:center;color:#64748b}.nbaa-thumbs{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.nbaa-thumbs img{width:72px;height:72px;object-fit:cover;border:1px solid #e5e7eb}.nbaa-record .toolbar{margin-bottom:12px}@media(max-width:760px){.nbaa-main{grid-template-columns:1fr}.nbaa-grid{grid-template-columns:116px minmax(0,1fr)}.nbaa-image-pane{width:max-content;max-width:100%}}";
@@ -434,21 +434,79 @@ async function loadItemImagesFromDb(itemId) {
   }
 }
 
-async function deleteItemImagesFromDb(itemId) {
-  if (!itemId) return;
-  try {
-    const db = await openImageDb();
-    await new Promise((resolve, reject) => {
-      const tx = db.transaction(IMAGE_DB_STORE, "readwrite");
-      tx.objectStore(IMAGE_DB_STORE).delete(itemId);
-      tx.oncomplete = resolve;
-      tx.onerror = () => reject(tx.error);
-    });
-    db.close();
-  } catch (err) {
-    console.error("删除图片失败", err);
+async async function deleteItem(id) {
+    if (!isOwner) return alert("员工账号无删除权限");
+    const target = items.find((x) => x.id === id);
+    if (!target) return;
+    const reason = window.prompt("请输入删除原因：\n\n" + target.id + " " + (target.brand || "") + " " + (target.item || ""), "误录入 / 重复录入 / 老板确认删除");
+    if (reason === null) return;
+    if (!window.confirm("确认删除这条库存记录吗？\n\n系统会先保存完整删除日志，之后可在“删除日志”里恢复。")) return;
+
+    const deleteLog = {
+      id: "DEL-" + Date.now(),
+      date: new Date().toISOString(),
+      itemId: target.id,
+      brand: target.brand || "",
+      item: target.item || "",
+      status: target.status || "",
+      user: session?.name || session?.username || "owner",
+      reason: reason || "未填写",
+      snapshot: target,
+      restoredAt: ""
+    };
+
+    await deleteItemImagesFromDb(id);
+
+    try {
+      setSyncStatusText("正在同步删除…");
+      await deleteProductImages(id);
+      await deleteItemCloud(id);
+      setSyncStatusText("删除已同步");
+    } catch (e) {
+      console.error("Cloud delete failed", e);
+      setSyncStatusText("删除同步失败");
+    }
+
+    const nextItems = items.filter((x) => x.id !== id);
+    const nextDeleteLogs = [deleteLog, ...deleteLogs];
+    setItems(nextItems);
+    setDeleteLogs(nextDeleteLogs);
+
+    try {
+      await upsertCloudMeta("enterprise_state", { ...buildEnterpriseBackupData(), items: nextItems, deleteLogs: nextDeleteLogs });
+    } catch (e) {
+      console.warn("删除日志云端同步失败", e);
+    }
+
+    alert("已删除该库存记录，并保存完整删除日志。需要时可在删除日志恢复。");
   }
-}
+
+  async function restoreDeletedItem(log) {
+    if (!isOwner) return alert("员工账号无恢复权限");
+    if (!log?.snapshot) return alert("这条删除日志没有完整商品快照，无法自动恢复。旧版本删除日志只能查看记录。");
+    if (log.restoredAt) return alert("这条记录已经恢复过。若需再次恢复，请从完整JSON备份导入。 ");
+    if (items.some((x) => x.id === log.snapshot.id)) return alert("当前库存已经存在同商品编号，不能重复恢复。");
+    if (!window.confirm("确认恢复商品 " + log.snapshot.id + " 吗？")) return;
+
+    const restored = normalizeItem({ ...log.snapshot, status: log.snapshot.status || log.status || "已入库" });
+    await saveItemImagesToDb(restored.id, restored.images || []);
+    const nextItems = [restored, ...items];
+    const nextDeleteLogs = deleteLogs.map((x) => x.id === log.id ? { ...x, restoredAt: new Date().toISOString() } : x);
+    setItems(nextItems);
+    setDeleteLogs(nextDeleteLogs);
+
+    try {
+      const cloudImages = await uploadItemImages(restored.id, restored.images || []);
+      await upsertCloudItem(toCloudItem({ ...restored, images: cloudImages }));
+      await upsertCloudMeta("enterprise_state", { ...buildEnterpriseBackupData(), items: nextItems, deleteLogs: nextDeleteLogs });
+      setSyncStatusText("恢复已同步");
+    } catch (e) {
+      console.warn("恢复云端同步失败", e);
+      setSyncStatusText("恢复成功，云端待同步");
+    }
+
+    alert("商品已从删除日志恢复。 ");
+  }
 
 async function hydrateItemsWithImages(items) {
   const arr = await Promise.all((items || []).map(async (x) => {
@@ -1134,13 +1192,46 @@ function App() {
     setIsLoggedIn(false);
   }
 
+  function buildEnterpriseBackupData() {
+    let cashflow = null;
+    try {
+      cashflow = JSON.parse(localStorage.getItem(CASHFLOW_KEY) || "null");
+    } catch {
+      cashflow = null;
+    }
+
+    return {
+      version: "GOUKA-ERP-ENTERPRISE-4.0-CLOUD-COMPLETE",
+      exportedAt: new Date().toISOString(),
+      app: "GOUKA ERP Luxury Trading System",
+      schema: {
+        productRecord: true,
+        auctionField: "auction",
+        pageSize: 50,
+        thumbnailPx: 72
+      },
+      counts: {
+        items: items.length,
+        suppliers: suppliers.length,
+        deleteLogs: deleteLogs.length,
+        customsBatches: customsBatches.length
+      },
+      items,
+      customsBatches,
+      dictionaries,
+      suppliers,
+      deleteLogs,
+      cashflow
+    };
+  }
+
   function exportBackup() {
-    const data = { version: "GOUKA-ERP-ENTERPRISE-2.0-AUCTION-STABLE", exportedAt: new Date().toISOString(), items, customsBatches, dictionaries, suppliers, deleteLogs };
+    const data = buildEnterpriseBackupData();
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `gouka_erp_v711_image_db_backup_${new Date().toISOString().slice(0,10)}.json`;
+    a.download = "gouka_erp_enterprise_backup_" + new Date().toISOString().slice(0,10) + ".json";
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -1153,7 +1244,21 @@ function App() {
         const parsed = JSON.parse(reader.result);
         const nextItems = Array.isArray(parsed) ? parsed : parsed.items;
         if (!Array.isArray(nextItems)) throw new Error("bad file");
-        if (window.confirm(`确定导入 ${nextItems.length} 条商品数据吗？当前数据会被覆盖。`)) {
+
+        const backupVersion = parsed.version || "旧版备份";
+        const hasAuction = nextItems.some((x) => x?.auction || x?.memo?.includes?.("落札"));
+        const message = [
+          "备份版本：" + backupVersion,
+          "商品记录：" + nextItems.length + " 件",
+          "供应商：" + (Array.isArray(parsed.suppliers) ? parsed.suppliers.length : 0) + " 件",
+          "报关批次：" + (Array.isArray(parsed.customsBatches) ? parsed.customsBatches.length : 0) + " 件",
+          "删除日志：" + (Array.isArray(parsed.deleteLogs) ? parsed.deleteLogs.length : 0) + " 件",
+          hasAuction ? "包含日本拍卖数据" : "未检测到结构化拍卖数据",
+          "",
+          "确定导入吗？当前浏览器数据会被覆盖。"
+        ].join("\n");
+
+        if (window.confirm(message)) {
           const normalizedItems = nextItems.map(normalizeItem);
           await Promise.all(normalizedItems.map((item) => saveItemImagesToDb(item.id, item.images || [])));
           setItems(normalizedItems);
@@ -1162,10 +1267,11 @@ function App() {
           if (Array.isArray(parsed.deleteLogs)) setDeleteLogs(parsed.deleteLogs);
           if (Array.isArray(parsed.customsBatches)) setCustomsBatches(parsed.customsBatches);
           if (parsed.cashflow) localStorage.setItem(CASHFLOW_KEY, JSON.stringify(parsed.cashflow));
-          alert("备份数据已恢复。若包含字典、供应商、现金流，也已同步恢复。");
+          alert("企业备份已恢复。商品、图片索引、字典、供应商、报关批次、删除日志已按备份内容恢复。");
         }
-      } catch {
-        alert("备份文件格式不正确");
+      } catch (e) {
+        console.error(e);
+        alert("备份文件格式不正确，或文件已损坏。");
       }
     };
     reader.readAsText(file);
@@ -1272,16 +1378,17 @@ function App() {
     });
   }
 
-  async function syncToCloud() {
+  async async function syncToCloud() {
     try {
-      if (!window.confirm(`同步 ${items.length} 件商品到云端吗？`)) return;
+      if (!window.confirm("同步 " + items.length + " 件商品和企业资料到云端吗？")) return;
       setSyncStatusText("正在同步云端…");
       for (const item of items) {
         const cloudImages = await uploadItemImages(item.id, item.images || []);
         await upsertCloudItem(toCloudItem({ ...item, images: cloudImages }));
       }
-      setSyncStatusText(`已同步 ${items.length} 件`);
-      alert("已同步到云端。另一台电脑请点击“从云端读取”。");
+      await upsertCloudMeta("enterprise_state", buildEnterpriseBackupData());
+      setSyncStatusText("已同步 " + items.length + " 件 + 企业资料");
+      alert("已同步到云端。另一台电脑或手机打开后点击“手动读取”，即可读取商品、供应商、字典、报关批次和删除日志。");
     } catch (e) {
       console.error(e);
       setSyncStatusText("同步失败");
@@ -1289,15 +1396,28 @@ function App() {
     }
   }
 
-  async function loadFromCloud() {
+  async async function loadFromCloud() {
     try {
       setSyncStatusText("正在读取云端…");
       const cloudItems = await getCloudItems();
       const nextItems = cloudItems.map(fromCloudItem);
-      if (!window.confirm(`从云端读取 ${nextItems.length} 件商品，并覆盖当前浏览器库存吗？`)) return;
+      const enterpriseState = await getCloudMeta("enterprise_state");
+      const meta = enterpriseState?.data || null;
+      const message = [
+        "从云端读取 " + nextItems.length + " 件商品。",
+        meta ? ("同时读取企业资料：供应商 " + (meta.suppliers?.length || 0) + "，报关批次 " + (meta.customsBatches?.length || 0) + "，删除日志 " + (meta.deleteLogs?.length || 0) + "。") : "云端暂无企业资料备份，只读取商品。",
+        "",
+        "确定覆盖当前浏览器数据吗？"
+      ].join("\n");
+      if (!window.confirm(message)) return;
       setItems(nextItems);
-      setSyncStatusText(`已读取云端 ${nextItems.length} 件`);
-      alert(`已从云端读取 ${nextItems.length} 件商品。`);
+      if (meta?.dictionaries) setDictionaries({ ...DEFAULT_DICTIONARIES, ...meta.dictionaries });
+      if (Array.isArray(meta?.suppliers)) setSuppliers(meta.suppliers);
+      if (Array.isArray(meta?.deleteLogs)) setDeleteLogs(meta.deleteLogs);
+      if (Array.isArray(meta?.customsBatches)) setCustomsBatches(meta.customsBatches);
+      if (meta?.cashflow) localStorage.setItem(CASHFLOW_KEY, JSON.stringify(meta.cashflow));
+      setSyncStatusText("已读取云端 " + nextItems.length + " 件 + 企业资料");
+      alert("已从云端读取 " + nextItems.length + " 件商品和企业资料。");
     } catch (e) {
       console.error(e);
       setSyncStatusText("读取失败");
@@ -1948,7 +2068,7 @@ function App() {
         {tab === "pdf" && <PdfExportPanel items={computedItems} totals={totals} exportInventoryPdf={exportInventoryPdf} exportLedgerPdf={exportLedgerPdf} exportCustomsPdf={exportCustomsPdf} exportItemPdf={exportItemPdf} />}
         {tab === "suppliers" && <SupplierPanel suppliers={suppliers} setSuppliers={setSuppliers} downloadCSV={downloadCSV} />}
         {tab === "dictionary" && <DictionaryPanel dictionaries={dictionaries} setDictionaries={setDictionaries} />}
-        {tab === "deleteLogs" && <DeleteLogPanel deleteLogs={deleteLogs} downloadCSV={downloadCSV} />}
+        {tab === "deleteLogs" && <DeleteLogPanel deleteLogs={deleteLogs} downloadCSV={downloadCSV} restoreDeletedItem={restoreDeletedItem} />}
         {tab === "backup" && <BackupPanel items={items} exportBackup={exportBackup} importBackup={importBackup} />}
 
         {previewImage && (
@@ -3560,13 +3680,13 @@ function BackupPanel({ items, exportBackup, importBackup }) {
   return (
     <div className="panel">
       <h2><Database size={20} /> 数据备份 / 恢复</h2>
-      <p className="note">当前系统文字数据保存在本机浏览器，图片保存在浏览器IndexedDB图片库。V7.11备份会包含商品、图片、字典、供应商、报关批次、现金流。换电脑、清理浏览器、重装系统前，一定要先导出备份。</p>
+      <p className="note">企业备份会包含商品档案、图片索引、日本拍卖 auction、供应商、字典、报关批次、删除日志和现金流。换电脑、手机查看、清理浏览器前，请先导出备份或手动同步云端。</p>
 
       <div className="grid4" style={{marginTop:"16px"}}>
         <Card icon={<Package />} title="当前商品记录" value={`${items.length} 件`} />
         <Card icon={<ImagePlus />} title="有图片商品" value={`${items.filter(x => x.images?.length).length} 件`} />
         <Card icon={<Calculator />} title="已售商品" value={`${items.filter(x => isSoldStatus(x.status)).length} 件`} />
-        <Card icon={<Database />} title="备份格式" value="JSON" />
+        <Card icon={<Database />} title="备份格式" value="Enterprise JSON" />
       </div>
 
       <div className="action-row" style={{marginTop:"20px"}}>
@@ -3962,7 +4082,33 @@ function formatDateTime(value) {
   }
 }
 
-function DeleteLogPanel({ deleteLogs, downloadCSV }) {
+function DeleteLogPanel({ deleteLogs, downloadCSV, restoreDeletedItem }) {
+  const headers = ["删除时间", "商品编号", "品牌", "商品名", "删除前状态", "删除人", "删除原因", "恢复状态", "操作"];
+  const rows = deleteLogs.map((x) => [
+    formatDateTime(x.date),
+    x.itemId,
+    x.brand,
+    x.item,
+    x.status,
+    x.user,
+    x.reason,
+    x.restoredAt ? "已恢复：" + formatDateTime(x.restoredAt) : "未恢复",
+    <div className="table-actions">
+      <button className="edit" disabled={!x.snapshot || !!x.restoredAt} onClick={() => restoreDeletedItem(x)}>恢复商品</button>
+    </div>
+  ]);
+  const csvRows = deleteLogs.map((x) => [
+    formatDateTime(x.date), x.itemId, x.brand, x.item, x.status, x.user, x.reason, x.restoredAt ? formatDateTime(x.restoredAt) : "未恢复"
+  ]);
+
+  return (
+    <div className="panel">
+      <Toolbar title="删除日志" onDownload={() => downloadCSV([["删除时间", "商品编号", "品牌", "商品名", "删除前状态", "删除人", "删除原因", "恢复状态"], ...csvRows], "gouka_delete_logs.csv")} />
+      <p className="note">库存删除会保存完整商品快照。误删后可从这里恢复；古物台账仍然不做物理删除，只允许更正和作废。</p>
+      <Table headers={headers} rows={rows} />
+    </div>
+  );
+}) {
   const headers = ["删除时间", "商品编号", "品牌", "商品名", "删除前状态", "删除人", "删除原因"];
   const rows = deleteLogs.map((x) => [
     formatDateTime(x.date),
