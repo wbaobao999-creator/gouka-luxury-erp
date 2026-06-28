@@ -32,6 +32,18 @@ function dataUrlToBlob(dataUrl) {
   return new Blob([arr], { type: mime });
 }
 
+function shouldRetryWithoutEnterpriseColumns(error) {
+  const msg = String(error?.message || error?.details || "").toLowerCase();
+  return msg.includes("auction_json") || msg.includes("schema cache") || msg.includes("column") || msg.includes("could not find");
+}
+
+function stripEnterpriseColumns(item) {
+  const next = { ...item };
+  delete next.auction_json;
+  delete next.auction;
+  return next;
+}
+
 /* ===========================
    商品
 =========================== */
@@ -60,13 +72,20 @@ export async function upsertCloudItem(item) {
     updated_at: new Date().toISOString()
   };
 
-  const { data, error } = await supabase
+  const request = (row) => supabase
     .from("items")
-    .upsert([payload], {
-      onConflict: "product_no"
-    })
+    .upsert([row], { onConflict: "product_no" })
     .select()
     .single();
+
+  let { data, error } = await request(payload);
+
+  if (error && shouldRetryWithoutEnterpriseColumns(error)) {
+    console.warn("Supabase items table has no auction_json column yet. Retrying without enterprise-only columns.", error);
+    const retry = await request(stripEnterpriseColumns(payload));
+    data = retry.data;
+    error = retry.error;
+  }
 
   if (error) throw error;
 
@@ -100,11 +119,9 @@ export async function deleteItemCloud(productNo) {
 =========================== */
 
 export async function uploadItemImages(productNo, images = []) {
-
   const result = [];
 
   for (let i = 0; i < images.length; i++) {
-
     const img = images[i];
 
     if (!img) continue;
@@ -117,42 +134,31 @@ export async function uploadItemImages(productNo, images = []) {
     if (!isDataUrl(img)) continue;
 
     try {
-
       const ext = safeFileExt(img);
-
       const blob = dataUrlToBlob(img);
+      const safeProductNo = String(productNo).replace(/[^a-zA-Z0-9_-]/g, "_");
+      const imagePath = safeProductNo + "/" + Date.now() + "_" + i + "." + ext;
 
-      const path =
-        `${String(productNo).replace(/[^a-zA-Z0-9_-]/g,"_")}/${Date.now()}_${i}.${ext}`;
-
-      const { error } =
-        await supabase.storage
-          .from(IMAGE_BUCKET)
-          .upload(path, blob, {
-            cacheControl: "3600",
-            upsert: true
-          });
+      const { error } = await supabase.storage
+        .from(IMAGE_BUCKET)
+        .upload(imagePath, blob, {
+          cacheControl: "3600",
+          upsert: true
+        });
 
       if (error) throw error;
 
-      const { data } =
-        supabase.storage
-          .from(IMAGE_BUCKET)
-          .getPublicUrl(path);
+      const { data } = supabase.storage
+        .from(IMAGE_BUCKET)
+        .getPublicUrl(imagePath);
 
-      if (data?.publicUrl)
-        result.push(data.publicUrl);
-
+      if (data?.publicUrl) result.push(data.publicUrl);
     } catch (e) {
-
       console.error(e);
-
     }
-
   }
 
   return result;
-
 }
 
 /* ===========================
@@ -160,27 +166,21 @@ export async function uploadItemImages(productNo, images = []) {
 =========================== */
 
 export async function deleteItemImagesCloud(productNo) {
+  const folder = String(productNo).replace(/[^a-zA-Z0-9_-]/g, "_");
 
-  const folder =
-    String(productNo).replace(/[^a-zA-Z0-9_-]/g,"_");
+  const { data } = await supabase.storage
+    .from(IMAGE_BUCKET)
+    .list(folder);
 
-  const { data } =
-    await supabase.storage
-      .from(IMAGE_BUCKET)
-      .list(folder);
+  if (!data?.length) return true;
 
-  if (!data?.length)
-    return true;
-
-  const paths =
-    data.map(x => `${folder}/${x.name}`);
+  const paths = data.map((x) => folder + "/" + x.name);
 
   await supabase.storage
     .from(IMAGE_BUCKET)
     .remove(paths);
 
   return true;
-
 }
 
 /* ===========================
