@@ -32,16 +32,17 @@ function dataUrlToBlob(dataUrl) {
   return new Blob([arr], { type: mime });
 }
 
-function shouldRetryWithoutEnterpriseColumns(error) {
+function isMissingCloudColumnError(error) {
   const msg = String(error?.message || error?.details || "").toLowerCase();
-  return msg.includes("auction") || msg.includes("schema cache") || msg.includes("column") || msg.includes("could not find");
+  return msg.includes("schema cache") || msg.includes("column") || msg.includes("could not find");
 }
 
-function stripEnterpriseColumns(item) {
-  const next = { ...item };
-  delete next.auction;
-  delete next.auction;
-  return next;
+function createCloudSchemaError(error) {
+  const e = new Error(
+    "云端 items 表字段不完整。请先在 Supabase SQL Editor 运行 gouka-cloud-enterprise-sync.sql，确保 auction、cloud_images、销售、古物台账字段都存在。"
+  );
+  e.cause = error;
+  return e;
 }
 
 /* ===========================
@@ -78,16 +79,15 @@ export async function upsertCloudItem(item) {
     .select()
     .single();
 
-  let { data, error } = await request(payload);
+  const { data, error } = await request(payload);
 
-  if (error && shouldRetryWithoutEnterpriseColumns(error)) {
-    console.warn("Supabase items table has no auction column yet. Retrying without auction field.", error);
-    const retry = await request(stripEnterpriseColumns(payload));
-    data = retry.data;
-    error = retry.error;
+  if (error) {
+    if (isMissingCloudColumnError(error)) {
+      throw createCloudSchemaError(error);
+    }
+
+    throw error;
   }
-
-  if (error) throw error;
 
   return data;
 }
