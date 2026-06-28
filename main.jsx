@@ -8,6 +8,10 @@ const nbaaStyle = document.createElement("style");
 nbaaStyle.textContent = ".nbaa-sheet{background:#eef4ed;border:1px solid #b7d7bd;border-radius:4px;padding:12px}.nbaa-main{display:grid;grid-template-columns:minmax(0,1fr) 190px;gap:12px}.nbaa-grid{display:grid;grid-template-columns:140px minmax(0,1fr);border-top:1px solid #d7d7d7;border-left:1px solid #d7d7d7;background:#fff}.nbaa-section{grid-column:1/-1;background:#e9f8ec;color:#10852f;font-weight:800;padding:9px 10px;border-right:1px solid #d7d7d7;border-bottom:1px solid #d7d7d7}.nbaa-label{background:#19a83d;color:#fff;font-weight:800;text-align:center;padding:9px 8px;border-right:1px solid #d7d7d7;border-bottom:1px solid #d7d7d7;min-height:38px}.nbaa-value{background:#fff;color:#0f172a;padding:9px 10px;border-bottom:1px solid #d7d7d7;min-height:38px;word-break:break-word}.nbaa-image-pane{background:#fff;border:1px solid #d7d7d7;padding:8px;align-self:start}.nbaa-main-image,.nbaa-no-image{width:160px;height:160px;object-fit:cover;border:1px solid #e5e7eb;background:#f8fafc;display:grid;place-items:center;color:#64748b}.nbaa-thumbs{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.nbaa-thumbs img{width:72px;height:72px;object-fit:cover;border:1px solid #e5e7eb}.nbaa-record .toolbar{margin-bottom:12px}@media(max-width:760px){.nbaa-main{grid-template-columns:1fr}.nbaa-grid{grid-template-columns:116px minmax(0,1fr)}.nbaa-image-pane{width:max-content;max-width:100%}}";
 document.head.appendChild(nbaaStyle);
 
+const tablePagerStyle = document.createElement("style");
+tablePagerStyle.textContent = ".table-pager{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin:10px 0;color:#475467}.table-pager.single{justify-content:flex-end}.table-pager .pill{background:#f8fafc;border:1px solid #d5dbe5;border-radius:999px;padding:6px 10px;font-size:13px}.table-pager button{min-height:34px;padding:6px 10px}";
+document.head.appendChild(tablePagerStyle);
+
 const STORAGE_KEY = "gouka_erp_v2_items";
 const LOGIN_KEY = "gouka_erp_login";
 const CASHFLOW_KEY = "gouka_erp_cashflow_v431";
@@ -2596,7 +2600,7 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
     setPage(1);
   }, [query, statusFilter, items.length]);
 
-  const headers = ["图片", "商品编号", "入库日期", "品牌", "商品名", "状态", "平台", "报关批次", "真实成本JPY", "预计售价JPY（税込）", "销售消费税", "税抜售价", "净利润", "利润率", "操作"];
+  const headers = ["图片", "商品编号", "入库日期", "品牌", "商品名", "状态", "平台", "真实成本JPY", "预计售价JPY", "净利润", "操作"];
   const csvHeaders = ["商品编号", "入库日期", "品类", "品牌", "商品名", "材质", "颜色", "产地", "数量", "采购币种", "采购金额", "采购汇率", "申报币种", "申报金额", "申报汇率", "采购JPY", "附加成本JPY", "真实成本JPY", "报关批次", "进项消费税估算", "预计销售JPY税込", "销售消费税", "税抜售价", "净利润", "状态"];
   const csvRows = [csvHeaders];
 
@@ -2615,13 +2619,9 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
       x.item,
       <StatusBadge status={x.status} />,
       x.platform || "—",
-      x.customsBatchId || "—",
       Math.round(t.costJpy),
       x.saleJpy,
-      Math.round(t.outputTax),
-      Math.round(t.saleExTax),
       Math.round(t.profitExTax),
-      `${(t.saleExTax ? (t.profitExTax / t.saleExTax * 100) : 0).toFixed(1)}%`,
       <div className="table-actions">
         <button className="ghost" onClick={() => setDetailItem(x)}>详情</button>
         <button className="ghost" onClick={() => exportItemPdf?.(x)}>PDF</button>
@@ -2647,12 +2647,7 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
         setStatusFilter={setStatusFilter}
         onDownload={() => downloadCSV(csvRows, "gouka_inventory_tax.csv")}
       />
-      <p className="note">表格已精简。库存管理每页显示50件，当前第 {currentPage} / {totalPages} 页，共 {items.length} 件。详细字段请点「详情」查看，避免页面过宽。</p>
-      <div className="action-row" style={{ marginBottom: "12px" }}>
-        <button className="ghost" disabled={currentPage <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>上一页</button>
-        <span className="pill">{(currentPage - 1) * pageSize + 1} - {Math.min(currentPage * pageSize, items.length)} / {items.length}</span>
-        <button className="ghost" disabled={currentPage >= totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))}>下一页</button>
-      </div>
+      <p className="note">表格已精简为日常操作列。库存管理每页显示50件，共 {items.length} 件；税务、报关、利润率等详细字段请点「详情」查看。</p>
       <Table headers={headers} rows={rows} />
 
       {detailItem && (
@@ -4113,21 +4108,54 @@ function Toolbar({ title, query, setQuery, statusFilter, setStatusFilter, onDown
 }
 
 function Table({ headers, rows }) {
-  return (
-    <div className="tablewrap">
-      <table>
-        <thead>
-          <tr>{headers.map((h) => <th key={h}>{h}</th>)}</tr>
-        </thead>
-        <tbody>
-          {rows.map((r, i) => (
-            <tr key={i}>
-              {r.map((c, j) => <td key={j}>{c}</td>)}
-            </tr>
-          ))}
-        </tbody>
-      </table>
+  const pageSize = 50;
+  const safeRows = Array.isArray(rows) ? rows : [];
+  const [page, setPage] = useState(1);
+  const totalPages = Math.max(1, Math.ceil(safeRows.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const start = (currentPage - 1) * pageSize;
+  const pageRows = safeRows.slice(start, start + pageSize);
+
+  React.useEffect(() => {
+    setPage(1);
+  }, [safeRows.length]);
+
+  function goPage(next) {
+    setPage(Math.min(totalPages, Math.max(1, next)));
+  }
+
+  const pager = safeRows.length > pageSize ? (
+    <div className="table-pager">
+      <button className="ghost" disabled={currentPage <= 1} onClick={() => goPage(1)}>首页</button>
+      <button className="ghost" disabled={currentPage <= 1} onClick={() => goPage(currentPage - 1)}>上一页</button>
+      <span className="pill">第 {currentPage} / {totalPages} 页</span>
+      <span className="pill">{safeRows.length ? start + 1 : 0} - {Math.min(start + pageSize, safeRows.length)} / {safeRows.length} 件</span>
+      <button className="ghost" disabled={currentPage >= totalPages} onClick={() => goPage(currentPage + 1)}>下一页</button>
+      <button className="ghost" disabled={currentPage >= totalPages} onClick={() => goPage(totalPages)}>末页</button>
     </div>
+  ) : (
+    <div className="table-pager single"><span className="pill">共 {safeRows.length} 件 / 默认每页 50 件</span></div>
+  );
+
+  return (
+    <>
+      {pager}
+      <div className="tablewrap">
+        <table>
+          <thead>
+            <tr>{headers.map((h, i) => <th key={i}>{h}</th>)}</tr>
+          </thead>
+          <tbody>
+            {pageRows.map((r, i) => (
+              <tr key={start + i}>
+                {r.map((c, j) => <td key={j}>{c}</td>)}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {pager}
+    </>
   );
 }
 
