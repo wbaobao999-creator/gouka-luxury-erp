@@ -1705,7 +1705,10 @@ function App() {
         <h2>金额 / 利润参考</h2>
         <div class="grid">
           <div class="field"><small>采购金额</small><b>${htmlEscape(item.purchaseCny)} ${htmlEscape(item.purchaseCurrency || "CNY")}</b></div>
+          ${getAuction(item) ? `<div class="field"><small>实际支付合计 JPY</small><b>${jpy(getAuction(item).invoiceTotal)}</b></div>` : ""}
           <div class="field"><small>申报金额</small><b>${htmlEscape(item.declaredCny)} ${htmlEscape(item.declaredCurrency || "CNY")}</b></div>
+          ${getAuction(item) ? `<div class="field"><small>库存成本 JPY</small><b>${jpy(getAuction(item).inventoryCost)}</b></div>` : ""}
+          ${getAuction(item) ? `<div class="field"><small>可抵扣消费税 JPY</small><b>${jpy(getAuction(item).taxCredit)}</b></div>` : ""}
           <div class="field"><small>真实成本 JPY</small><b>${jpy(t.costJpy)}</b></div>
           <div class="field"><small>预计/实际售价 JPY</small><b>${jpy(t.saleJpy)}</b></div>
           <div class="field"><small>销售消费税</small><b>${jpy(t.outputTax)}</b></div>
@@ -2595,7 +2598,9 @@ function NbaaProductRecordDetail({ item, onClose, exportItemPdf }) {
             <NbaaField label="地址" value={item.address} />
             <NbaaField label="状态" value={item.status} />
             <NbaaField label="报关批次" value={item.customsBatchId} />
+            {getAuction(item) && <NbaaField label="实际支付合计" value={jpy(getAuction(item).invoiceTotal)} />}
             <NbaaField label="真实成本" value={jpy(t.costJpy)} />
+            {getAuction(item) && <NbaaField label="可抵扣消费税" value={jpy(getAuction(item).taxCredit)} />}
             <NbaaField label="进项消费税" value={jpy(t.inputTax)} />
             <NbaaAuctionRows item={item} />
             <NbaaSection title="销售 / 利润" />
@@ -2768,8 +2773,10 @@ function Ledger({ items, setItems, isOwner, downloadCSV }) {
     "特徴",
     "数量",
     "取引区分",
-    "金額",
+    "实际支付合计",
     "通貨",
+    "库存成本",
+    "可抵扣消费税",
     "相手方",
     "住所",
     "本人確認",
@@ -2780,7 +2787,10 @@ function Ledger({ items, setItems, isOwner, downloadCSV }) {
     "操作"
   ];
 
-  const rows = filteredItems.map((x, i) => [
+  const rows = filteredItems.map((x, i) => {
+    const auction = getAuction(x);
+    const tax = calcTax(x);
+    return [
     x.images && x.images.length ? <img className="thumb" src={x.images[0]} alt={x.item} style={{ width: 72, height: 72 }} /> : "—",
     i + 1,
     x.purchaseDate,
@@ -2791,8 +2801,10 @@ function Ledger({ items, setItems, isOwner, downloadCSV }) {
     `${x.material} / ${x.color} / ${x.origin}`,
     x.qty,
     "仕入",
-    x.purchaseCny,
-    x.purchaseCurrency || "CNY",
+    auction ? jpy(auction.invoiceTotal) : `${x.purchaseCny || 0} ${x.purchaseCurrency || "CNY"}`,
+    auction ? "JPY" : (x.purchaseCurrency || "CNY"),
+    auction ? jpy(auction.inventoryCost) : jpy(tax.costJpy),
+    auction ? jpy(auction.taxCredit) : jpy(tax.inputTax),
     x.source,
     x.address,
     x.idCheck,
@@ -2810,7 +2822,8 @@ function Ledger({ items, setItems, isOwner, downloadCSV }) {
         isOwner ? <button className="danger" onClick={() => voidLedger(x.id)}>作废</button> : "锁定"
       )}
     </div>
-  ]);
+  ];
+  });
 
   return (
     <div className="panel">
@@ -2906,7 +2919,7 @@ function Ledger({ items, setItems, isOwner, downloadCSV }) {
                     <Card icon={<Calculator />} title="库存成本（不含消费税）" value={jpy(a.inventoryCost)} />
                     <Card icon={<Calculator />} title="可抵扣消费税" value={jpy(a.taxCredit)} />
                   </div>
-                  <p className="note">成本规则：库存成本（不含消费税） = 落札金額 + 落札手数料 + 手数料消費税 + 国内送料。可抵扣消费税 = 落札消費税 + 手数料消費税。</p>
+                  <p className="note">成本规则：库存成本（不含消费税） = 落札金額 + 落札手数料 + 国内送料。可抵扣消费税 = 落札消費税 + 手数料消費税。</p>
                 </div>
               );
             })() : (
