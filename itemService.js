@@ -34,12 +34,12 @@ function dataUrlToBlob(dataUrl) {
 
 function shouldRetryWithoutEnterpriseColumns(error) {
   const msg = String(error?.message || error?.details || "").toLowerCase();
-  return msg.includes("auction_json") || msg.includes("schema cache") || msg.includes("column") || msg.includes("could not find");
+  return msg.includes("auction") || msg.includes("schema cache") || msg.includes("column") || msg.includes("could not find");
 }
 
 function stripEnterpriseColumns(item) {
   const next = { ...item };
-  delete next.auction_json;
+  delete next.auction;
   delete next.auction;
   return next;
 }
@@ -81,7 +81,7 @@ export async function upsertCloudItem(item) {
   let { data, error } = await request(payload);
 
   if (error && shouldRetryWithoutEnterpriseColumns(error)) {
-    console.warn("Supabase items table has no auction_json column yet. Retrying without enterprise-only columns.", error);
+    console.warn("Supabase items table has no auction column yet. Retrying without auction field.", error);
     const retry = await request(stripEnterpriseColumns(payload));
     data = retry.data;
     error = retry.error;
