@@ -183,6 +183,51 @@ export async function deleteItemImagesCloud(productNo) {
   return true;
 }
 
+
+/* ===========================
+   企业资料同步
+=========================== */
+
+export async function upsertCloudMeta(key, data) {
+  const payload = {
+    key,
+    data: data || {},
+    updated_at: new Date().toISOString()
+  };
+
+  const { data: row, error } = await supabase
+    .from("erp_meta")
+    .upsert([payload], { onConflict: "key" })
+    .select()
+    .single();
+
+  if (error) {
+    if (isMissingCloudColumnError(error)) {
+      throw createCloudSchemaError(error);
+    }
+    throw error;
+  }
+
+  return row;
+}
+
+export async function getCloudMeta(key) {
+  const { data, error } = await supabase
+    .from("erp_meta")
+    .select("*")
+    .eq("key", key)
+    .maybeSingle();
+
+  if (error) {
+    if (isMissingCloudColumnError(error)) {
+      throw createCloudSchemaError(error);
+    }
+    throw error;
+  }
+
+  return data || null;
+}
+
 /* ===========================
    兼容旧版本
 =========================== */
