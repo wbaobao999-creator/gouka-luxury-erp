@@ -4,6 +4,10 @@ import { Package, FileText, Calculator, Search, Plus, Building2, Download, Edit3
 import "./style.css";
 import { getCloudItems, upsertCloudItem, deleteItemCloud, uploadItemImages, deleteProductImages } from "./itemService.js";
 
+const nbaaStyle = document.createElement("style");
+nbaaStyle.textContent = ".nbaa-sheet{background:#eef4ed;border:1px solid #b7d7bd;border-radius:4px;padding:12px}.nbaa-main{display:grid;grid-template-columns:minmax(0,1fr) 190px;gap:12px}.nbaa-grid{display:grid;grid-template-columns:140px minmax(0,1fr);border-top:1px solid #d7d7d7;border-left:1px solid #d7d7d7;background:#fff}.nbaa-section{grid-column:1/-1;background:#e9f8ec;color:#10852f;font-weight:800;padding:9px 10px;border-right:1px solid #d7d7d7;border-bottom:1px solid #d7d7d7}.nbaa-label{background:#19a83d;color:#fff;font-weight:800;text-align:center;padding:9px 8px;border-right:1px solid #d7d7d7;border-bottom:1px solid #d7d7d7;min-height:38px}.nbaa-value{background:#fff;color:#0f172a;padding:9px 10px;border-bottom:1px solid #d7d7d7;min-height:38px;word-break:break-word}.nbaa-image-pane{background:#fff;border:1px solid #d7d7d7;padding:8px;align-self:start}.nbaa-main-image,.nbaa-no-image{width:160px;height:160px;object-fit:cover;border:1px solid #e5e7eb;background:#f8fafc;display:grid;place-items:center;color:#64748b}.nbaa-thumbs{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.nbaa-thumbs img{width:72px;height:72px;object-fit:cover;border:1px solid #e5e7eb}.nbaa-record .toolbar{margin-bottom:12px}@media(max-width:760px){.nbaa-main{grid-template-columns:1fr}.nbaa-grid{grid-template-columns:116px minmax(0,1fr)}.nbaa-image-pane{width:max-content;max-width:100%}}";
+document.head.appendChild(nbaaStyle);
+
 const STORAGE_KEY = "gouka_erp_v2_items";
 const LOGIN_KEY = "gouka_erp_login";
 const CASHFLOW_KEY = "gouka_erp_cashflow_v431";
@@ -327,8 +331,15 @@ function copyText(text) {
   alert("已复制标题");
 }
 
+function localDateString(date = new Date()) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return y + "-" + m + "-" + d;
+}
+
 function currentMonth() {
-  return new Date().toISOString().slice(0, 7);
+  return localDateString().slice(0, 7);
 }
 
 const IMAGE_MAX_WIDTH = 1200;
@@ -1773,7 +1784,7 @@ function App() {
     const nextForm = {
       ...emptyForm,
       ...form,
-      purchaseDate: draft.purchaseDate || new Date().toISOString().slice(0, 10),
+      purchaseDate: draft.purchaseDate || localDateString(),
       category: draft.category || "バッグ類",
       brand: draft.brand || "",
       item: draft.item || "",
@@ -1925,13 +1936,13 @@ function Dashboard({ totals, items, setTab, exportBackup }) {
   const activeStock = activeItems.length;
   const soldItems = items.filter((x) => isSoldStatus(x.status));
   const month = currentMonth();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localDateString();
 
   const todayIn = items.filter((x) => (x.purchaseDate || "") === today);
-  const todaySold = items.filter((x) => (x.soldDate || "") === today || (isSoldStatus(x.status) && !(x.soldDate)));
+  const todaySold = items.filter((x) => isSoldStatus(x.status) && (x.soldDate || "") === today);
   const todayPurchase = todayIn.reduce((a, x) => a + calcTax(x).costJpy, 0);
   const todaySale = todaySold.reduce((a, x) => a + calcTax(x).saleJpy, 0);
-  const todayProfit = todaySold.reduce((a, x) => a + calcTax(x).profitExTax, 0);
+  const todayProfit = todaySold.length === 0 ? 0 : todaySold.reduce((a, x) => a + calcTax(x).profitExTax, 0);
 
   const monthIn = items.filter((x) => (x.purchaseDate || "").startsWith(month));
   const monthSold = items.filter((x) => isSoldStatus(x.status) && (x.soldDate || "").startsWith(month));
@@ -2172,7 +2183,7 @@ function AuctionSettlementBox({ form, setForm }) {
   const [auction, setAuction] = useState(() => ({
     platform: existingAuction?.platform || form.platform || "NBAA",
     auctionCode: existingAuction?.auctionCode || "",
-    auctionDate: existingAuction?.auctionDate || form.purchaseDate || new Date().toISOString().slice(0, 10),
+    auctionDate: existingAuction?.auctionDate || form.purchaseDate || localDateString(),
     boxNo: existingAuction?.boxNo || "",
     branchNo: existingAuction?.branchNo || "",
     itemNameJp: existingAuction?.itemNameJp || "",
@@ -2189,7 +2200,7 @@ function AuctionSettlementBox({ form, setForm }) {
     setAuction({
       platform: next.platform || form.platform || "NBAA",
       auctionCode: next.auctionCode || "",
-      auctionDate: next.auctionDate || form.purchaseDate || new Date().toISOString().slice(0, 10),
+      auctionDate: next.auctionDate || form.purchaseDate || localDateString(),
       boxNo: next.boxNo || "",
       branchNo: next.branchNo || "",
       itemNameJp: next.itemNameJp || "",
@@ -2221,7 +2232,7 @@ function AuctionSettlementBox({ form, setForm }) {
     setForm({
       ...form,
       auction: nextAuction,
-      purchaseDate: nextAuction.auctionDate || form.purchaseDate || new Date().toISOString().slice(0, 10),
+      purchaseDate: nextAuction.auctionDate || form.purchaseDate || localDateString(),
       purchaseCurrency: "JPY",
       purchaseCny: nextAuction.hammerPrice,
       purchaseRateToJpy: 1,
@@ -2244,7 +2255,7 @@ function AuctionSettlementBox({ form, setForm }) {
     setAuction({
       platform: form.platform || "NBAA",
       auctionCode: "",
-      auctionDate: form.purchaseDate || new Date().toISOString().slice(0, 10),
+      auctionDate: form.purchaseDate || localDateString(),
       boxNo: "",
       branchNo: "",
       itemNameJp: "",
@@ -2487,6 +2498,91 @@ function ProductThumb({ item, size = 72, onPreview }) {
   );
 }
 
+function NbaaField({ label, value }) {
+  return (
+    <>
+      <div className="nbaa-label">{label}</div>
+      <div className="nbaa-value">{value || value === 0 ? value : "—"}</div>
+    </>
+  );
+}
+
+function NbaaSection({ title }) {
+  return <div className="nbaa-section">{title}</div>;
+}
+
+function NbaaAuctionRows({ item }) {
+  const a = getAuction(item);
+  if (!a) return null;
+  return (
+    <>
+      <NbaaSection title="日本拍卖" />
+      <NbaaField label="拍卖会" value={a.platform || "日本拍卖"} />
+      <NbaaField label="落札コード" value={a.auctionCode} />
+      <NbaaField label="落札日" value={a.auctionDate || item.purchaseDate} />
+      <NbaaField label="箱番" value={a.boxNo} />
+      <NbaaField label="枝番" value={a.branchNo} />
+      <NbaaField label="アイテム名" value={a.itemNameJp || item.item} />
+      <NbaaField label="落札金額" value={jpy(a.hammerPrice)} />
+      <NbaaField label="落札消費税" value={jpy(a.hammerTax)} />
+      <NbaaField label="落札手数料" value={jpy(a.buyerFee)} />
+      <NbaaField label="手数料消費税" value={jpy(a.buyerFeeTax)} />
+      <NbaaField label="国内送料" value={jpy(a.domesticShipping)} />
+      <NbaaField label="請求合計" value={jpy(a.invoiceTotal)} />
+      <NbaaField label="库存成本" value={jpy(a.inventoryCost)} />
+      <NbaaField label="消费税控除" value={jpy(a.taxCredit)} />
+    </>
+  );
+}
+
+function NbaaProductRecordDetail({ item, onClose, exportItemPdf }) {
+  const t = calcTax(item);
+  const mainImage = Array.isArray(item.images) && item.images.length ? item.images[0] : "";
+  return (
+    <div className="nbaa-record">
+      <div className="toolbar">
+        <h2>Product Record · {item.id}</h2>
+        <button onClick={() => exportItemPdf?.(item)}>导出PDF</button>
+        <button onClick={onClose}>关闭</button>
+      </div>
+      <div className="nbaa-sheet">
+        <div className="nbaa-main">
+          <div className="nbaa-grid">
+            <NbaaSection title="基本资料" />
+            <NbaaField label="商品编号" value={item.id} />
+            <NbaaField label="取得日" value={item.purchaseDate} />
+            <NbaaField label="品牌" value={item.brand} />
+            <NbaaField label="商品名" value={item.item} />
+            <NbaaField label="分类" value={item.category} />
+            <NbaaField label="颜色 / 材质 / 产地" value={[item.color, item.material, item.origin].filter(Boolean).join(" / ")} />
+            <NbaaSection title="采购 / 库存" />
+            <NbaaField label="仕入先" value={item.source} />
+            <NbaaField label="地址" value={item.address} />
+            <NbaaField label="状态" value={item.status} />
+            <NbaaField label="报关批次" value={item.customsBatchId} />
+            <NbaaField label="真实成本" value={jpy(t.costJpy)} />
+            <NbaaField label="进项消费税" value={jpy(t.inputTax)} />
+            <NbaaAuctionRows item={item} />
+            <NbaaSection title="销售 / 利润" />
+            <NbaaField label="销售日期" value={item.soldDate} />
+            <NbaaField label="销售平台" value={item.soldPlatform} />
+            <NbaaField label="销售额" value={jpy(t.saleJpy)} />
+            <NbaaField label="销售消费税" value={jpy(t.outputTax)} />
+            <NbaaField label="税抜售价" value={jpy(t.saleExTax)} />
+            <NbaaField label="净利润" value={jpy(t.profitExTax)} />
+            <NbaaSection title="自社管理" />
+            <NbaaField label="自社システムコード" value={item.id} />
+            <NbaaField label="自社-備考欄" value={displayMemo(item)} />
+          </div>
+          <aside className="nbaa-image-pane">
+            {mainImage ? <img className="nbaa-main-image" src={mainImage} alt={item.item || item.id} /> : <div className="nbaa-no-image">No Image</div>}
+            <div className="nbaa-thumbs">{(item.images || []).map((src, i) => <img key={i} src={src} alt="thumb" />)}</div>
+          </aside>
+        </div>
+      </div>
+    </div>
+  );
+}
 function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, downloadCSV, editItem, deleteItem, isOwner, setPreviewImage, setPreviewScale, exportItemPdf }) {
   const [detailItem, setDetailItem] = useState(null);
   const [page, setPage] = useState(1);
@@ -2560,33 +2656,8 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
 
       {detailItem && (
         <div className="image-modal" onClick={() => setDetailItem(null)}>
-          <div className="panel" style={{ width: "860px", maxWidth: "92vw", maxHeight: "88vh", overflow: "auto" }} onClick={(e) => e.stopPropagation()}>
-            <div className="toolbar">
-              <h2>{detailItem.brand} {detailItem.item}</h2>
-              <button onClick={() => exportItemPdf?.(detailItem)}>导出PDF</button>
-              <button onClick={() => setDetailItem(null)}>关闭</button>
-            </div>
-            <div className="image-row">
-              {(detailItem.images || []).map((src, i) => <img key={i} className="thumb" style={{ width: 120, height: 120 }} src={src} alt="detail" />)}
-            </div>
-            <div className="grid4" style={{ marginTop: 16 }}>
-              <Card icon={<Package />} title="商品编号" value={detailItem.id} />
-              <Card icon={<FileText />} title="品类" value={detailItem.category} />
-              <Card icon={<Calculator />} title="真实成本" value={jpy(calcTax(detailItem).costJpy)} />
-              <Card icon={<Calculator />} title="销售消费税" value={jpy(calcTax(detailItem).outputTax)} />
-              <Card icon={<Calculator />} title="税抜售价" value={jpy(calcTax(detailItem).saleExTax)} />
-              <Card icon={<Calculator />} title="净利润" value={jpy(calcTax(detailItem).profitExTax)} />
-            </div>
-            <p><b>材质：</b>{detailItem.material}</p>
-            <p><b>颜色：</b>{detailItem.color}</p>
-            <p><b>产地：</b>{detailItem.origin}</p>
-            <p><b>来源：</b>{detailItem.source}</p>
-            <p><b>供应商地址：</b>{detailItem.address}</p>
-            <p><b>平台/运输：</b>{detailItem.platform}</p>
-            <p><b>费用：</b>单件运费 {jpy(detailItem.shippingJpy)} / 单件关税 {jpy(detailItem.dutyJpy)} / 批次分摊关税 {jpy(detailItem.batchAllocatedDutyJpy)} / 批次分摊运费 {jpy(detailItem.batchAllocatedShippingJpy)} / 报关 {jpy(Number(detailItem.customsFeeJpy || 0) + Number(detailItem.batchAllocatedCustomsFeeJpy || 0))} / 手续费 {jpy(detailItem.platformFeeJpy)} / 其他 {jpy(Number(detailItem.otherCostJpy || 0) + Number(detailItem.batchAllocatedOtherCostJpy || 0))}</p>
-            <p><b>备注：</b>{displayMemo(detailItem) || "—"}</p>
-            {getAuction(detailItem) && <p style={{whiteSpace:"pre-wrap"}}><b>日本拍卖：</b>
-{auctionDetailText(detailItem)}</p>}
+          <div className="panel" style={{ width: "980px", maxWidth: "94vw", maxHeight: "88vh", overflow: "auto" }} onClick={(e) => e.stopPropagation()}>
+            <NbaaProductRecordDetail item={detailItem} onClose={() => setDetailItem(null)} exportItemPdf={exportItemPdf} />
           </div>
         </div>
       )}
@@ -2828,7 +2899,7 @@ function Ledger({ items, setItems, isOwner, downloadCSV }) {
 
 
 function CustomsBatchPanel({ batches, setBatches, items, downloadCSV }) {
-  const emptyBatch = { id: "", name: "", importDate: new Date().toISOString().slice(0, 10), declaredTotalJpy: "", dutyJpy: "", importConsumptionTaxJpy: "", shippingJpy: "", customsFeeJpy: "", otherCostJpy: "", memo: "" };
+  const emptyBatch = { id: "", name: "", importDate: localDateString(), declaredTotalJpy: "", dutyJpy: "", importConsumptionTaxJpy: "", shippingJpy: "", customsFeeJpy: "", otherCostJpy: "", memo: "" };
   const [form, setForm] = useState(emptyBatch);
   const [editingId, setEditingId] = useState(null);
   const set = (k, v) => setForm({ ...form, [k]: v });
@@ -3059,12 +3130,12 @@ function ListingManagement({ items, updateListingItem, editItem, setPreviewImage
   async function moveStatus(item, nextStatus) {
     const patch = { status: nextStatus };
     if (nextStatus === "已售出") {
-      patch.soldDate = item.soldDate || new Date().toISOString().slice(0, 10);
+      patch.soldDate = item.soldDate || localDateString();
       patch.soldPlatform = item.soldPlatform || item.platform || "";
       patch.soldPriceJpy = Number(item.soldPriceJpy || item.saleJpy || 0);
     }
     if (nextStatus === "已发货") {
-      patch.soldDate = item.soldDate || new Date().toISOString().slice(0, 10);
+      patch.soldDate = item.soldDate || localDateString();
       patch.soldPlatform = item.soldPlatform || item.platform || "";
       patch.soldPriceJpy = Number(item.soldPriceJpy || item.saleJpy || 0);
       patch.soldMemo = String(item.soldMemo || "").includes("発送済") ? item.soldMemo : `${item.soldMemo || ""} 発送済`.trim();
@@ -3421,7 +3492,7 @@ function parseAiText(raw, dictionaries, suppliers) {
   const declaredAmount = extractNumberAfter(text, ["申报金额", "申报", "declared", "invoice", "报关"]) || purchaseAmount || "";
   const saleJpy = extractNumberAfter(text, ["销售额", "售价", "売上", "落札", "sale", "sold"]) || "";
   const qty = extractNumberAfter(text, ["数量", "qty", "個数"]) || 1;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localDateString();
   const dateMatch = text.match(/20\d{2}[-\/.]\d{1,2}[-\/.]\d{1,2}/);
   const purchaseDate = dateMatch ? dateMatch[0].replace(/[\/.]/g, "-") : today;
 
@@ -3454,7 +3525,7 @@ function parseAiText(raw, dictionaries, suppliers) {
 
 
 function buildAiBusinessStats(items, suppliers) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localDateString();
   const month = currentMonth();
   const active = items.filter((x) => !isSoldStatus(x.status) && x.status !== "退货");
   const sold = items.filter((x) => isSoldStatus(x.status));
@@ -3610,7 +3681,7 @@ function AiAssistant({ onApplyDraft, dictionaries, suppliers }) {
 
     if (mode === "sale") {
       next.status = "已售出";
-      next.soldDate = new Date().toISOString().slice(0, 10);
+      next.soldDate = localDateString();
       next.soldPlatform = next.platform;
       next.soldPriceJpy = next.saleJpy;
       next.memo = "AI识别销售草稿，请人工确认";
