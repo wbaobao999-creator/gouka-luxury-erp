@@ -1934,7 +1934,7 @@ function Dashboard({ totals, items, setTab, exportBackup }) {
   const todayProfit = todaySold.reduce((a, x) => a + calcTax(x).profitExTax, 0);
 
   const monthIn = items.filter((x) => (x.purchaseDate || "").startsWith(month));
-  const monthSold = items.filter((x) => (x.soldDate || "").startsWith(month) || (isSoldStatus(x.status) && !(x.soldDate)));
+  const monthSold = items.filter((x) => isSoldStatus(x.status) && (x.soldDate || "").startsWith(month));
   const monthSale = monthSold.reduce((a, x) => a + calcTax(x).saleJpy, 0);
   const monthProfit = monthSold.reduce((a, x) => a + calcTax(x).profitExTax, 0);
   const recent = items.slice(0, 5);
