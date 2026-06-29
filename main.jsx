@@ -15,6 +15,11 @@ productRecordStyle.textContent = `
 .product-record-main-image,.product-record-no-image { width:100%; aspect-ratio:1 / 1; object-fit:cover; border:1px solid #e5e7eb; border-radius:10px; background:#f8fafc; display:grid; place-items:center; color:#64748b; }
 .product-record-thumbs { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
 .product-record-thumbs img { width:72px; height:72px; object-fit:cover; border:1px solid #d7dee8; border-radius:8px; background:#fff; }
+.record-image-actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
+.record-image-actions button { min-height:32px; padding:6px 10px; }
+.product-record-summary { margin-top:14px; }
+.product-record-summary h3 { margin:0 0 10px; font-size:16px; border-left:5px solid #16a34a; padding-left:10px; }
+.timeline-date { display:block; margin-top:5px; font-size:11px; color:#64748b; font-weight:700; }
 .product-record-identity { background:#fff; border:1px solid #dde5ef; border-radius:12px; padding:18px; display:flex; flex-direction:column; justify-content:space-between; }
 .product-record-kicker { font-size:12px; color:#64748b; font-weight:800; letter-spacing:.08em; text-transform:uppercase; }
 .product-record-title { margin:8px 0 10px; font-size:28px; line-height:1.25; color:#0f172a; }
@@ -2735,13 +2740,46 @@ function RecordCard({ title, children, className = "" }) {
   );
 }
 
-function TimelineStep({ label, done }) {
+function TimelineStep({ label, done, date }) {
   return (
     <div className={"timeline-step" + (done ? " done" : "")}>
       <div className="timeline-dot" />
       {label}
+      <span className="timeline-date">{date || "—"}</span>
     </div>
   );
+}
+
+async function copyProductImage(src) {
+  if (!src) return;
+  try {
+    if (navigator.clipboard && window.ClipboardItem) {
+      const res = await fetch(src);
+      const blob = await res.blob();
+      await navigator.clipboard.write([new ClipboardItem({ [blob.type || "image/png"]: blob })]);
+      alert("图片已复制。 ");
+      return;
+    }
+  } catch (e) {
+    console.warn(e);
+  }
+  try {
+    await navigator.clipboard.writeText(src);
+    alert("浏览器不支持直接复制图片，已复制图片链接。 ");
+  } catch (e) {
+    alert("当前浏览器不允许复制图片。请使用下载。 ");
+  }
+}
+
+function downloadProductImage(src, itemId) {
+  if (!src) return;
+  const a = document.createElement("a");
+  a.href = src;
+  a.download = `${itemId || "product"}.jpg`;
+  a.target = "_blank";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
 }
 
 function NbaaProductRecordDetail({ item, onClose, exportItemPdf }) {
@@ -2750,23 +2788,30 @@ function NbaaProductRecordDetail({ item, onClose, exportItemPdf }) {
   const images = Array.isArray(item.images) ? item.images.filter(Boolean) : [];
   const mainImage = images[0] || "";
   const saleJpy = Number(t.saleJpy || 0);
+  const expectedSaleJpy = Number(item.saleJpy || item.expectedSaleJpy || 0);
+  const expectedProfit = expectedSaleJpy > 0 ? expectedSaleJpy - Number(t.costJpy || 0) : 0;
   const grossProfit = saleJpy > 0 ? Number(t.grossProfit || 0) : 0;
   const actualProfit = saleJpy > 0 ? Number(t.profitExTax || 0) : 0;
   const taxRef = Number(t.taxBalance || 0);
+  const paymentTotal = auction ? Number(auction.invoiceTotal || 0) : Number(t.costJpy || 0);
+  const inventoryCost = auction ? Number(auction.inventoryCost || 0) : Number(t.costJpy || 0);
+  const taxCredit = auction ? Number(auction.taxCredit || 0) : Number(t.inputTax || 0);
   const finalReceipt = saleJpy ? saleJpy - Number(item.platformFeeJpy || 0) - Number(item.otherCostJpy || 0) : 0;
   const importConsumptionTax = Number(item.importConsumptionTaxJpy || item.customsConsumptionTaxJpy || 0);
   const customsDate = item.customsDate || item.customsDeclarationDate || item.customsBatchDate || "";
   const sizeText = item.size || item.sizeText || item.dimensions || "";
   const refundJpy = Number(item.refundJpy || item.returnJpy || 0);
+  const buyerName = item.buyer || item.buyerName || item.customer || item.customerName || item.soldBuyer || "";
+  const emsPdfStatus = item.customsBatchId ? "PDF导出中心可生成" : "";
   const timeline = [
-    ["采购", !!item.purchaseDate],
-    ["拍卖", !!auction],
-    ["付款", !!auction?.paymentDate || !!auction?.invoiceTotal],
-    ["EMS", !!item.customsBatchId || item.platform === "EMS"],
-    ["库存", ["已入库", "待出品", "已出品", "已售出", "已发货"].includes(item.status)],
-    ["出品", ["待出品", "已出品", "已售出", "已发货"].includes(item.status)],
-    ["销售", isSoldStatus(item.status) || !!item.soldDate || saleJpy > 0],
-    ["完成", item.status === "已发货"]
+    ["采购", !!item.purchaseDate, item.purchaseDate],
+    ["拍卖", !!auction, auction?.auctionDate || item.purchaseDate],
+    ["付款", !!auction?.paymentDate || !!auction?.invoiceTotal, auction?.paymentDate],
+    ["EMS", !!item.customsBatchId || item.platform === "EMS", customsDate || item.customsBatchId],
+    ["库存", ["已入库", "待出品", "已出品", "已售出", "已发货"].includes(item.status), item.purchaseDate],
+    ["出品", ["待出品", "已出品", "已售出", "已发货"].includes(item.status), item.listingDate || item.listedDate],
+    ["销售", isSoldStatus(item.status) || !!item.soldDate || saleJpy > 0, item.soldDate],
+    ["完成", item.status === "已发货", item.shippedDate || item.soldDate]
   ];
 
   return (
@@ -2774,8 +2819,15 @@ function NbaaProductRecordDetail({ item, onClose, exportItemPdf }) {
       <div className="product-record-head">
         <div className="product-record-photo">
           {mainImage ? <img className="product-record-main-image" src={mainImage} alt={item.item || item.id} /> : <div className="product-record-no-image">No Image</div>}
+          {mainImage && (
+            <div className="record-image-actions">
+              <button className="ghost" onClick={() => window.open(mainImage, "_blank")}>放大</button>
+              <button className="ghost" onClick={() => downloadProductImage(mainImage, item.id)}>下载</button>
+              <button className="ghost" onClick={() => copyProductImage(mainImage)}>复制图片</button>
+            </div>
+          )}
           <div className="product-record-thumbs">
-            {images.slice(0, 8).map((src, i) => <img key={i} src={src} alt="thumb" />)}
+            {images.slice(0, 8).map((src, i) => <img key={i} src={src} alt="thumb" onClick={() => window.open(src, "_blank")} />)}
           </div>
         </div>
         <div className="product-record-identity">
@@ -2787,6 +2839,17 @@ function NbaaProductRecordDetail({ item, onClose, exportItemPdf }) {
               <RecordField label="品牌" value={item.brand} />
               <RecordField label="商品名称" value={item.item} />
               <RecordField label="状态" value={<StatusBadge status={item.status} />} />
+            </div>
+            <div className="product-record-summary">
+              <h3>Business Summary</h3>
+              <div className="record-field-grid">
+                <RecordField label="付款总额" value={jpy(paymentTotal)} />
+                <RecordField label="库存成本" value={jpy(inventoryCost)} />
+                <RecordField label="消费税控除" value={jpy(taxCredit)} />
+                <RecordField label="预计售价" value={expectedSaleJpy ? jpy(expectedSaleJpy) : ""} />
+                <RecordField label="预计利润" value={expectedSaleJpy ? jpy(expectedProfit) : ""} />
+                <RecordField label="实际利润" value={saleJpy ? jpy(actualProfit) : ""} />
+              </div>
             </div>
           </div>
           <div className="product-record-actions">
@@ -2829,6 +2892,7 @@ function NbaaProductRecordDetail({ item, onClose, exportItemPdf }) {
 
         <RecordCard title="③ EMS">
           <RecordField label="批次" value={item.customsBatchId} />
+          <RecordField label="EMS PDF" value={emsPdfStatus} />
           <RecordField label="申报金额" value={[item.declaredCny, item.declaredCurrency || "CNY"].filter(Boolean).join(" ")} />
           <RecordField label="关税" value={jpy(item.dutyJpy)} />
           <RecordField label="进口消费税" value={importConsumptionTax ? jpy(importConsumptionTax) : ""} />
@@ -2837,6 +2901,7 @@ function NbaaProductRecordDetail({ item, onClose, exportItemPdf }) {
         </RecordCard>
 
         <RecordCard title="④ 销售">
+          <RecordField label="买家" value={buyerName} />
           <RecordField label="平台" value={item.soldPlatform || item.platform} />
           <RecordField label="售价" value={saleJpy ? jpy(saleJpy) : ""} />
           <RecordField label="销售日期" value={item.soldDate} />
@@ -2856,7 +2921,7 @@ function NbaaProductRecordDetail({ item, onClose, exportItemPdf }) {
 
         <RecordCard title="⑥ Timeline" className="timeline-card">
           <div className="product-timeline">
-            {timeline.map(([label, done]) => <TimelineStep key={label} label={label} done={done} />)}
+            {timeline.map(([label, done, date]) => <TimelineStep key={label} label={label} done={done} date={date} />)}
           </div>
         </RecordCard>
       </div>
