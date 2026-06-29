@@ -1134,13 +1134,46 @@ function App() {
     setIsLoggedIn(false);
   }
 
+  function buildEnterpriseBackupData() {
+    let cashflow = null;
+    try {
+      cashflow = JSON.parse(localStorage.getItem(CASHFLOW_KEY) || "null");
+    } catch {
+      cashflow = null;
+    }
+
+    return {
+      version: "GOUKA-ERP-ENTERPRISE-4.0-SAFE-BACKUP",
+      exportedAt: new Date().toISOString(),
+      app: "GOUKA ERP Luxury Trading System",
+      schema: {
+        productRecord: true,
+        auctionField: "auction",
+        pageSize: 50,
+        thumbnailPx: 72
+      },
+      counts: {
+        items: items.length,
+        suppliers: suppliers.length,
+        deleteLogs: deleteLogs.length,
+        customsBatches: customsBatches.length
+      },
+      items,
+      customsBatches,
+      dictionaries,
+      suppliers,
+      deleteLogs,
+      cashflow
+    };
+  }
+
   function exportBackup() {
-    const data = { version: "GOUKA-ERP-ENTERPRISE-2.0-AUCTION-STABLE", exportedAt: new Date().toISOString(), items, customsBatches, dictionaries, suppliers, deleteLogs };
+    const data = buildEnterpriseBackupData();
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `gouka_erp_v711_image_db_backup_${new Date().toISOString().slice(0,10)}.json`;
+    a.download = "gouka_erp_enterprise_backup_" + new Date().toISOString().slice(0,10) + ".json";
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -1153,7 +1186,21 @@ function App() {
         const parsed = JSON.parse(reader.result);
         const nextItems = Array.isArray(parsed) ? parsed : parsed.items;
         if (!Array.isArray(nextItems)) throw new Error("bad file");
-        if (window.confirm(`确定导入 ${nextItems.length} 条商品数据吗？当前数据会被覆盖。`)) {
+
+        const backupVersion = parsed.version || "旧版备份";
+        const hasAuction = nextItems.some((x) => x?.auction || x?.memo?.includes?.("落札"));
+        const message = [
+          "备份版本：" + backupVersion,
+          "商品记录：" + nextItems.length + " 件",
+          "供应商：" + (Array.isArray(parsed.suppliers) ? parsed.suppliers.length : 0) + " 件",
+          "报关批次：" + (Array.isArray(parsed.customsBatches) ? parsed.customsBatches.length : 0) + " 件",
+          "删除日志：" + (Array.isArray(parsed.deleteLogs) ? parsed.deleteLogs.length : 0) + " 件",
+          hasAuction ? "包含日本拍卖 auction 数据" : "未检测到结构化 auction 数据",
+          "",
+          "确定导入吗？当前浏览器数据会被覆盖。"
+        ].join("\n");
+
+        if (window.confirm(message)) {
           const normalizedItems = nextItems.map(normalizeItem);
           await Promise.all(normalizedItems.map((item) => saveItemImagesToDb(item.id, item.images || [])));
           setItems(normalizedItems);
@@ -1162,10 +1209,11 @@ function App() {
           if (Array.isArray(parsed.deleteLogs)) setDeleteLogs(parsed.deleteLogs);
           if (Array.isArray(parsed.customsBatches)) setCustomsBatches(parsed.customsBatches);
           if (parsed.cashflow) localStorage.setItem(CASHFLOW_KEY, JSON.stringify(parsed.cashflow));
-          alert("备份数据已恢复。若包含字典、供应商、现金流，也已同步恢复。");
+          alert("企业备份已恢复。商品、图片索引、字典、供应商、报关批次、删除日志已按备份内容恢复。");
         }
-      } catch {
-        alert("备份文件格式不正确");
+      } catch (e) {
+        console.error(e);
+        alert("备份文件格式不正确，或文件已损坏。");
       }
     };
     reader.readAsText(file);
@@ -1470,7 +1518,23 @@ function App() {
     if (!isOwner) return alert("员工账号无删除权限");
     const target = items.find((x) => x.id === id);
     if (!target) return;
-    if (!window.confirm(`确认完全删除这条库存记录吗？\n\n${target.id} ${target.brand || ""} ${target.item || ""}\n\n删除后不会出现在库存、利润、报关、古物台账中。`)) return;
+    const reason = window.prompt("请输入删除原因：\n\n" + target.id + " " + (target.brand || "") + " " + (target.item || ""), "误录入 / 重复录入 / 老板确认删除");
+    if (reason === null) return;
+    if (!window.confirm("确认删除这条库存记录吗？\n\n系统会先保存完整删除日志，之后可在“删除日志”里恢复。")) return;
+
+    const deleteLog = {
+      id: "DEL-" + Date.now(),
+      date: new Date().toISOString(),
+      itemId: target.id,
+      brand: target.brand || "",
+      item: target.item || "",
+      status: target.status || "",
+      user: session?.name || session?.username || "owner",
+      reason: reason || "未填写",
+      snapshot: target,
+      restoredAt: ""
+    };
+
     await deleteItemImagesFromDb(id);
 
     try {
@@ -1484,7 +1548,32 @@ function App() {
     }
 
     setItems(items.filter((x) => x.id !== id));
-    alert("已完全删除该库存记录，并已同步云端。");
+    setDeleteLogs([deleteLog, ...deleteLogs]);
+    alert("已删除该库存记录，并保存完整删除日志。需要时可在删除日志恢复。");
+  }
+
+  async function restoreDeletedItem(log) {
+    if (!isOwner) return alert("员工账号无恢复权限");
+    if (!log?.snapshot) return alert("这条删除日志没有完整商品快照，无法自动恢复。旧版本删除日志只能查看记录。");
+    if (log.restoredAt) return alert("这条记录已经恢复过。若需再次恢复，请从完整JSON备份导入。 ");
+    if (items.some((x) => x.id === log.snapshot.id)) return alert("当前库存已经存在同商品编号，不能重复恢复。");
+    if (!window.confirm("确认恢复商品 " + log.snapshot.id + " 吗？")) return;
+
+    const restored = normalizeItem({ ...log.snapshot, status: log.snapshot.status || log.status || "已入库" });
+    await saveItemImagesToDb(restored.id, restored.images || []);
+    setItems([restored, ...items]);
+    setDeleteLogs(deleteLogs.map((x) => x.id === log.id ? { ...x, restoredAt: new Date().toISOString() } : x));
+
+    try {
+      const cloudImages = await uploadItemImages(restored.id, restored.images || []);
+      await upsertCloudItem(toCloudItem({ ...restored, images: cloudImages }));
+      setSyncStatusText("恢复已同步");
+    } catch (e) {
+      console.warn("恢复云端同步失败", e);
+      setSyncStatusText("恢复成功，云端待同步");
+    }
+
+    alert("商品已从删除日志恢复。 ");
   }
 
   async function updateListingItem(id, patch, actionText = "出品管理更新") {
@@ -1948,7 +2037,7 @@ function App() {
         {tab === "pdf" && <PdfExportPanel items={computedItems} totals={totals} exportInventoryPdf={exportInventoryPdf} exportLedgerPdf={exportLedgerPdf} exportCustomsPdf={exportCustomsPdf} exportItemPdf={exportItemPdf} />}
         {tab === "suppliers" && <SupplierPanel suppliers={suppliers} setSuppliers={setSuppliers} downloadCSV={downloadCSV} />}
         {tab === "dictionary" && <DictionaryPanel dictionaries={dictionaries} setDictionaries={setDictionaries} />}
-        {tab === "deleteLogs" && <DeleteLogPanel deleteLogs={deleteLogs} downloadCSV={downloadCSV} />}
+        {tab === "deleteLogs" && <DeleteLogPanel deleteLogs={deleteLogs} downloadCSV={downloadCSV} restoreDeletedItem={restoreDeletedItem} />}
         {tab === "backup" && <BackupPanel items={items} exportBackup={exportBackup} importBackup={importBackup} />}
 
         {previewImage && (
@@ -3089,6 +3178,106 @@ function Profit({ items }) {
 }
 
 function TaxReport({ items, totals, customsBatches, downloadCSV }) {
+  const soldItems = items.filter((x) => isSoldStatus(x.status));
+  const auctionItems = items.filter((x) => !!getAuction(x));
+
+  const auctionRows = auctionItems.map((x) => {
+    const auction = getAuction(x) || {};
+    const hammerTax = Number(auction.hammerTax || 0);
+    const buyerFeeTax = Number(auction.buyerFeeTax || 0);
+    const taxCredit = Number(auction.taxCredit || hammerTax + buyerFeeTax || 0);
+    return [
+      <ProductThumb item={x} />,
+      x.id,
+      x.brand,
+      x.item,
+      auction.auctionHouse || x.source || "",
+      auction.auctionCode || "",
+      Math.round(hammerTax),
+      Math.round(buyerFeeTax),
+      Math.round(taxCredit)
+    ];
+  });
+
+  const importRows = (customsBatches || []).map((b) => [
+    b.id,
+    b.importDate,
+    Math.round(Number(b.dutyJpy || 0)),
+    Math.round(Number(b.importConsumptionTaxJpy || 0)),
+    b.memo || ""
+  ]);
+
+  const salesRows = soldItems.map((x) => {
+    const saleJpy = Number(x.soldPriceJpy || x.saleJpy || 0);
+    const outputTax = saleJpy * TAX_RATE / (1 + TAX_RATE);
+    return [
+      <ProductThumb item={x} />,
+      x.id,
+      x.brand,
+      x.item,
+      x.soldDate || "",
+      x.soldPlatform || x.platform || "",
+      Math.round(saleJpy),
+      Math.round(saleJpy - outputTax),
+      Math.round(outputTax)
+    ];
+  });
+
+  const auctionInputTax = auctionItems.reduce((sum, x) => {
+    const auction = getAuction(x) || {};
+    return sum + Number(auction.taxCredit || Number(auction.hammerTax || 0) + Number(auction.buyerFeeTax || 0));
+  }, 0);
+  const importConsumptionTax = (customsBatches || []).reduce((sum, b) => sum + Number(b.importConsumptionTaxJpy || 0), 0);
+  const salesOutputTax = soldItems.reduce((sum, x) => sum + Number(x.soldPriceJpy || x.saleJpy || 0) * TAX_RATE / (1 + TAX_RATE), 0);
+  const taxDifference = salesOutputTax - auctionInputTax - importConsumptionTax;
+
+  const csv = [
+    ["区分", "商品编号/批次", "品牌", "商品名", "项目1", "项目2", "项目3", "税额JPY"],
+    ...auctionItems.map((x) => {
+      const a = getAuction(x) || {};
+      const taxCredit = Number(a.taxCredit || Number(a.hammerTax || 0) + Number(a.buyerFeeTax || 0));
+      return ["日本拍卖进项税", x.id, x.brand, x.item, a.auctionHouse || "", a.auctionCode || "", "taxCredit", Math.round(taxCredit)];
+    }),
+    ...(customsBatches || []).map((b) => ["进口消费税", b.id, "", "", b.importDate || "", "", "importConsumptionTaxJpy", Math.round(Number(b.importConsumptionTaxJpy || 0))]),
+    ...soldItems.map((x) => {
+      const saleJpy = Number(x.soldPriceJpy || x.saleJpy || 0);
+      const outputTax = saleJpy * TAX_RATE / (1 + TAX_RATE);
+      return ["销售消费税", x.id, x.brand, x.item, x.soldDate || "", x.soldPlatform || x.platform || "", "outputTax", Math.round(outputTax)];
+    }),
+    ["消费税差额", "", "", "", "销项税 - 拍卖进项税 - 进口消费税", "", "", Math.round(taxDifference)]
+  ];
+
+  return (
+    <div className="panel">
+      <Toolbar title="消费税参考" onDownload={() => downloadCSV(csv, "gouka_consumption_tax_reference.csv")} />
+      <p className="note">此页面为经营参考，不替代税理士正式申报。日本拍卖消费税不进入库存成本，作为进项税参考；销售消费税按含税销售额 10/110 倒算。</p>
+
+      <div className="grid4" style={{ marginBottom: "18px" }}>
+        <Card icon={<Calculator />} title="日本拍卖进项税" value={jpy(auctionInputTax)} />
+        <Card icon={<Calculator />} title="进口消费税" value={jpy(importConsumptionTax)} />
+        <Card icon={<Calculator />} title="销售消费税" value={jpy(salesOutputTax)} />
+        <Card icon={<Calculator />} title="消费税差额" value={jpy(taxDifference)} />
+      </div>
+
+      <h3>1. 日本拍卖进项税</h3>
+      <Table headers={["图片", "商品编号", "品牌", "商品名", "拍卖会", "落札コード", "落札消费税", "手续费消费税", "可抵扣消费税"]} rows={auctionRows} />
+
+      <h3>2. 进口消费税</h3>
+      <Table headers={["批次号", "报关日期", "关税合计", "进口消费税合计", "备注"]} rows={importRows} />
+
+      <h3>3. 销售消费税</h3>
+      <Table headers={["图片", "商品编号", "品牌", "商品名", "销售日期", "销售平台", "销售JPY（税込）", "税抜销售", "销售消费税"]} rows={salesRows} />
+
+      <h3>4. 消费税差额参考</h3>
+      <Table headers={["项目", "金额"]} rows={[
+        ["销售消费税", jpy(salesOutputTax)],
+        ["日本拍卖进项税", jpy(auctionInputTax)],
+        ["进口消费税", jpy(importConsumptionTax)],
+        ["差额参考", jpy(taxDifference)]
+      ]} />
+    </div>
+  );
+}) {
   const headers = ["图片", "商品编号", "品牌", "商品名", "申报JPY", "进项消费税估算", "销售JPY（税込）", "销售不含税", "销售消费税", "消费税差额参考", "检查提示"];
   const csvHeaders = headers.filter((h) => h !== "图片");
   const rows = items.map((x) => {
@@ -3469,13 +3658,13 @@ function BackupPanel({ items, exportBackup, importBackup }) {
   return (
     <div className="panel">
       <h2><Database size={20} /> 数据备份 / 恢复</h2>
-      <p className="note">当前系统文字数据保存在本机浏览器，图片保存在浏览器IndexedDB图片库。V7.11备份会包含商品、图片、字典、供应商、报关批次、现金流。换电脑、清理浏览器、重装系统前，一定要先导出备份。</p>
+      <p className="note">企业备份会包含商品档案、图片索引、日本拍卖 auction、供应商、字典、报关批次、删除日志和现金流。换电脑、清理浏览器、重装系统前，一定要先导出备份。</p>
 
       <div className="grid4" style={{marginTop:"16px"}}>
         <Card icon={<Package />} title="当前商品记录" value={`${items.length} 件`} />
         <Card icon={<ImagePlus />} title="有图片商品" value={`${items.filter(x => x.images?.length).length} 件`} />
         <Card icon={<Calculator />} title="已售商品" value={`${items.filter(x => isSoldStatus(x.status)).length} 件`} />
-        <Card icon={<Database />} title="备份格式" value="JSON" />
+        <Card icon={<Database />} title="备份格式" value="Enterprise JSON" />
       </div>
 
       <div className="action-row" style={{marginTop:"20px"}}>
@@ -3871,7 +4060,33 @@ function formatDateTime(value) {
   }
 }
 
-function DeleteLogPanel({ deleteLogs, downloadCSV }) {
+function DeleteLogPanel({ deleteLogs, downloadCSV, restoreDeletedItem }) {
+  const headers = ["删除时间", "商品编号", "品牌", "商品名", "删除前状态", "删除人", "删除原因", "恢复状态", "操作"];
+  const rows = deleteLogs.map((x) => [
+    formatDateTime(x.date),
+    x.itemId,
+    x.brand,
+    x.item,
+    x.status,
+    x.user,
+    x.reason,
+    x.restoredAt ? "已恢复：" + formatDateTime(x.restoredAt) : "未恢复",
+    <div className="table-actions">
+      <button className="edit" disabled={!x.snapshot || !!x.restoredAt} onClick={() => restoreDeletedItem(x)}>恢复商品</button>
+    </div>
+  ]);
+  const csvRows = deleteLogs.map((x) => [
+    formatDateTime(x.date), x.itemId, x.brand, x.item, x.status, x.user, x.reason, x.restoredAt ? formatDateTime(x.restoredAt) : "未恢复"
+  ]);
+
+  return (
+    <div className="panel">
+      <Toolbar title="删除日志" onDownload={() => downloadCSV([["删除时间", "商品编号", "品牌", "商品名", "删除前状态", "删除人", "删除原因", "恢复状态"], ...csvRows], "gouka_delete_logs.csv")} />
+      <p className="note">库存删除会保存完整商品快照。误删后可从这里恢复；古物台账仍然不做物理删除，只允许更正和作废。</p>
+      <Table headers={headers} rows={rows} />
+    </div>
+  );
+}) {
   const headers = ["删除时间", "商品编号", "品牌", "商品名", "删除前状态", "删除人", "删除原因"];
   const rows = deleteLogs.map((x) => [
     formatDateTime(x.date),
