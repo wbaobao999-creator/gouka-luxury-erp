@@ -7,6 +7,38 @@ import { getCloudItems, upsertCloudItem, deleteItemCloud, uploadItemImages, dele
 const nbaaStyle = document.createElement("style");
 nbaaStyle.textContent = ".nbaa-sheet{background:#eef4ed;border:1px solid #b7d7bd;border-radius:4px;padding:12px}.nbaa-main{display:grid;grid-template-columns:minmax(0,1fr) 190px;gap:12px}.nbaa-grid{display:grid;grid-template-columns:140px minmax(0,1fr);border-top:1px solid #d7d7d7;border-left:1px solid #d7d7d7;background:#fff}.nbaa-section{grid-column:1/-1;background:#e9f8ec;color:#10852f;font-weight:800;padding:9px 10px;border-right:1px solid #d7d7d7;border-bottom:1px solid #d7d7d7}.nbaa-label{background:#19a83d;color:#fff;font-weight:800;text-align:center;padding:9px 8px;border-right:1px solid #d7d7d7;border-bottom:1px solid #d7d7d7;min-height:38px}.nbaa-value{background:#fff;color:#0f172a;padding:9px 10px;border-bottom:1px solid #d7d7d7;min-height:38px;word-break:break-word}.nbaa-image-pane{background:#fff;border:1px solid #d7d7d7;padding:8px;align-self:start}.nbaa-main-image,.nbaa-no-image{width:160px;height:160px;object-fit:cover;border:1px solid #e5e7eb;background:#f8fafc;display:grid;place-items:center;color:#64748b}.nbaa-thumbs{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.nbaa-thumbs img{width:72px;height:72px;object-fit:cover;border:1px solid #e5e7eb}.nbaa-record .toolbar{margin-bottom:12px}@media(max-width:760px){.nbaa-main{grid-template-columns:1fr}.nbaa-grid{grid-template-columns:116px minmax(0,1fr)}.nbaa-image-pane{width:max-content;max-width:100%}}";
 document.head.appendChild(nbaaStyle);
+const productRecordStyle = document.createElement("style");
+productRecordStyle.textContent = `
+.product-record-page { background:#f8fafc; border:1px solid #d9e2ef; border-radius:14px; padding:18px; }
+.product-record-head { display:grid; grid-template-columns:240px minmax(0,1fr); gap:18px; align-items:stretch; margin-bottom:18px; }
+.product-record-photo { background:#fff; border:1px solid #dde5ef; border-radius:12px; padding:12px; }
+.product-record-main-image,.product-record-no-image { width:100%; aspect-ratio:1 / 1; object-fit:cover; border:1px solid #e5e7eb; border-radius:10px; background:#f8fafc; display:grid; place-items:center; color:#64748b; }
+.product-record-thumbs { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
+.product-record-thumbs img { width:72px; height:72px; object-fit:cover; border:1px solid #d7dee8; border-radius:8px; background:#fff; }
+.product-record-identity { background:#fff; border:1px solid #dde5ef; border-radius:12px; padding:18px; display:flex; flex-direction:column; justify-content:space-between; }
+.product-record-kicker { font-size:12px; color:#64748b; font-weight:800; letter-spacing:.08em; text-transform:uppercase; }
+.product-record-title { margin:8px 0 10px; font-size:28px; line-height:1.25; color:#0f172a; }
+.product-record-meta { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; }
+.product-record-meta .record-field { min-height:70px; }
+.product-record-actions { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-top:18px; }
+.product-record-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
+.record-card { background:#fff; border:1px solid #dde5ef; border-radius:12px; padding:14px; }
+.record-card h3 { margin:0 0 12px; font-size:17px; color:#0f172a; border-left:5px solid #16a34a; padding-left:10px; }
+.record-field-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px; }
+.record-field { border:1px solid #e5e7eb; border-radius:8px; padding:9px 10px; background:#fff; min-height:58px; }
+.record-field.full { grid-column:1 / -1; }
+.record-field label { display:block; font-size:11px; color:#64748b; margin-bottom:4px; font-weight:800; }
+.record-field div { color:#0f172a; font-weight:700; word-break:break-word; line-height:1.35; }
+.record-field .muted-value { color:#94a3b8; }
+.timeline-card { grid-column:1 / -1; }
+.product-timeline { display:grid; grid-template-columns:repeat(8,minmax(0,1fr)); gap:8px; }
+.timeline-step { border:1px solid #e5e7eb; border-radius:10px; padding:10px 8px; background:#f8fafc; text-align:center; color:#64748b; font-weight:800; min-height:62px; }
+.timeline-step.done { background:#ecfdf5; border-color:#86efac; color:#047857; }
+.timeline-dot { width:10px; height:10px; border-radius:999px; margin:0 auto 8px; background:#cbd5e1; }
+.timeline-step.done .timeline-dot { background:#16a34a; }
+@media(max-width:900px){.product-record-head{grid-template-columns:1fr}.product-record-grid{grid-template-columns:1fr}.product-record-meta{grid-template-columns:repeat(2,minmax(0,1fr))}.product-timeline{grid-template-columns:repeat(2,minmax(0,1fr))}}
+`;
+document.head.appendChild(productRecordStyle);
 
 const tablePagerStyle = document.createElement("style");
 tablePagerStyle.textContent = ".table-pager{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin:10px 0;color:#475467}.table-pager.single{justify-content:flex-end}.table-pager .pill{background:#f8fafc;border:1px solid #d5dbe5;border-radius:999px;padding:6px 10px;font-size:13px}.table-pager button{min-height:34px;padding:6px 10px}";
@@ -2680,52 +2712,153 @@ function NbaaAuctionRows({ item }) {
   );
 }
 
+function RecordValue({ value }) {
+  const empty = value === undefined || value === null || value === "";
+  return <div>{empty ? <span className="muted-value">—</span> : value}</div>;
+}
+
+function RecordField({ label, value, full = false }) {
+  return (
+    <div className={"record-field" + (full ? " full" : "")}>
+      <label>{label}</label>
+      <RecordValue value={value} />
+    </div>
+  );
+}
+
+function RecordCard({ title, children, className = "" }) {
+  return (
+    <section className={"record-card " + className}>
+      <h3>{title}</h3>
+      <div className="record-field-grid">{children}</div>
+    </section>
+  );
+}
+
+function TimelineStep({ label, done }) {
+  return (
+    <div className={"timeline-step" + (done ? " done" : "")}>
+      <div className="timeline-dot" />
+      {label}
+    </div>
+  );
+}
+
 function NbaaProductRecordDetail({ item, onClose, exportItemPdf }) {
   const t = calcTax(item);
-  const mainImage = Array.isArray(item.images) && item.images.length ? item.images[0] : "";
+  const auction = getAuction(item);
+  const images = Array.isArray(item.images) ? item.images.filter(Boolean) : [];
+  const mainImage = images[0] || "";
+  const saleJpy = Number(t.saleJpy || 0);
+  const grossProfit = saleJpy > 0 ? Number(t.grossProfit || 0) : 0;
+  const actualProfit = saleJpy > 0 ? Number(t.profitExTax || 0) : 0;
+  const taxRef = Number(t.taxBalance || 0);
+  const finalReceipt = saleJpy ? saleJpy - Number(item.platformFeeJpy || 0) - Number(item.otherCostJpy || 0) : 0;
+  const importConsumptionTax = Number(item.importConsumptionTaxJpy || item.customsConsumptionTaxJpy || 0);
+  const customsDate = item.customsDate || item.customsDeclarationDate || item.customsBatchDate || "";
+  const sizeText = item.size || item.sizeText || item.dimensions || "";
+  const refundJpy = Number(item.refundJpy || item.returnJpy || 0);
+  const timeline = [
+    ["采购", !!item.purchaseDate],
+    ["拍卖", !!auction],
+    ["付款", !!auction?.paymentDate || !!auction?.invoiceTotal],
+    ["EMS", !!item.customsBatchId || item.platform === "EMS"],
+    ["库存", ["已入库", "待出品", "已出品", "已售出", "已发货"].includes(item.status)],
+    ["出品", ["待出品", "已出品", "已售出", "已发货"].includes(item.status)],
+    ["销售", isSoldStatus(item.status) || !!item.soldDate || saleJpy > 0],
+    ["完成", item.status === "已发货"]
+  ];
+
   return (
-    <div className="nbaa-record">
-      <div className="toolbar">
-        <h2>Product Record · {item.id}</h2>
-        <button onClick={() => exportItemPdf?.(item)}>导出PDF</button>
-        <button onClick={onClose}>关闭</button>
-      </div>
-      <div className="nbaa-sheet">
-        <div className="nbaa-main">
-          <div className="nbaa-grid">
-            <NbaaSection title="基本资料" />
-            <NbaaField label="商品编号" value={item.id} />
-            <NbaaField label="取得日" value={item.purchaseDate} />
-            <NbaaField label="品牌" value={item.brand} />
-            <NbaaField label="商品名" value={item.item} />
-            <NbaaField label="分类" value={item.category} />
-            <NbaaField label="颜色 / 材质 / 产地" value={[item.color, item.material, item.origin].filter(Boolean).join(" / ")} />
-            <NbaaSection title="采购 / 库存" />
-            <NbaaField label="仕入先" value={item.source} />
-            <NbaaField label="地址" value={item.address} />
-            <NbaaField label="状态" value={item.status} />
-            <NbaaField label="报关批次" value={item.customsBatchId} />
-            {getAuction(item) && <NbaaField label="实际支付合计" value={jpy(getAuction(item).invoiceTotal)} />}
-            <NbaaField label="真实成本" value={jpy(t.costJpy)} />
-            {getAuction(item) && <NbaaField label="可抵扣消费税" value={jpy(getAuction(item).taxCredit)} />}
-            <NbaaField label="进项消费税" value={jpy(t.inputTax)} />
-            <NbaaAuctionRows item={item} />
-            <NbaaSection title="销售 / 利润" />
-            <NbaaField label="销售日期" value={item.soldDate} />
-            <NbaaField label="销售平台" value={item.soldPlatform} />
-            <NbaaField label="销售额" value={jpy(t.saleJpy)} />
-            <NbaaField label="销售消费税" value={jpy(t.outputTax)} />
-            <NbaaField label="税抜售价" value={jpy(t.saleExTax)} />
-            <NbaaField label="净利润" value={jpy(t.profitExTax)} />
-            <NbaaSection title="自社管理" />
-            <NbaaField label="自社システムコード" value={item.id} />
-            <NbaaField label="自社-備考欄" value={displayMemo(item)} />
+    <div className="product-record-page">
+      <div className="product-record-head">
+        <div className="product-record-photo">
+          {mainImage ? <img className="product-record-main-image" src={mainImage} alt={item.item || item.id} /> : <div className="product-record-no-image">No Image</div>}
+          <div className="product-record-thumbs">
+            {images.slice(0, 8).map((src, i) => <img key={i} src={src} alt="thumb" />)}
           </div>
-          <aside className="nbaa-image-pane">
-            {mainImage ? <img className="nbaa-main-image" src={mainImage} alt={item.item || item.id} /> : <div className="nbaa-no-image">No Image</div>}
-            <div className="nbaa-thumbs">{(item.images || []).map((src, i) => <img key={i} src={src} alt="thumb" />)}</div>
-          </aside>
         </div>
+        <div className="product-record-identity">
+          <div>
+            <div className="product-record-kicker">Product Record</div>
+            <h2 className="product-record-title">{item.brand || "—"} {item.item || ""}</h2>
+            <div className="product-record-meta">
+              <RecordField label="商品编号" value={item.id} />
+              <RecordField label="品牌" value={item.brand} />
+              <RecordField label="商品名称" value={item.item} />
+              <RecordField label="状态" value={<StatusBadge status={item.status} />} />
+            </div>
+          </div>
+          <div className="product-record-actions">
+            <span className="note">一件商品 = 一份永久档案</span>
+            <div className="action-row">
+              <button className="ghost" onClick={() => exportItemPdf?.(item)}>导出PDF</button>
+              <button onClick={onClose}>关闭</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="product-record-grid">
+        <RecordCard title="① 基本资料">
+          <RecordField label="品牌" value={item.brand} />
+          <RecordField label="型号" value={item.productTitle || item.model || item.item} />
+          <RecordField label="颜色" value={item.color} />
+          <RecordField label="材质" value={item.material} />
+          <RecordField label="尺寸" value={sizeText} />
+          <RecordField label="产地" value={item.origin} />
+          <RecordField label="备注" value={displayMemo(item)} full />
+        </RecordCard>
+
+        <RecordCard title="② 日本拍卖">
+          <RecordField label="拍卖公司" value={auction?.platform || auction?.auctionHouse} />
+          <RecordField label="Lot" value={auction?.lotNo || auction?.auctionCode} />
+          <RecordField label="箱番" value={auction?.boxNo} />
+          <RecordField label="枝番" value={auction?.branchNo} />
+          <RecordField label="Invoice" value={auction?.invoiceNo || auction?.invoice} />
+          <RecordField label="付款日期" value={auction?.paymentDate} />
+          <RecordField label="落札金额" value={auction ? jpy(auction.hammerPrice) : ""} />
+          <RecordField label="落札消费税" value={auction ? jpy(auction.hammerTax) : ""} />
+          <RecordField label="手续费" value={auction ? jpy(auction.buyerFee) : ""} />
+          <RecordField label="手续费消费税" value={auction ? jpy(auction.buyerFeeTax) : ""} />
+          <RecordField label="国内运费" value={auction ? jpy(auction.domesticShipping) : ""} />
+          <RecordField label="付款总额" value={auction ? jpy(auction.invoiceTotal) : ""} />
+          <RecordField label="库存成本" value={auction ? jpy(auction.inventoryCost) : ""} />
+          <RecordField label="消费税控除" value={auction ? jpy(auction.taxCredit) : ""} />
+        </RecordCard>
+
+        <RecordCard title="③ EMS">
+          <RecordField label="批次" value={item.customsBatchId} />
+          <RecordField label="申报金额" value={[item.declaredCny, item.declaredCurrency || "CNY"].filter(Boolean).join(" ")} />
+          <RecordField label="关税" value={jpy(item.dutyJpy)} />
+          <RecordField label="进口消费税" value={importConsumptionTax ? jpy(importConsumptionTax) : ""} />
+          <RecordField label="国际运费" value={jpy(item.shippingJpy)} />
+          <RecordField label="报关日期" value={customsDate} />
+        </RecordCard>
+
+        <RecordCard title="④ 销售">
+          <RecordField label="平台" value={item.soldPlatform || item.platform} />
+          <RecordField label="售价" value={saleJpy ? jpy(saleJpy) : ""} />
+          <RecordField label="销售日期" value={item.soldDate} />
+          <RecordField label="平台手续费" value={jpy(item.platformFeeJpy)} />
+          <RecordField label="退款" value={refundJpy ? jpy(refundJpy) : ""} />
+          <RecordField label="最终到账" value={finalReceipt ? jpy(finalReceipt) : ""} />
+        </RecordCard>
+
+        <RecordCard title="⑤ 利润分析">
+          <RecordField label="库存成本" value={jpy(t.costJpy)} />
+          <RecordField label="销售金额" value={saleJpy ? jpy(saleJpy) : ""} />
+          <RecordField label="毛利润" value={saleJpy ? jpy(grossProfit) : ""} />
+          <RecordField label="消费税" value={jpy(taxRef)} />
+          <RecordField label="实际利润" value={saleJpy ? jpy(actualProfit) : ""} />
+          <RecordField label="利润率" value={saleJpy ? `${Number(t.margin || 0).toFixed(1)}%` : ""} />
+        </RecordCard>
+
+        <RecordCard title="⑥ Timeline" className="timeline-card">
+          <div className="product-timeline">
+            {timeline.map(([label, done]) => <TimelineStep key={label} label={label} done={done} />)}
+          </div>
+        </RecordCard>
       </div>
     </div>
   );
@@ -2797,7 +2930,7 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
 
       {detailItem && (
         <div className="image-modal" onClick={() => setDetailItem(null)}>
-          <div className="panel" style={{ width: "980px", maxWidth: "94vw", maxHeight: "88vh", overflow: "auto" }} onClick={(e) => e.stopPropagation()}>
+          <div className="panel" style={{ width: "1180px", maxWidth: "94vw", maxHeight: "88vh", overflow: "auto" }} onClick={(e) => e.stopPropagation()}>
             <NbaaProductRecordDetail item={detailItem} onClose={() => setDetailItem(null)} exportItemPdf={exportItemPdf} />
           </div>
         </div>
