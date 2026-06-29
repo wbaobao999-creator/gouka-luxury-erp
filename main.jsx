@@ -3187,7 +3187,6 @@ function TaxReport({ items, totals, customsBatches, downloadCSV }) {
     const buyerFeeTax = Number(auction.buyerFeeTax || 0);
     const taxCredit = Number(auction.taxCredit || hammerTax + buyerFeeTax || 0);
     return [
-      <ProductThumb item={x} />,
       x.id,
       x.brand,
       x.item,
@@ -3211,7 +3210,6 @@ function TaxReport({ items, totals, customsBatches, downloadCSV }) {
     const saleJpy = Number(x.soldPriceJpy || x.saleJpy || 0);
     const outputTax = saleJpy * TAX_RATE / (1 + TAX_RATE);
     return [
-      <ProductThumb item={x} />,
       x.id,
       x.brand,
       x.item,
@@ -3260,13 +3258,13 @@ function TaxReport({ items, totals, customsBatches, downloadCSV }) {
       </div>
 
       <h3>1. 日本拍卖进项税</h3>
-      <Table headers={["图片", "商品编号", "品牌", "商品名", "拍卖会", "落札コード", "落札消费税", "手续费消费税", "可抵扣消费税"]} rows={auctionRows} />
+      <Table headers={["商品编号", "品牌", "商品名", "拍卖会", "落札コード", "落札消费税", "手续费消费税", "可抵扣消费税"]} rows={auctionRows} />
 
       <h3>2. 进口消费税</h3>
       <Table headers={["批次号", "报关日期", "关税合计", "进口消费税合计", "备注"]} rows={importRows} />
 
       <h3>3. 销售消费税</h3>
-      <Table headers={["图片", "商品编号", "品牌", "商品名", "销售日期", "销售平台", "销售JPY（税込）", "税抜销售", "销售消费税"]} rows={salesRows} />
+      <Table headers={["商品编号", "品牌", "商品名", "销售日期", "销售平台", "销售JPY（税込）", "税抜销售", "销售消费税"]} rows={salesRows} />
 
       <h3>4. 消费税差额参考</h3>
       <Table headers={["项目", "金额"]} rows={[
@@ -4071,9 +4069,7 @@ function DeleteLogPanel({ deleteLogs, downloadCSV, restoreDeletedItem }) {
     x.user,
     x.reason,
     x.restoredAt ? "已恢复：" + formatDateTime(x.restoredAt) : "未恢复",
-    <div className="table-actions">
-      <button className="edit" disabled={!x.snapshot || !!x.restoredAt} onClick={() => restoreDeletedItem(x)}>恢复商品</button>
-    </div>
+    x.snapshot && !x.restoredAt ? "可恢复" : (x.restoredAt ? "已恢复" : "旧日志不可恢复")
   ]);
   const csvRows = deleteLogs.map((x) => [
     formatDateTime(x.date), x.itemId, x.brand, x.item, x.status, x.user, x.reason, x.restoredAt ? formatDateTime(x.restoredAt) : "未恢复"
@@ -4084,6 +4080,11 @@ function DeleteLogPanel({ deleteLogs, downloadCSV, restoreDeletedItem }) {
       <Toolbar title="删除日志" onDownload={() => downloadCSV([["删除时间", "商品编号", "品牌", "商品名", "删除前状态", "删除人", "删除原因", "恢复状态"], ...csvRows], "gouka_delete_logs.csv")} />
       <p className="note">库存删除会保存完整商品快照。误删后可从这里恢复；古物台账仍然不做物理删除，只允许更正和作废。</p>
       <Table headers={headers} rows={rows} />
+      <div className="action-row" style={{ marginTop: "14px" }}>
+        {deleteLogs.filter((x) => x.snapshot && !x.restoredAt).slice(0, 20).map((x) => (
+          <button key={x.id || x.itemId} className="edit" onClick={() => restoreDeletedItem(x)}>恢复 {x.itemId}</button>
+        ))}
+      </div>
     </div>
   );
 }) {
