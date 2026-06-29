@@ -1948,9 +1948,9 @@ function App() {
     ["inventory", "库存管理"],
     ["listing", "出品管理"],
     ["sales", "销售记录"],
-    ["ledger", "古物台账"],
-    ["customsBatch", "报关批次"],
     ["customs", "EMS报关"],
+    ["customsBatch", "报关批次"],
+    ["ledger", "古物台账"],
     ["profit", "利润分析"],
     ["tax", "消费税参考"],
     ["pdf", "PDF导出"],
@@ -1959,6 +1959,8 @@ function App() {
     ["deleteLogs", "删除日志"],
     ["backup", "备份恢复"]
   ];
+
+  return (  ];
 
   return (
     <div className="app">
@@ -2724,8 +2726,8 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
     setPage(1);
   }, [query, statusFilter, items.length]);
 
-  const headers = ["图片", "商品编号", "入库日期", "品牌", "商品名", "状态", "平台", "真实成本JPY", "预计售价JPY", "净利润", "操作"];
-  const csvHeaders = ["商品编号", "入库日期", "品类", "品牌", "商品名", "材质", "颜色", "产地", "数量", "采购币种", "采购金额", "采购汇率", "申报币种", "申报金额", "申报汇率", "采购JPY", "附加成本JPY", "真实成本JPY", "报关批次", "进项消费税估算", "预计销售JPY税込", "销售消费税", "税抜售价", "净利润", "状态"];
+  const headers = ["图片", "商品编号", "入库日期", "品牌", "商品名", "状态", "平台", "库存成本", "预计售价", "预计利润", "操作"];
+  const csvHeaders = ["商品编号", "入库日期", "品类", "品牌", "商品名", "材质", "颜色", "产地", "数量", "采购币种", "采购金额", "采购汇率", "申报币种", "申报金额", "申报汇率", "采购JPY", "附加成本JPY", "库存成本JPY", "报关批次", "进项消费税估算", "预计销售JPY税込", "销售消费税", "税抜售价", "预计/实际利润", "状态"];
   const csvRows = [csvHeaders];
 
   items.forEach((x) => {
@@ -2735,6 +2737,9 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
 
   const rows = pageItems.map((x) => {
     const t = calcTax(x);
+    const sold = isSoldStatus(x.status);
+    const hasExpectedSale = Number(x.saleJpy || x.soldPriceJpy || 0) > 0;
+    const profitDisplay = sold || hasExpectedSale ? moneyCell(t.profitExTax) : "未定";
     return [
       x.images && x.images.length ? <img className="thumb" src={x.images[0]} alt={x.item} style={{ width: 72, height: 72 }} onClick={() => { setPreviewScale(1); setPreviewImage(x.images[0]); }} /> : "—",
       x.id,
@@ -2745,7 +2750,7 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
       x.platform || "—",
       moneyCell(t.costJpy),
       expectedSaleCell(x.saleJpy),
-      moneyCell(t.profitExTax),
+      profitDisplay,
       <div className="table-actions">
         <button className="ghost" onClick={() => setDetailItem(x)}>详情</button>
         <button className="ghost" onClick={() => exportItemPdf?.(x)}>PDF</button>
@@ -2853,24 +2858,24 @@ function Ledger({ items, setItems, isOwner, downloadCSV }) {
 
   const headers = [
     "图片",
-    "No",
+    "商品编号",
     "取引日",
-    "商品番号",
+    "No",
     "区分",
-    "ブランド",
+    "品牌",
     "商品名",
     "特徴",
     "数量",
     "取引区分",
-    "实际支付合计",
-    "通貨",
+    "实际支付金额",
+    "币种",
     "库存成本",
     "可抵扣消费税",
     "相手方",
     "住所",
-    "本人確認",
-    "売却先",
-    "備考",
+    "本人确认",
+    "卖却先",
+    "备注",
     "台账状态",
     "更正履历",
     "操作"
@@ -2881,9 +2886,9 @@ function Ledger({ items, setItems, isOwner, downloadCSV }) {
     const tax = calcTax(x);
     return [
     x.images && x.images.length ? <img className="thumb" src={x.images[0]} alt={x.item} style={{ width: 72, height: 72 }} /> : "—",
-    i + 1,
-    x.purchaseDate,
     x.id,
+    x.purchaseDate,
+    i + 1,
     x.category,
     x.brand,
     x.item,
