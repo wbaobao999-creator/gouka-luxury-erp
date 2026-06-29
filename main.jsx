@@ -63,6 +63,20 @@ enterpriseDisplayStyle.textContent = `
 }
 `;
 document.head.appendChild(enterpriseDisplayStyle);
+const inventorySprintStyle = document.createElement("style");
+inventorySprintStyle.textContent = `
+.inventory-summary-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:14px 0 16px}
+.inventory-summary-card{border:1px solid #dbe3ef;border-radius:10px;background:#fff;padding:12px;min-height:76px}
+.inventory-summary-card small{display:block;color:#64748b;font-weight:800;margin-bottom:6px}
+.inventory-summary-card b{font-size:20px;color:#0f172a}
+.inventory-summary-card.warn{background:#fff7ed;border-color:#fed7aa}
+.inventory-summary-card.good{background:#ecfdf5;border-color:#bbf7d0}
+.inventory-stock-age{font-weight:800;color:#334155}
+.inventory-stock-age.warn{color:#dc2626}
+.inventory-location{color:#334155;font-weight:700}
+@media(max-width:1000px){.inventory-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+`;
+document.head.appendChild(inventorySprintStyle);
 
 
 const STORAGE_KEY = "gouka_erp_v2_items";
@@ -2149,7 +2163,7 @@ function Dashboard({ totals, items, setTab, exportBackup }) {
 
   const over30 = activeItems.filter((x) => stockAgeDays(x) >= 30).length;
   const over60 = activeItems.filter((x) => stockAgeDays(x) >= 60).length;
-  const over90 = activeItems.filter((x) => stockAgeDays(x) >= 90).length;
+  const longTerm = activeItems.filter((x) => stockAgeDays(x) >= 365).length;
 
   const brandMap = items.reduce((a, x) => {
     const k = x.brand || "未填写";
@@ -2240,7 +2254,7 @@ function Dashboard({ totals, items, setTab, exportBackup }) {
         <div className="v3-money-card"><p>本月入库</p><h2>{monthIn.length} 件</h2><small>{month}</small></div>
         <div className="v3-money-card"><p>本月销售额</p><h2>{jpy(monthSale)}</h2><small>按销售日期统计</small></div>
         <div className="v3-money-card"><p>本月净利润</p><h2>{jpy(monthProfit)}</h2><small>已扣真实成本</small></div>
-        <div className="v3-money-card highlight"><p>库存预警</p><h2>{over90} 件</h2><small>90天以上库存</small></div>
+        <div className="v3-money-card highlight"><p>库存预警</p><h2>{longTerm} 件</h2><small>90天以上库存</small></div>
       </div>
 
       <div className="v3-layout">
@@ -2283,7 +2297,7 @@ function Dashboard({ totals, items, setTab, exportBackup }) {
             <div><span>待发货确认</span><b>{todoShipping} 件</b></div>
             <div><span>库存超30天</span><b>{over30} 件</b></div>
             <div><span>库存超60天</span><b>{over60} 件</b></div>
-            <div><span>库存超90天</span><b>{over90} 件</b></div>
+            <div><span>库存超90天</span><b>{longTerm} 件</b></div>
           </div>
         </div>
       </div>
@@ -2932,21 +2946,48 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
   const [detailItem, setDetailItem] = useState(null);
   const [page, setPage] = useState(1);
   const pageSize = 50;
-  const totalPages = Math.max(1, Math.ceil((items || []).length / pageSize));
+  const inventoryItems = items || [];
+  const totalPages = Math.max(1, Math.ceil(inventoryItems.length / pageSize));
   const currentPage = Math.min(page, totalPages);
-  const pageItems = (items || []).slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const pageItems = inventoryItems.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   React.useEffect(() => {
     setPage(1);
   }, [query, statusFilter, items.length]);
 
-  const headers = ["图片", "商品编号", "入库日期", "品牌", "商品名", "状态", "平台", "库存成本", "预计售价", "预计利润", "操作"];
-  const csvHeaders = ["商品编号", "入库日期", "品类", "品牌", "商品名", "材质", "颜色", "产地", "数量", "采购币种", "采购金额", "采购汇率", "申报币种", "申报金额", "申报汇率", "采购JPY", "附加成本JPY", "库存成本JPY", "报关批次", "进项消费税估算", "预计销售JPY税込", "销售消费税", "税抜售价", "预计/实际利润", "状态"];
+  function stockDays(item) {
+    if (!item?.purchaseDate) return 0;
+    const d = new Date(item.purchaseDate);
+    if (Number.isNaN(d.getTime())) return 0;
+    return Math.max(0, Math.floor((Date.now() - d.getTime()) / 86400000));
+  }
+
+  function storageLocation(item) {
+    return item.location || item.storageLocation || item.stockLocation || item.warehouse || "—";
+  }
+
+  const inventorySummary = inventoryItems.reduce((a, x) => {
+    const t = calcTax(x);
+    const sold = isSoldStatus(x.status);
+    const sale = Number(x.saleJpy || x.soldPriceJpy || 0);
+    a.count += 1;
+    a.qty += Number(x.qty || 1);
+    a.cost += Number(t.costJpy || 0);
+    a.sale += sale;
+    if (sold || sale > 0) a.profit += Number(t.profitExTax || 0);
+    if (x.status === "待出品" || x.status === "已入库") a.toList += 1;
+    if (x.status === "报关准备" || x.platform === "EMS" || x.customsBatchId) a.toCustoms += 1;
+    if (!sold && stockDays(x) >= 365) a.longTerm += 1;
+    return a;
+  }, { count: 0, qty: 0, cost: 0, sale: 0, profit: 0, toList: 0, toCustoms: 0, longTerm: 0 });
+
+  const headers = ["图片", "商品编号", "入库日", "库龄", "品牌", "商品名", "状态", "库位", "平台", "库存成本", "预计售价", "预计/实际利润", "操作"];
+  const csvHeaders = ["商品编号", "入库日期", "库龄", "库位", "品类", "品牌", "商品名", "材质", "颜色", "产地", "数量", "采购币种", "采购金额", "采购汇率", "申报币种", "申报金额", "申报汇率", "采购JPY", "附加成本JPY", "库存成本JPY", "报关批次", "进项消费税估算", "预计销售JPY税込", "销售消费税", "税抜售价", "预计/实际利润", "状态"];
   const csvRows = [csvHeaders];
 
-  items.forEach((x) => {
+  inventoryItems.forEach((x) => {
     const t = calcTax(x);
-    csvRows.push([x.id, x.purchaseDate, x.category, x.brand, x.item, x.material, x.color, x.origin, x.qty, x.purchaseCurrency || "CNY", x.purchaseCny, x.purchaseRateToJpy || x.rate, x.declaredCurrency || "CNY", x.declaredCny, x.declaredRateToJpy || x.rate, Math.round(t.baseCostJpy), Math.round(t.extraCostJpy), Math.round(t.costJpy), x.customsBatchId || "", Math.round(t.inputTax), x.saleJpy, Math.round(t.outputTax), Math.round(t.saleExTax), Math.round(t.profitExTax), x.status]);
+    csvRows.push([x.id, x.purchaseDate, stockDays(x), storageLocation(x), x.category, x.brand, x.item, x.material, x.color, x.origin, x.qty, x.purchaseCurrency || "CNY", x.purchaseCny, x.purchaseRateToJpy || x.rate, x.declaredCurrency || "CNY", x.declaredCny, x.declaredRateToJpy || x.rate, Math.round(t.baseCostJpy), Math.round(t.extraCostJpy), Math.round(t.costJpy), x.customsBatchId || "", Math.round(t.inputTax), x.saleJpy, Math.round(t.outputTax), Math.round(t.saleExTax), Math.round(t.profitExTax), x.status]);
   });
 
   const rows = pageItems.map((x) => {
@@ -2954,13 +2995,16 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
     const sold = isSoldStatus(x.status);
     const hasExpectedSale = Number(x.saleJpy || x.soldPriceJpy || 0) > 0;
     const profitDisplay = sold || hasExpectedSale ? moneyCell(t.profitExTax) : "未定";
+    const days = stockDays(x);
     return [
       x.images && x.images.length ? <img className="thumb" src={x.images[0]} alt={x.item} style={{ width: 72, height: 72 }} onClick={() => { setPreviewScale(1); setPreviewImage(x.images[0]); }} /> : "—",
       x.id,
       x.purchaseDate,
+      <span className={"inventory-stock-age" + (days >= 365 ? " warn" : "")}>{days ? `${days}日` : "—"}</span>,
       x.brand,
       productNameCell(x.item),
       <StatusBadge status={x.status} />,
+      <span className="inventory-location">{storageLocation(x)}</span>,
       x.platform || "—",
       moneyCell(t.costJpy),
       expectedSaleCell(x.saleJpy),
@@ -2990,7 +3034,17 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
         setStatusFilter={setStatusFilter}
         onDownload={() => downloadCSV(csvRows, "gouka_inventory_tax.csv")}
       />
-      <p className="note">表格已精简为日常操作列。库存管理每页显示50件，共 {items.length} 件；税务、报关、利润率等详细字段请点「详情」查看。</p>
+      <div className="inventory-summary-grid">
+        <div className="inventory-summary-card"><small>当前库存</small><b>{inventorySummary.count} 件</b></div>
+        <div className="inventory-summary-card"><small>库存数量</small><b>{inventorySummary.qty} 点</b></div>
+        <div className="inventory-summary-card"><small>库存总成本</small><b>{jpy(inventorySummary.cost)}</b></div>
+        <div className="inventory-summary-card good"><small>预计/实际利润</small><b>{jpy(inventorySummary.profit)}</b></div>
+        <div className="inventory-summary-card"><small>待出品</small><b>{inventorySummary.toList} 件</b></div>
+        <div className="inventory-summary-card"><small>报关相关</small><b>{inventorySummary.toCustoms} 件</b></div>
+        <div className="inventory-summary-card warn"><small>长期库存（365日以上）</small><b>{inventorySummary.longTerm} 件</b></div>
+        <div className="inventory-summary-card"><small>默认分页</small><b>{pageSize} 件</b></div>
+      </div>
+      <p className="note">库存管理只显示日常查货字段：库龄、库位、成本、预计售价和预计/实际利润。税务、报关、销售明细请点「详情」进入 Product Record。</p>
       <Table headers={headers} rows={rows} />
 
       {detailItem && (
@@ -3003,7 +3057,6 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
     </div>
   );
 }
-
 function Ledger({ items, setItems, isOwner, downloadCSV }) {
   const [ledgerQuery, setLedgerQuery] = useState("");
   const [ledgerDate, setLedgerDate] = useState("");
@@ -3968,7 +4021,7 @@ function buildAiBusinessStats(items, suppliers) {
   }
   const over30 = active.filter((x) => ageDays(x) >= 30);
   const over60 = active.filter((x) => ageDays(x) >= 60);
-  const over90 = active.filter((x) => ageDays(x) >= 90);
+  const longTerm = active.filter((x) => ageDays(x) >= 365);
   const brandMap = items.reduce((a, x) => {
     const k = x.brand || "未填写";
     if (!a[k]) a[k] = { count: 0, cost: 0, sale: 0, profit: 0 };
@@ -3989,7 +4042,7 @@ function buildAiBusinessStats(items, suppliers) {
   return {
     today, month, active, sold, todayIn, todaySold, monthIn, monthSold,
     totalCost, totalSale, totalProfit, todaySale, todayProfit, monthSale, monthProfit,
-    over30, over60, over90,
+    over30, over60, longTerm,
     brandProfit: Object.entries(brandMap).sort((a,b)=>b[1].profit-a[1].profit).slice(0,5),
     supplierProfit: Object.entries(supplierMap).sort((a,b)=>b[1].profit-a[1].profit).slice(0,5),
     todoCustoms: items.filter((x) => x.status === "报关准备"),
@@ -4006,12 +4059,12 @@ function answerAiQuestion(question, items, suppliers, dictionaries) {
   if (q.includes("本月") || q.includes("这个月")) return [`本月经营（${s.month}）：`,`本月入库：${s.monthIn.length} 件`,`本月销售额：${jpy(s.monthSale)}`,`本月净利润参考：${jpy(s.monthProfit)}`,`本月售出：${s.monthSold.length} 件`].join("\n");
   if (q.includes("库存") || q.includes("成本") || q.includes("总成本")) return [`库存概况：`,`当前库存：${s.active.length} 件`,`已售商品：${s.sold.length} 件`,`库存总成本参考：${jpy(s.totalCost)}`,`预计销售总额：${jpy(s.totalSale)}`,`预计净利润参考：${jpy(s.totalProfit)}`].join("\n");
   if (q.includes("90") || q.includes("60") || q.includes("30") || q.includes("压货") || q.includes("超龄")) {
-    const list = s.over90.slice(0, 8).map((x) => `- ${x.id} ${x.brand} ${x.item} / ${x.purchaseDate}`).join("\n");
-    return [`库存预警：`,`超过30天：${s.over30.length} 件`,`超过60天：${s.over60.length} 件`,`超过90天：${s.over90.length} 件`, s.over90.length ? `\n90天以上前几件：\n${list}` : `目前没有90天以上库存。`].join("\n");
+    const list = s.longTerm.slice(0, 8).map((x) => `- ${x.id} ${x.brand} ${x.item} / ${x.purchaseDate}`).join("\n");
+    return [`库存预警：`,`超过30天：${s.over30.length} 件`,`超过60天：${s.over60.length} 件`,`超过90天：${s.longTerm.length} 件`, s.longTerm.length ? `\n90天以上前几件：\n${list}` : `目前没有90天以上库存。`].join("\n");
   }
   if (q.includes("品牌") || q.includes("哪个牌") || q.includes("最赚钱")) return `品牌利润排行：\n${s.brandProfit.map(([b,d],i)=>`${i+1}. ${b}：利润 ${jpy(d.profit)} / ${d.count} 件`).join("\n") || "暂无数据"}`;
   if (q.includes("供应商") || q.includes("来源") || q.includes("哪里进货")) return `供应商利润排行：\n${s.supplierProfit.map(([n,d],i)=>`${i+1}. ${n}：利润 ${jpy(d.profit)} / ${d.count} 件`).join("\n") || "暂无数据"}`;
-  if (q.includes("待办") || q.includes("该做什么") || q.includes("下一步")) return [`今日待办建议：`,`待报关：${s.todoCustoms.length} 件`,`待出品：${s.todoListing.length} 件`,`待发货确认：${s.todoShipping.length} 件`,`库存90天以上：${s.over90.length} 件`, s.todoListing.length ? `建议优先处理：把已入库商品尽快出品。` : `当前出品压力不大。`].join("\n");
+  if (q.includes("待办") || q.includes("该做什么") || q.includes("下一步")) return [`今日待办建议：`,`待报关：${s.todoCustoms.length} 件`,`待出品：${s.todoListing.length} 件`,`待发货确认：${s.todoShipping.length} 件`,`库存90天以上：${s.longTerm.length} 件`, s.todoListing.length ? `建议优先处理：把已入库商品尽快出品。` : `当前出品压力不大。`].join("\n");
   if (q.includes("标题") || q.includes("mercari") || q.includes("yahoo") || q.includes("乐天")) {
     const sample = items[0] || {};
     return [`示例标题：`,`Mercari：${makePlatformTitle(sample, "mercari")}`,`Yahoo：${makePlatformTitle(sample, "yahoo")}`,`乐天：${makePlatformTitle(sample, "rakuten")}`].join("\n");
