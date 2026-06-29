@@ -3275,35 +3275,7 @@ function TaxReport({ items, totals, customsBatches, downloadCSV }) {
       ]} />
     </div>
   );
-}) {
-  const headers = ["图片", "商品编号", "品牌", "商品名", "申报JPY", "进项消费税估算", "销售JPY（税込）", "销售不含税", "销售消费税", "消费税差额参考", "检查提示"];
-  const csvHeaders = headers.filter((h) => h !== "图片");
-  const rows = items.map((x) => {
-    const t = calcTax(x);
-    return [<ProductThumb item={x} />, x.id, x.brand, x.item, Math.round(t.declaredJpy), Math.round(t.inputTax), Math.round(t.saleJpy), Math.round(t.saleExTax), Math.round(t.outputTax), Math.round(t.taxBalance), ""];
-  });
-  const csvRows = items.map((x) => {
-    const t = calcTax(x);
-    return [x.id, x.brand, x.item, Math.round(t.declaredJpy), Math.round(t.inputTax), Math.round(t.saleJpy), Math.round(t.saleExTax), Math.round(t.outputTax), Math.round(t.taxBalance), ""];
-  });
-
-  const csv = [csvHeaders, ...csvRows, [], ["合计", "", "", Math.round(totals.inputTax), Math.round(totals.sale), "", Math.round(totals.outputTax), Math.round(totals.taxBalance)]];
-
-  return (
-    <div className="panel">
-      <Toolbar title="消费税参考表" onDownload={() => downloadCSV(csv, "gouka_consumption_tax_reference.csv")} />
-      <p className="note">课税事业者参考：销售消费税按含税销售额倒算 10/110，进项消费税按申报JPY × 10% 参考。实际申告请交由税理士确认。</p>
-      <Table headers={headers} rows={rows} />
-      <h3>报关批次抵扣</h3>
-      <Table headers={["批次号", "报关日期", "关税合计", "进口消费税合计", "备注"]} rows={(customsBatches || []).map((b) => [b.id, b.importDate || "", Math.round(Number(b.dutyJpy || 0)), Math.round(Number(b.importConsumptionTaxJpy || 0)), b.memo || ""])} />
-      <h3>合计</h3>
-      <p>销售消费税参考：{jpy(totals.outputTax)}</p>
-      <p>进项消费税估算：{jpy(totals.inputTax)}</p>
-      <p>消费税差额参考：{jpy(totals.taxBalance)}</p>
-    </div>
-  );
 }
-
 
 function ListingManagement({ items, updateListingItem, editItem, setPreviewImage, setPreviewScale }) {
   const [query, setQuery] = useState("");
@@ -4087,27 +4059,7 @@ function DeleteLogPanel({ deleteLogs, downloadCSV, restoreDeletedItem }) {
       </div>
     </div>
   );
-}) {
-  const headers = ["删除时间", "商品编号", "品牌", "商品名", "删除前状态", "删除人", "删除原因"];
-  const rows = deleteLogs.map((x) => [
-    formatDateTime(x.date),
-    x.itemId,
-    x.brand,
-    x.item,
-    x.status,
-    x.user,
-    x.reason
-  ]);
-
-  return (
-    <div className="panel">
-      <Toolbar title="删除日志" onDownload={() => downloadCSV([headers, ...rows], "gouka_delete_logs.csv")} />
-      <p className="note">库存删除会写入这里。古物台账仍然不做物理删除，只允许更正和作废。</p>
-      <Table headers={headers} rows={rows} />
-    </div>
-  );
 }
-
 
 function SupplierPanel({ suppliers, setSuppliers, downloadCSV }) {
   const emptySupplier = { id: "", name: "", type: "中国供应商", country: "China", address: "", contact: "", phone: "", email: "", memo: "" };
