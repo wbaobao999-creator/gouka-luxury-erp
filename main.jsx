@@ -1960,8 +1960,6 @@ function App() {
     ["backup", "备份恢复"]
   ];
 
-  return (  ];
-
   return (
     <div className="app">
       <aside>
