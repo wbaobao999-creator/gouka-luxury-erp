@@ -1137,6 +1137,44 @@ function buildSourceTrace(item) {
   };
 }
 
+
+function buildEvidenceCheck(item) {
+  const trace = buildSourceTrace(item);
+  const auction = getAuction(item);
+  const sold = isSoldStatus(item.status);
+  const missing = [];
+
+  if (!item.id) missing.push("商品编号");
+  if (!item.purchaseDate && !auction?.auctionDate) missing.push("采购/落札日");
+  if (!item.brand) missing.push("品牌");
+  if (!item.item) missing.push("商品名");
+  if (!trace.supplier) missing.push("仕入先");
+  if (!trace.address) missing.push("地址");
+  if (!trace.idCheck) missing.push("本人确认");
+
+  if (trace.kind === "中国采购") {
+    if (!item.declaredCny && !item.declaredAmount) missing.push("申报金额");
+    if (!item.customsBatchId && !item.customsBatchText) missing.push("报关批次");
+  }
+
+  if (auction) {
+    if (!auction.auctionCode) missing.push("落札コード");
+    if (!auction.invoiceTotal) missing.push("付款总额");
+    if (!auction.inventoryCost) missing.push("库存成本");
+    if (!auction.taxCredit) missing.push("消费税控除");
+  }
+
+  if (sold) {
+    if (!item.soldDate) missing.push("销售日期");
+    if (!item.soldPlatform && !item.platform) missing.push("销售平台");
+    if (!item.soldPriceJpy && !item.saleJpy) missing.push("成交价");
+  }
+
+  const score = Math.max(0, 100 - missing.length * 10);
+  const status = missing.length === 0 ? "完整" : missing.length <= 2 ? "需补充" : "缺资料";
+  return { status, score, missing, text: missing.length ? missing.join(" / ") : "资料完整" };
+}
+
 function LoginPage({ onLogin }) {
   const [username, setUsername] = useState("gouka");
   const [password, setPassword] = useState("");
@@ -2980,6 +3018,7 @@ function NbaaProductRecordDetail({ item, onClose, exportItemPdf }) {
   const refundJpy = Number(item.refundJpy || item.returnJpy || 0);
   const buyerName = item.buyer || item.buyerName || item.customer || item.customerName || item.soldBuyer || "";
   const trace = buildSourceTrace(item);
+  const evidence = buildEvidenceCheck(item);
   const emsPdfStatus = item.customsBatchId ? "PDF导出中心可生成" : "";
   const timeline = [
     ["采购", !!item.purchaseDate, item.purchaseDate],
@@ -3067,6 +3106,9 @@ function NbaaProductRecordDetail({ item, onClose, exportItemPdf }) {
           <RecordField label="买家" value={trace.buyerName} />
           <RecordField label="最终到账" value={trace.finalReceipt ? jpy(trace.finalReceipt) : ""} />
           <RecordField label="业务链路" value={trace.route} full />
+          <RecordField label="资料状态" value={evidence.status} />
+          <RecordField label="完整度" value={evidence.score + "%"} />
+          <RecordField label="需补充" value={evidence.text} full />
         </RecordCard>
 
         <RecordCard title="② 日本拍卖">
@@ -3167,8 +3209,8 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
     return a;
   }, { count: 0, qty: 0, cost: 0, sale: 0, profit: 0, toList: 0, toCustoms: 0, longTerm: 0 });
 
-  const headers = ["图片", "商品编号", "入库日", "库龄", "品牌", "商品名", "来源", "状态", "库位", "平台", "库存成本", "售价（含税）", "利润", "操作"];
-  const csvHeaders = ["商品编号", "入库日期", "库龄", "库位", "品类", "品牌", "商品名", "材质", "颜色", "产地", "采购类型", "仕入先", "供应商地址", "本人确认", "数量", "采购币种", "采购金额", "采购汇率", "申报币种", "申报金额", "申报汇率", "采购JPY", "附加成本JPY", "库存成本JPY", "报关批次", "进项消费税估算", "预计/成交销售JPY税込", "销售消费税", "税抜售价", "预计/实际利润", "状态"];
+  const headers = ["图片", "商品编号", "入库日", "库龄", "品牌", "商品名", "来源", "资料", "状态", "库位", "平台", "库存成本", "售价（含税）", "利润", "操作"];
+  const csvHeaders = ["商品编号", "入库日期", "库龄", "库位", "品类", "品牌", "商品名", "材质", "颜色", "产地", "采购类型", "仕入先", "供应商地址", "本人确认", "资料状态", "缺失资料", "数量", "采购币种", "采购金额", "采购汇率", "申报币种", "申报金额", "申报汇率", "采购JPY", "附加成本JPY", "库存成本JPY", "报关批次", "进项消费税估算", "预计/成交销售JPY税込", "销售消费税", "税抜售价", "预计/实际利润", "状态"];
   const csvRows = [csvHeaders];
 
   inventoryItems.forEach((x) => {
@@ -3177,7 +3219,8 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
     const displaySale = sales.sold ? sales.saleTaxIncluded : sales.expectedSaleTaxIncluded;
     const displayProfit = sales.sold ? sales.actualProfitJpy : sales.expectedProfitJpy;
     const trace = buildSourceTrace(x);
-    csvRows.push([x.id, x.purchaseDate, stockDays(x), storageLocation(x), x.category, x.brand, x.item, x.material, x.color, x.origin, trace.kind, trace.supplier, trace.address, trace.idCheck, x.qty, x.purchaseCurrency || "CNY", x.purchaseCny, x.purchaseRateToJpy || x.rate, x.declaredCurrency || "CNY", x.declaredCny, x.declaredRateToJpy || x.rate, Math.round(t.baseCostJpy), Math.round(t.extraCostJpy), Math.round(t.costJpy), x.customsBatchId || "", Math.round(t.inputTax), Math.round(displaySale || 0), Math.round(sales.salesOutputTax || 0), Math.round(sales.salesRevenueExTax || 0), Math.round(displayProfit || 0), x.status]);
+    const evidence = buildEvidenceCheck(x);
+    csvRows.push([x.id, x.purchaseDate, stockDays(x), storageLocation(x), x.category, x.brand, x.item, x.material, x.color, x.origin, trace.kind, trace.supplier, trace.address, trace.idCheck, evidence.status, evidence.text, x.qty, x.purchaseCurrency || "CNY", x.purchaseCny, x.purchaseRateToJpy || x.rate, x.declaredCurrency || "CNY", x.declaredCny, x.declaredRateToJpy || x.rate, Math.round(t.baseCostJpy), Math.round(t.extraCostJpy), Math.round(t.costJpy), x.customsBatchId || "", Math.round(t.inputTax), Math.round(displaySale || 0), Math.round(sales.salesOutputTax || 0), Math.round(sales.salesRevenueExTax || 0), Math.round(displayProfit || 0), x.status]);
   });
 
   const rows = pageItems.map((x) => {
@@ -3188,6 +3231,7 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
     const displayProfit = sold ? sales.actualProfitJpy : sales.expectedProfitJpy;
     const profitDisplay = displaySale > 0 ? moneyCell(displayProfit) : "未定";
     const saleDisplay = displaySale > 0 ? expectedSaleCell(displaySale) : "未定";
+    const evidence = buildEvidenceCheck(x);
     const days = stockDays(x);
     return [
       x.images && x.images.length ? <img className="thumb" src={x.images[0]} alt={x.item} style={{ width: 72, height: 72 }} onClick={() => { setPreviewScale(1); setPreviewImage(x.images[0]); }} /> : "—",
@@ -3197,6 +3241,7 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
       x.brand,
       productNameCell(x.item),
       buildSourceTrace(x).supplier || buildSourceTrace(x).kind || "—",
+      <span className={evidence.status === "完整" ? "money-positive" : evidence.status === "需补充" ? "muted-value" : "money-negative"} title={evidence.text}>{evidence.status}</span>,
       <StatusBadge status={x.status} />,
       <span className="inventory-location">{storageLocation(x)}</span>,
       x.platform || "—",
@@ -3981,7 +4026,7 @@ function SalesReport({ items, downloadCSV }) {
   });
 
   const headers = ["图片", "商品编号", "品牌", "商品名", "采购来源", "销售日期", "销售平台", "售价（含税）", "销售收入（未税）", "销项消费税", "平台手续费", "手续费消费税", "退款", "调整金额", "最终到账", "库存成本", "实际利润", "备注"];
-  const csvHeaders = ["商品编号", "品牌", "商品名", "采购类型", "仕入先", "供应商地址", "本人确认", "报关批次", "销售日期", "销售平台", "售价（含税）", "销售收入（未税）", "销项消费税", "平台手续费", "手续费消费税", "退款", "调整金额", "最终到账", "库存成本", "实际利润", "备注"];
+  const csvHeaders = ["商品编号", "品牌", "商品名", "采购类型", "仕入先", "供应商地址", "本人确认", "报关批次", "资料状态", "缺失资料", "销售日期", "销售平台", "售价（含税）", "销售收入（未税）", "销项消费税", "平台手续费", "手续费消费税", "退款", "调整金额", "最终到账", "库存成本", "实际利润", "备注"];
   const rows = filteredSold.map((x) => {
     const sales = calcSalesBreakdown(x);
     const trace = buildSourceTrace(x);
@@ -4009,6 +4054,7 @@ function SalesReport({ items, downloadCSV }) {
   const csvRows = filteredSold.map((x) => {
     const sales = calcSalesBreakdown(x);
     const trace = buildSourceTrace(x);
+    const evidence = buildEvidenceCheck(x);
     return [
       x.id,
       x.brand,
@@ -4018,6 +4064,8 @@ function SalesReport({ items, downloadCSV }) {
       trace.address,
       trace.idCheck,
       trace.customsBatch,
+      evidence.status,
+      evidence.text,
       x.soldDate || "",
       x.soldPlatform || x.platform || "",
       Math.round(sales.saleTaxIncluded),
