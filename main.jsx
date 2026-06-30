@@ -3174,15 +3174,18 @@ function NbaaProductRecordDetail({ item, onClose, exportItemPdf }) {
 function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, downloadCSV, editItem, deleteItem, isOwner, setPreviewImage, setPreviewScale, exportItemPdf }) {
   const [detailItem, setDetailItem] = useState(null);
   const [page, setPage] = useState(1);
+  const [evidenceFilter, setEvidenceFilter] = useState("全部");
   const pageSize = 50;
-  const inventoryItems = items || [];
+  const allInventoryItems = items || [];
+  const evidenceOptions = ["全部", "缺资料", "需补充", "完整"];
+  const inventoryItems = allInventoryItems.filter((x) => evidenceFilter === "全部" || buildEvidenceCheck(x).status === evidenceFilter);
   const totalPages = Math.max(1, Math.ceil(inventoryItems.length / pageSize));
   const currentPage = Math.min(page, totalPages);
   const pageItems = inventoryItems.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   React.useEffect(() => {
     setPage(1);
-  }, [query, statusFilter, items.length]);
+  }, [query, statusFilter, evidenceFilter, items.length]);
 
   function stockDays(item) {
     if (!item?.purchaseDate) return 0;
@@ -3203,11 +3206,15 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
     a.sale += Number(sales.sold ? sales.saleTaxIncluded : sales.expectedSaleTaxIncluded || 0);
     if (sales.sold) a.profit += Number(sales.actualProfitJpy || 0);
     else if (sales.expectedSaleTaxIncluded > 0) a.profit += Number(sales.expectedProfitJpy || 0);
+    const evidence = buildEvidenceCheck(x);
+    if (evidence.status === "缺资料") a.evidenceMissing += 1;
+    if (evidence.status === "需补充") a.evidencePartial += 1;
+    if (evidence.status === "完整") a.evidenceComplete += 1;
     if (x.status === "待出品" || x.status === "已入库") a.toList += 1;
     if (x.status === "报关准备" || x.platform === "EMS" || x.customsBatchId) a.toCustoms += 1;
     if (!sales.sold && stockDays(x) >= 365) a.longTerm += 1;
     return a;
-  }, { count: 0, qty: 0, cost: 0, sale: 0, profit: 0, toList: 0, toCustoms: 0, longTerm: 0 });
+  }, { count: 0, qty: 0, cost: 0, sale: 0, profit: 0, toList: 0, toCustoms: 0, longTerm: 0, evidenceMissing: 0, evidencePartial: 0, evidenceComplete: 0 });
 
   const headers = ["图片", "商品编号", "入库日", "库龄", "品牌", "商品名", "来源", "资料", "状态", "库位", "平台", "库存成本", "售价（含税）", "利润", "操作"];
   const csvHeaders = ["商品编号", "入库日期", "库龄", "库位", "品类", "品牌", "商品名", "材质", "颜色", "产地", "采购类型", "仕入先", "供应商地址", "本人确认", "资料状态", "缺失资料", "数量", "采购币种", "采购金额", "采购汇率", "申报币种", "申报金额", "申报汇率", "采购JPY", "附加成本JPY", "库存成本JPY", "报关批次", "进项消费税估算", "预计/成交销售JPY税込", "销售消费税", "税抜售价", "预计/实际利润", "状态"];
@@ -3271,8 +3278,20 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
         setQuery={setQuery}
         statusFilter={statusFilter}
         setStatusFilter={setStatusFilter}
-        onDownload={() => downloadCSV(csvRows, "gouka_inventory_tax.csv")}
+        onDownload={() => downloadCSV(csvRows, "gouka_inventory_evidence.csv")}
       />
+      <div className="filter-row" style={{ marginBottom: "14px" }}>
+        <label>
+          资料状态
+          <select value={evidenceFilter} onChange={(e) => setEvidenceFilter(e.target.value)}>
+            {evidenceOptions.map((x) => <option key={x} value={x}>{x}</option>)}
+          </select>
+        </label>
+        <button className="ghost" onClick={() => setEvidenceFilter("缺资料")}>只看缺资料</button>
+        <button className="ghost" onClick={() => setEvidenceFilter("需补充")}>只看需补充</button>
+        <button className="ghost" onClick={() => setEvidenceFilter("全部")}>显示全部</button>
+        <span className="note">当前显示 {inventoryItems.length} 件 / 全部 {allInventoryItems.length} 件</span>
+      </div>
       <div className="inventory-summary-grid">
         <div className="inventory-summary-card"><small>当前库存</small><b>{inventorySummary.count} 件</b></div>
         <div className="inventory-summary-card"><small>库存数量</small><b>{inventorySummary.qty} 点</b></div>
@@ -3280,10 +3299,12 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
         <div className="inventory-summary-card good"><small>预计/实际利润合计</small><b>{jpy(inventorySummary.profit)}</b></div>
         <div className="inventory-summary-card"><small>待出品</small><b>{inventorySummary.toList} 件</b></div>
         <div className="inventory-summary-card"><small>报关相关</small><b>{inventorySummary.toCustoms} 件</b></div>
+        <div className="inventory-summary-card warn"><small>缺资料</small><b>{inventorySummary.evidenceMissing} 件</b></div>
+        <div className="inventory-summary-card"><small>需补充</small><b>{inventorySummary.evidencePartial} 件</b></div>
+        <div className="inventory-summary-card good"><small>资料完整</small><b>{inventorySummary.evidenceComplete} 件</b></div>
         <div className="inventory-summary-card warn"><small>长期库存（365日以上）</small><b>{inventorySummary.longTerm} 件</b></div>
-        <div className="inventory-summary-card"><small>默认分页</small><b>{pageSize} 件</b></div>
       </div>
-      <p className="note">库存管理只显示日常查货字段：库龄、库位、库存成本、售价和利润。未售商品显示预计利润，已售商品显示实际利润；税务、报关、销售明细请点「详情」进入 Product Record。</p>
+      <p className="note">库存管理只显示日常查货字段：库龄、库位、来源、资料状态、库存成本、售价和利润。可按资料状态筛出缺资料商品；税务、报关、销售明细请点「详情」进入 Product Record。</p>
       <Table headers={headers} rows={rows} />
 
       {detailItem && (
