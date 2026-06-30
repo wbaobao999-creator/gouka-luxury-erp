@@ -2099,7 +2099,7 @@ function App() {
             exportItemPdf={exportItemPdf}
           />
         )}
-        {tab === "ledger" && <Ledger items={filtered} setItems={setItems} isOwner={isOwner} downloadCSV={downloadCSV} />}
+        {tab === "ledger" && <Ledger items={filtered} setItems={setItems} isOwner={isOwner} downloadCSV={downloadCSV} exportItemPdf={exportItemPdf} />}
         {tab === "customsBatch" && <CustomsBatchPanel batches={customsBatches} setBatches={setCustomsBatches} items={computedItems} downloadCSV={downloadCSV} />}
         {tab === "customs" && <Customs items={filtered} customsBatches={customsBatches} downloadCSV={downloadCSV} />}
         {tab === "profit" && <Profit items={filtered} />}
@@ -3185,10 +3185,30 @@ function JapaneseAuctionPanel({ items, downloadCSV, setPreviewImage, setPreviewS
     </div>
   );
 }
-function Ledger({ items, setItems, isOwner, downloadCSV }) {
+function Ledger({ items, setItems, isOwner, downloadCSV, exportItemPdf }) {
   const [ledgerQuery, setLedgerQuery] = useState("");
   const [ledgerDate, setLedgerDate] = useState("");
   const [ledgerDetailItem, setLedgerDetailItem] = useState(null);
+
+  function ledgerAuction(item) {
+    return normalizeAuction(item?.auction);
+  }
+
+  function ledgerAddress(item) {
+    return item.supplierAddress || item.address || item.supplier_address || "";
+  }
+
+  function ledgerIdCheck(item) {
+    return item.idCheck || item.id_check || "Supplier invoice";
+  }
+
+  function ledgerStatusLabel(item) {
+    return item.ledgerStatus || "有效";
+  }
+
+  function latestHistoryText(item) {
+    return (item.ledgerHistory || []).slice(-3).map((h) => `${(h.date || "").slice(0,10)} ${h.action}`).join(" / ");
+  }
 
   function voidLedger(id) {
     if (!isOwner) return alert("员工账号不能作废台账");
@@ -3225,206 +3245,108 @@ function Ledger({ items, setItems, isOwner, downloadCSV }) {
 
   function showLedgerHistory(item) {
     const history = (item.ledgerHistory || []).map((h, i) => `${i + 1}. ${(h.date || "").slice(0, 19)} / ${h.user || "system"} / ${h.action || ""}`).join("\n");
-    alert(`商品编号：${item.id}\n台账状态：${item.ledgerStatus || "有效"}\n作废原因：${item.ledgerVoidReason || "无"}\n\n更正履历：\n${history || "暂无履历"}`);
+    alert(`商品编号：${item.id}\n台账状态：${ledgerStatusLabel(item)}\n作废原因：${item.ledgerVoidReason || "无"}\n\n更正履历：\n${history || "暂无履历"}`);
   }
 
   const filteredItems = items.filter((x) => {
     const q = ledgerQuery.toLowerCase();
+    const auction = ledgerAuction(x);
     const text = [
-      x.id,
-      x.purchaseDate,
-      x.category,
-      x.brand,
-      x.item,
-      x.material,
-      x.color,
-      x.origin,
-      x.source,
-      x.address,
-      x.idCheck,
-      x.memo
+      x.id, x.purchaseDate, x.category, x.brand, x.item, x.material, x.color, x.origin,
+      x.source, ledgerAddress(x), ledgerIdCheck(x), auction?.auctionCode, auction?.boxNo, auction?.branchNo
     ].join(" ").toLowerCase();
-
     const matchText = !q || text.includes(q);
     const matchDate = !ledgerDate || x.purchaseDate === ledgerDate;
-
     return matchText && matchDate;
   });
 
   const headers = [
-    "图片",
-    "商品编号",
-    "取引日",
-    "No",
-    "区分",
-    "品牌",
-    "商品名",
-    "特徴",
-    "数量",
-    "取引区分",
-    "实际支付金额",
-    "币种",
-    "库存成本",
-    "可抵扣消费税",
-    "相手方",
-    "住所",
-    "本人确认",
-    "卖却先",
-    "备注",
-    "台账状态",
-    "更正履历",
-    "操作"
+    "图片", "商品编号", "取引日", "No", "区分", "品牌", "商品名", "特徴", "数量", "取引区分",
+    "实际支付金额", "币种", "库存成本", "可抵扣消费税", "相手方", "住所", "本人确认", "卖却先", "备注", "台账状态", "更正履历", "操作"
   ];
+  const csvHeaders = headers.filter((h) => h !== "图片" && h !== "操作");
+  const csvRows = [csvHeaders];
 
   const rows = filteredItems.map((x, i) => {
-    const auction = getAuction(x);
+    const auction = ledgerAuction(x);
     const tax = calcTax(x);
+    const feature = [x.material, x.color, x.origin].filter(Boolean).join(" / ");
+    const actualPayment = auction ? jpy(auction.invoiceTotal) : `${x.purchaseCny || x.purchaseAmount || 0} ${x.purchaseCurrency || "CNY"}`;
+    const currency = auction ? "JPY" : (x.purchaseCurrency || "CNY");
+    const inventoryCost = auction ? jpy(auction.inventoryCost) : jpy(tax.costJpy);
+    const taxCredit = auction ? jpy(auction.taxCredit) : jpy(tax.inputTax);
+    const rowValues = [
+      x.id, x.purchaseDate, i + 1, x.category || "", x.brand || "", x.item || "", feature, x.qty || 1, "仕入",
+      actualPayment, currency, inventoryCost, taxCredit, x.source || "", ledgerAddress(x), ledgerIdCheck(x), "",
+      displayMemo(x), ledgerStatusLabel(x), latestHistoryText(x)
+    ];
+    csvRows.push(rowValues);
     return [
-    x.images && x.images.length ? <img className="thumb" src={x.images[0]} alt={x.item} style={{ width: 72, height: 72 }} /> : "—",
-    x.id,
-    x.purchaseDate,
-    i + 1,
-    x.category,
-    x.brand,
-    x.item,
-    `${x.material} / ${x.color} / ${x.origin}`,
-    x.qty,
-    "仕入",
-    auction ? jpy(auction.invoiceTotal) : `${x.purchaseCny || 0} ${x.purchaseCurrency || "CNY"}`,
-    auction ? "JPY" : (x.purchaseCurrency || "CNY"),
-    auction ? jpy(auction.inventoryCost) : jpy(tax.costJpy),
-    auction ? jpy(auction.taxCredit) : jpy(tax.inputTax),
-    x.source,
-    x.address,
-    x.idCheck,
-    "",
-    displayMemo(x),
-    x.ledgerStatus || "有效",
-    (x.ledgerHistory || []).slice(-3).map((h) => `${(h.date || "").slice(0,10)} ${h.action}`).join(" / "),
-    <div className="table-actions">
-      {getAuction(x) && <button className="ghost" onClick={() => setLedgerDetailItem(x)}>拍卖详情</button>}
-      <button className="ghost" onClick={() => showLedgerHistory(x)}>履历</button>
-      {isOwner && <button className="edit" onClick={() => correctLedger(x.id)}>更正</button>}
-      {(x.ledgerStatus || "有效") === "作废" ? (
-        isOwner ? <button className="edit" onClick={() => restoreLedger(x.id)}>恢复</button> : "作废"
-      ) : (
-        isOwner ? <button className="danger" onClick={() => voidLedger(x.id)}>作废</button> : "锁定"
-      )}
-    </div>
-  ];
+      <ProductThumb item={x} />,
+      x.id,
+      x.purchaseDate,
+      i + 1,
+      x.category,
+      x.brand,
+      productNameCell(x.item),
+      feature || "—",
+      x.qty || 1,
+      "仕入",
+      actualPayment,
+      currency,
+      inventoryCost,
+      taxCredit,
+      x.source || "—",
+      ledgerAddress(x) || "—",
+      ledgerIdCheck(x) || "—",
+      "—",
+      displayMemo(x) || "—",
+      ledgerStatusLabel(x),
+      latestHistoryText(x) || "—",
+      <div className="table-actions">
+        <button className="ghost" onClick={() => setLedgerDetailItem(x)}>{auction ? "拍卖详情" : "商品档案"}</button>
+        <button className="ghost" onClick={() => showLedgerHistory(x)}>履历</button>
+        {isOwner && <button className="edit" onClick={() => correctLedger(x.id)}>更正</button>}
+        {ledgerStatusLabel(x) === "作废" ? (
+          isOwner ? <button className="edit" onClick={() => restoreLedger(x.id)}>恢复</button> : "作废"
+        ) : (
+          isOwner ? <button className="danger" onClick={() => voidLedger(x.id)}>作废</button> : "锁定"
+        )}
+      </div>
+    ];
   });
 
   return (
     <div className="panel">
       <div className="toolbar">
         <h2>古物台账</h2>
-
         <div className="toolbar-right">
           <div className="search">
             <Search size={16} />
-            <input
-              placeholder="搜索编号 / 品牌 / 商品 / 供应商"
-              value={ledgerQuery}
-              onChange={(e) => setLedgerQuery(e.target.value)}
-            />
+            <input placeholder="搜索编号 / 品牌 / 商品 / 供应商 / 落札コード" value={ledgerQuery} onChange={(e) => setLedgerQuery(e.target.value)} />
           </div>
-
-          <input
-            type="date"
-            value={ledgerDate}
-            onChange={(e) => setLedgerDate(e.target.value)}
-          />
-
-          <button onClick={() => {
-            setLedgerQuery("");
-            setLedgerDate("");
-          }}>
-            清除筛选
-          </button>
-
-          <button onClick={() => downloadCSV([headers, ...rows], "gouka_kobutsu_ledger.csv")}>
+          <input type="date" value={ledgerDate} onChange={(e) => setLedgerDate(e.target.value)} />
+          <button onClick={() => { setLedgerQuery(""); setLedgerDate(""); }}>清除筛选</button>
+          <button onClick={() => downloadCSV(csvRows, "gouka_kobutsu_ledger.csv")}>
             <Download size={16} /> CSV导出
           </button>
         </div>
       </div>
-
       <p className="note">
-        当前显示 {filteredItems.length} 件 / 全部 {items.length} 件。古物台账不支持物理删除，只能作废或更正。
+        当前显示 {filteredItems.length} 件 / 全部 {items.length} 件。古物台账不支持物理删除，只能作废或更正；日本拍卖商品点击「拍卖详情」进入 Product Record。
       </p>
-
       <Table headers={headers} rows={rows} />
 
       {ledgerDetailItem && (
         <div className="image-modal" onClick={() => setLedgerDetailItem(null)}>
-          <div className="panel" style={{ width: "860px", maxWidth: "92vw", maxHeight: "88vh", overflow: "auto" }} onClick={(e) => e.stopPropagation()}>
-            <div className="toolbar">
-              <h2>古物台账详情</h2>
-              <button onClick={() => setLedgerDetailItem(null)}>关闭</button>
-            </div>
-
-            <div className="image-row" style={{ marginBottom: 16 }}>
-              {(ledgerDetailItem.images || []).length ? (ledgerDetailItem.images || []).map((src, i) => (
-                <img key={i} className="thumb" style={{ width: 120, height: 120 }} src={src} alt="ledger-detail" />
-              )) : <div className="no-image">No Image</div>}
-            </div>
-
-            <div className="grid4" style={{ marginBottom: 16 }}>
-              <Card icon={<Package />} title="商品编号" value={ledgerDetailItem.id} />
-              <Card icon={<FileText />} title="取引日" value={ledgerDetailItem.purchaseDate || "—"} />
-              <Card icon={<Package />} title="品牌" value={ledgerDetailItem.brand || "—"} />
-              <Card icon={<Package />} title="商品名" value={ledgerDetailItem.item || "—"} />
-            </div>
-
-            <div className="panel" style={{ background: "#f8fafc", marginTop: 12 }}>
-              <h3 style={{ marginTop: 0 }}>基本资料</h3>
-              <div className="grid4">
-                <Card icon={<FileText />} title="区分" value={ledgerDetailItem.category || "—"} />
-                <Card icon={<FileText />} title="特徴" value={`${ledgerDetailItem.material || "—"} / ${ledgerDetailItem.color || "—"} / ${ledgerDetailItem.origin || "—"}`} />
-                <Card icon={<Calculator />} title="数量" value={`${ledgerDetailItem.qty || 1}`} />
-                <Card icon={<Building2 />} title="相手方" value={ledgerDetailItem.source || "—"} />
-              </div>
-              <p><b>住所：</b>{ledgerDetailItem.address || "—"}</p>
-              <p><b>本人確認：</b>{ledgerDetailItem.idCheck || "—"}</p>
-              <p><b>备注：</b>{stripAuctionBlocks(ledgerDetailItem.memo || "") || "—"}</p>
-            </div>
-
-            {getAuction(ledgerDetailItem) ? (() => {
-              const a = getAuction(ledgerDetailItem);
-              return (
-                <div className="panel" style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", marginTop: 12 }}>
-                  <h3 style={{ marginTop: 0 }}>🏛 日本拍卖结算详情</h3>
-                  <div className="grid4">
-                    <Card icon={<Building2 />} title="拍卖平台" value={a.platform || "日本拍卖"} />
-                    <Card icon={<FileText />} title="落札コード" value={a.auctionCode || "—"} />
-                    <Card icon={<FileText />} title="落札日" value={a.auctionDate || ledgerDetailItem.purchaseDate || "—"} />
-                    <Card icon={<FileText />} title="箱番 / 枝番" value={`${a.boxNo || "—"} / ${a.branchNo || "—"}`} />
-                    <Card icon={<Package />} title="拍卖商品名" value={a.itemNameJp || ledgerDetailItem.item || "—"} />
-                    <Card icon={<Calculator />} title="落札金額" value={jpy(a.hammerPrice)} />
-                    <Card icon={<Calculator />} title="落札消費税" value={jpy(a.hammerTax)} />
-                    <Card icon={<Calculator />} title="落札手数料" value={jpy(a.buyerFee)} />
-                    <Card icon={<Calculator />} title="手数料消費税" value={jpy(a.buyerFeeTax)} />
-                    <Card icon={<Calculator />} title="国内送料" value={jpy(a.domesticShipping)} />
-                    <Card icon={<Calculator />} title="請求合計" value={jpy(a.invoiceTotal)} />
-                    <Card icon={<Calculator />} title="库存成本（不含消费税）" value={jpy(a.inventoryCost)} />
-                    <Card icon={<Calculator />} title="可抵扣消费税" value={jpy(a.taxCredit)} />
-                  </div>
-                  <p className="note">成本规则：库存成本（不含消费税） = 落札金額 + 落札手数料 + 国内送料。可抵扣消费税 = 落札消費税 + 手数料消費税。</p>
-                </div>
-              );
-            })() : (
-              <div className="panel" style={{ background: "#fff7ed", marginTop: 12 }}>
-                <h3 style={{ marginTop: 0 }}>日本拍卖结算详情</h3>
-                <p className="note">这件商品没有结构化日本拍卖数据。普通采购商品不需要显示拍卖结算。</p>
-              </div>
-            )}
+          <div className="panel" style={{ width: "1180px", maxWidth: "94vw", maxHeight: "88vh", overflow: "auto" }} onClick={(e) => e.stopPropagation()}>
+            <NbaaProductRecordDetail item={ledgerDetailItem} onClose={() => setLedgerDetailItem(null)} exportItemPdf={exportItemPdf} />
           </div>
         </div>
       )}
     </div>
   );
 }
-
-
 
 function CustomsBatchPanel({ batches, setBatches, items, downloadCSV }) {
   const emptyBatch = { id: "", name: "", importDate: localDateString(), declaredTotalJpy: "", dutyJpy: "", importConsumptionTaxJpy: "", shippingJpy: "", customsFeeJpy: "", otherCostJpy: "", memo: "" };
