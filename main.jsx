@@ -3092,6 +3092,7 @@ function NbaaProductRecordDetail({ item, onClose, exportItemPdf }) {
   const images = Array.isArray(item.images) ? item.images.filter(Boolean) : [];
   const mainImage = images[0] || "";
   const sales = calcSalesBreakdown(item);
+  const sellerSettlement = getNbaaSellerSettlement(item);
   const saleJpy = Number(sales.saleTaxIncluded || 0);
   const expectedSaleJpy = Number(sales.expectedSaleTaxIncluded || 0);
   const expectedProfit = Number(sales.expectedProfitJpy || 0);
