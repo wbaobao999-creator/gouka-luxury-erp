@@ -3500,71 +3500,69 @@ function Profit({ items }) {
 }
 
 function TaxReport({ items, totals, customsBatches, downloadCSV }) {
-  const soldItems = items.filter((x) => isSoldStatus(x.status));
-  const auctionItems = items.filter((x) => !!getAuction(x));
+  const soldItems = items.filter((x) => isSoldStatus(x.status) && Number(x.soldPriceJpy || x.saleJpy || 0) > 0);
+  const auctionItems = items.map((x) => ({ item: x, auction: normalizeAuction(x?.auction) })).filter((x) => x.auction);
 
-  const auctionRows = auctionItems.map((x) => {
-    const auction = getAuction(x) || {};
+  const auctionRows = auctionItems.map(({ item, auction }) => {
     const hammerTax = Number(auction.hammerTax || 0);
     const buyerFeeTax = Number(auction.buyerFeeTax || 0);
     const taxCredit = Number(auction.taxCredit || hammerTax + buyerFeeTax || 0);
     return [
-      x.id,
-      x.brand,
-      x.item,
-      auction.auctionHouse || x.source || "",
+      item.id,
+      item.brand || "",
+      productNameCell(item.item),
+      auction.platform || auction.auctionHouse || item.source || "",
       auction.auctionCode || "",
-      Math.round(hammerTax),
-      Math.round(buyerFeeTax),
-      Math.round(taxCredit)
+      jpy(hammerTax),
+      jpy(buyerFeeTax),
+      jpy(taxCredit)
     ];
   });
 
-  const importRows = (customsBatches || []).map((b) => [
-    b.id,
-    b.importDate,
-    Math.round(Number(b.dutyJpy || 0)),
-    Math.round(Number(b.importConsumptionTaxJpy || 0)),
-    b.memo || ""
-  ]);
+  const importRows = (customsBatches || []).map((b) => {
+    const duty = Number(b.dutyJpy || 0);
+    const importTax = Number(b.importConsumptionTaxJpy || 0);
+    return [b.id, b.importDate || "", jpy(duty), jpy(importTax), b.memo || ""];
+  });
 
   const salesRows = soldItems.map((x) => {
     const saleJpy = Number(x.soldPriceJpy || x.saleJpy || 0);
     const outputTax = saleJpy * TAX_RATE / (1 + TAX_RATE);
     return [
       x.id,
-      x.brand,
-      x.item,
+      x.brand || "",
+      productNameCell(x.item),
       x.soldDate || "",
       x.soldPlatform || x.platform || "",
-      Math.round(saleJpy),
-      Math.round(saleJpy - outputTax),
-      Math.round(outputTax)
+      jpy(saleJpy),
+      jpy(saleJpy - outputTax),
+      jpy(outputTax)
     ];
   });
 
-  const auctionInputTax = auctionItems.reduce((sum, x) => {
-    const auction = getAuction(x) || {};
-    return sum + Number(auction.taxCredit || Number(auction.hammerTax || 0) + Number(auction.buyerFeeTax || 0));
-  }, 0);
+  const auctionHammerTax = auctionItems.reduce((sum, x) => sum + Number(x.auction.hammerTax || 0), 0);
+  const auctionFeeTax = auctionItems.reduce((sum, x) => sum + Number(x.auction.buyerFeeTax || 0), 0);
+  const auctionInputTax = auctionItems.reduce((sum, x) => sum + Number(x.auction.taxCredit || Number(x.auction.hammerTax || 0) + Number(x.auction.buyerFeeTax || 0)), 0);
   const importConsumptionTax = (customsBatches || []).reduce((sum, b) => sum + Number(b.importConsumptionTaxJpy || 0), 0);
   const salesOutputTax = soldItems.reduce((sum, x) => sum + Number(x.soldPriceJpy || x.saleJpy || 0) * TAX_RATE / (1 + TAX_RATE), 0);
-  const taxDifference = salesOutputTax - auctionInputTax - importConsumptionTax;
+  const inputTaxTotal = auctionInputTax + importConsumptionTax;
+  const taxDifference = salesOutputTax - inputTaxTotal;
 
   const csv = [
-    ["区分", "商品编号/批次", "品牌", "商品名", "项目1", "项目2", "项目3", "税额JPY"],
-    ...auctionItems.map((x) => {
-      const a = getAuction(x) || {};
-      const taxCredit = Number(a.taxCredit || Number(a.hammerTax || 0) + Number(a.buyerFeeTax || 0));
-      return ["日本拍卖进项税", x.id, x.brand, x.item, a.auctionHouse || "", a.auctionCode || "", "taxCredit", Math.round(taxCredit)];
+    ["区分", "商品编号/批次", "品牌", "商品名", "日期", "平台/拍卖会", "落札消费税", "手续费消费税", "进口消费税", "销售JPY税込", "税抜销售", "销售消费税", "税额JPY"],
+    ...auctionItems.map(({ item, auction }) => {
+      const hammerTax = Number(auction.hammerTax || 0);
+      const buyerFeeTax = Number(auction.buyerFeeTax || 0);
+      const taxCredit = Number(auction.taxCredit || hammerTax + buyerFeeTax || 0);
+      return ["日本拍卖进项税", item.id, item.brand || "", item.item || "", auction.auctionDate || item.purchaseDate || "", auction.platform || auction.auctionHouse || "", Math.round(hammerTax), Math.round(buyerFeeTax), "", "", "", "", Math.round(taxCredit)];
     }),
-    ...(customsBatches || []).map((b) => ["进口消费税", b.id, "", "", b.importDate || "", "", "importConsumptionTaxJpy", Math.round(Number(b.importConsumptionTaxJpy || 0))]),
+    ...(customsBatches || []).map((b) => ["进口消费税", b.id, "", "", b.importDate || "", "EMS/报关批次", "", "", Math.round(Number(b.importConsumptionTaxJpy || 0)), "", "", "", Math.round(Number(b.importConsumptionTaxJpy || 0))]),
     ...soldItems.map((x) => {
       const saleJpy = Number(x.soldPriceJpy || x.saleJpy || 0);
       const outputTax = saleJpy * TAX_RATE / (1 + TAX_RATE);
-      return ["销售消费税", x.id, x.brand, x.item, x.soldDate || "", x.soldPlatform || x.platform || "", "outputTax", Math.round(outputTax)];
+      return ["销售消费税", x.id, x.brand || "", x.item || "", x.soldDate || "", x.soldPlatform || x.platform || "", "", "", "", Math.round(saleJpy), Math.round(saleJpy - outputTax), Math.round(outputTax), Math.round(outputTax)];
     }),
-    ["消费税差额", "", "", "", "销项税 - 拍卖进项税 - 进口消费税", "", "", Math.round(taxDifference)]
+    ["消费税差额参考", "", "", "", "", "销项税 - 进项税", "", "", Math.round(importConsumptionTax), "", "", Math.round(salesOutputTax), Math.round(taxDifference)]
   ];
 
   return (
@@ -3576,24 +3574,30 @@ function TaxReport({ items, totals, customsBatches, downloadCSV }) {
         <Card icon={<Calculator />} title="日本拍卖进项税" value={jpy(auctionInputTax)} />
         <Card icon={<Calculator />} title="进口消费税" value={jpy(importConsumptionTax)} />
         <Card icon={<Calculator />} title="销售消费税" value={jpy(salesOutputTax)} />
-        <Card icon={<Calculator />} title="消费税差额" value={jpy(taxDifference)} />
+        <Card icon={<Calculator />} title="消费税差额参考" value={jpy(taxDifference)} />
       </div>
 
       <h3>1. 日本拍卖进项税</h3>
+      <p className="note">落札消费税 + 手续费消费税 = 可抵扣消费税。此处只读取 product.auction。</p>
       <Table headers={["商品编号", "品牌", "商品名", "拍卖会", "落札コード", "落札消费税", "手续费消费税", "可抵扣消费税"]} rows={auctionRows} />
 
       <h3>2. 进口消费税</h3>
+      <p className="note">EMS / 报关批次的进口消费税参考，不进入单件库存成本。</p>
       <Table headers={["批次号", "报关日期", "关税合计", "进口消费税合计", "备注"]} rows={importRows} />
 
       <h3>3. 销售消费税</h3>
+      <p className="note">销售消费税按含税销售额倒算：销售税込 × 10 / 110。</p>
       <Table headers={["商品编号", "品牌", "商品名", "销售日期", "销售平台", "销售JPY（税込）", "税抜销售", "销售消费税"]} rows={salesRows} />
 
       <h3>4. 消费税差额参考</h3>
       <Table headers={["项目", "金额"]} rows={[
-        ["销售消费税", jpy(salesOutputTax)],
+        ["销售消费税（销项税）", jpy(salesOutputTax)],
         ["日本拍卖进项税", jpy(auctionInputTax)],
+        ["  - 落札消费税", jpy(auctionHammerTax)],
+        ["  - 手续费消费税", jpy(auctionFeeTax)],
         ["进口消费税", jpy(importConsumptionTax)],
-        ["差额参考", jpy(taxDifference)]
+        ["进项税合计", jpy(inputTaxTotal)],
+        ["差额参考（销项税 - 进项税）", jpy(taxDifference)]
       ]} />
     </div>
   );
