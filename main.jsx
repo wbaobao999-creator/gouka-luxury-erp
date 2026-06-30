@@ -1175,6 +1175,42 @@ function buildEvidenceCheck(item) {
   return { status, score, missing, text: missing.length ? missing.join(" / ") : "资料完整" };
 }
 
+
+function buildTaxAuditRows(items) {
+  const headers = [
+    "商品编号", "资料状态", "缺失资料", "采购类型", "仕入先", "供应商地址", "本人确认",
+    "采购日", "品类", "品牌", "商品名", "材质", "颜色", "产地", "数量",
+    "采购币种", "采购金额", "采购汇率", "采购JPY", "申报币种", "申报金额", "申报汇率", "申报JPY",
+    "报关批次", "国际运费JPY", "关税JPY", "报关代行费JPY", "进口消费税JPY",
+    "拍卖会", "落札コード", "拍卖日", "Invoice", "Lot", "箱番", "枝番",
+    "落札金额JPY", "落札消费税JPY", "手续费JPY", "手续费消费税JPY", "国内运费JPY", "付款总额JPY", "库存成本JPY", "消费税控除JPY",
+    "状态", "库存成本JPY", "预计售价税込JPY", "销售日期", "销售平台", "售价税込JPY", "销售收入税抜JPY", "销项消费税JPY",
+    "平台手续费JPY", "手续费消费税JPY", "退款JPY", "调整金额JPY", "最终到账JPY", "实际利润JPY", "利润率", "应缴消费税参考JPY", "备注"
+  ];
+  const rows = (items || []).map((item) => {
+    const trace = buildSourceTrace(item);
+    const evidence = buildEvidenceCheck(item);
+    const sales = calcSalesBreakdown(item);
+    const tax = calcTax(item);
+    const auction = getAuction(item) || {};
+    const declaredJpy = Number(tax.declaredJpy || 0);
+    const importConsumptionTax = Number(item.importConsumptionTaxJpy || item.customsConsumptionTaxJpy || 0);
+    const marginText = sales.salesRevenueExTax > 0 ? sales.margin.toFixed(1) + "%" : "";
+    return [
+      item.id || "", evidence.status, evidence.text, trace.kind, trace.supplier, trace.address, trace.idCheck,
+      item.purchaseDate || auction.auctionDate || "", item.category || "", item.brand || "", item.item || "", item.material || "", item.color || "", item.origin || "", item.qty || 1,
+      item.purchaseCurrency || "CNY", Number(item.purchaseCny || item.purchaseAmount || 0), Number(item.purchaseRateToJpy || item.rate || defaultRateFor(item.purchaseCurrency || "CNY")), Math.round(tax.baseCostJpy || 0),
+      item.declaredCurrency || item.purchaseCurrency || "CNY", Number(item.declaredCny || item.declaredAmount || 0), Number(item.declaredRateToJpy || item.rate || defaultRateFor(item.declaredCurrency || item.purchaseCurrency || "CNY")), Math.round(declaredJpy),
+      item.customsBatchId || item.customsBatchText || "", Math.round(Number(item.shippingJpy || 0)), Math.round(Number(item.dutyJpy || 0)), Math.round(Number(item.customsFeeJpy || 0)), Math.round(importConsumptionTax),
+      auction.platform || auction.auctionHouse || "", auction.auctionCode || "", auction.auctionDate || "", auction.invoiceNo || auction.invoice || "", auction.lotNo || "", auction.boxNo || "", auction.branchNo || "",
+      Math.round(Number(auction.hammerPrice || 0)), Math.round(Number(auction.hammerTax || 0)), Math.round(Number(auction.buyerFee || 0)), Math.round(Number(auction.buyerFeeTax || 0)), Math.round(Number(auction.domesticShipping || 0)), Math.round(Number(auction.invoiceTotal || 0)), Math.round(Number(auction.inventoryCost || 0)), Math.round(Number(auction.taxCredit || 0)),
+      item.status || "", Math.round(sales.inventoryCostJpy || 0), Math.round(sales.expectedSaleTaxIncluded || 0), item.soldDate || "", item.soldPlatform || item.platform || "", Math.round(sales.saleTaxIncluded || 0), Math.round(sales.salesRevenueExTax || 0), Math.round(sales.salesOutputTax || 0),
+      Math.round(sales.platformFeeTaxIncluded || 0), Math.round(sales.platformFeeTax || 0), Math.round(sales.refundJpy || 0), Math.round(sales.adjustmentJpy || 0), Math.round(sales.finalReceiptJpy || 0), Math.round(sales.actualProfitJpy || 0), marginText, Math.round(sales.payableConsumptionTaxJpy || 0), displayMemo(item) || ""
+    ];
+  });
+  return [headers, ...rows];
+}
+
 function LoginPage({ onLogin }) {
   const [username, setUsername] = useState("gouka");
   const [password, setPassword] = useState("");
@@ -2307,7 +2343,7 @@ function App() {
         {tab === "suppliers" && <SupplierPanel suppliers={suppliers} setSuppliers={setSuppliers} downloadCSV={downloadCSV} />}
         {tab === "dictionary" && <DictionaryPanel dictionaries={dictionaries} setDictionaries={setDictionaries} />}
         {tab === "deleteLogs" && <DeleteLogPanel deleteLogs={deleteLogs} downloadCSV={downloadCSV} restoreDeletedItem={restoreDeletedItem} />}
-        {tab === "backup" && <BackupPanel items={items} exportBackup={exportBackup} importBackup={importBackup} />}
+        {tab === "backup" && <BackupPanel items={items} exportBackup={exportBackup} importBackup={importBackup} downloadCSV={downloadCSV} />}
 
         {previewImage && (
           <div className="image-modal" onClick={() => setPreviewImage(null)}>
@@ -4245,7 +4281,7 @@ function PdfExportPanel({ items, totals, exportInventoryPdf, exportLedgerPdf, ex
   );
 }
 
-function BackupPanel({ items, exportBackup, importBackup }) {
+function BackupPanel({ items, exportBackup, importBackup, downloadCSV }) {
   return (
     <div className="panel">
       <h2><Database size={20} /> 数据备份 / 恢复</h2>
@@ -4255,18 +4291,20 @@ function BackupPanel({ items, exportBackup, importBackup }) {
         <Card icon={<Package />} title="当前商品记录" value={`${items.length} 件`} />
         <Card icon={<ImagePlus />} title="有图片商品" value={`${items.filter(x => x.images?.length).length} 件`} />
         <Card icon={<Calculator />} title="已售商品" value={`${items.filter(x => isSoldStatus(x.status)).length} 件`} />
-        <Card icon={<Database />} title="备份格式" value="Enterprise JSON" />
+        <Card icon={<Database />} title="缺资料商品" value={`${items.filter(x => buildEvidenceCheck(x).status === "缺资料").length} 件`} />
       </div>
 
       <div className="action-row" style={{marginTop:"20px"}}>
         <button className="primary" onClick={exportBackup}><Download size={16} /> 导出备份JSON</button>
+        <button className="ghost" onClick={() => downloadCSV(buildTaxAuditRows(items), "gouka_national_tax_audit.csv")}><Download size={16} /> 导出国税审计CSV</button>
         <label className="ghost" style={{display:"inline-flex", alignItems:"center", gap:"8px", cursor:"pointer"}}>
           <Upload size={16} /> 导入备份JSON
           <input type="file" accept="application/json" style={{display:"none"}} onChange={(e)=>importBackup(e.target.files?.[0])} />
         </label>
       </div>
 
-      <p className="note">建议：每周导出一次，文件名保留日期；重要月份结账后再导出一次。</p>
+      <p className="note">建议：每周导出一次企业备份；月底结账后同时导出国税审计CSV，和发票、报关资料、拍卖精算书一起保存。</p>
+      <p className="note">国税审计CSV按商品编号整理采购来源、本人确认、申报报关、日本拍卖、库存成本、销售收入、消费税与缺失资料。正式申报金额请以税理士确认结果为准。</p>
     </div>
   );
 }
