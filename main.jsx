@@ -20,6 +20,7 @@ productRecordStyle.textContent = `
 .product-record-summary { margin-top:14px; }
 .product-record-summary h3 { margin:0 0 10px; font-size:16px; border-left:5px solid #16a34a; padding-left:10px; }
 .timeline-date { display:block; margin-top:5px; font-size:11px; color:#64748b; font-weight:700; }
+.record-subtitle { grid-column:1 / -1; margin:4px 0 2px; padding:7px 10px; border-left:4px solid #16a34a; background:#f0fdf4; color:#166534; font-weight:800; font-size:13px; }
 .product-record-identity { background:#fff; border:1px solid #dde5ef; border-radius:12px; padding:18px; display:flex; flex-direction:column; justify-content:space-between; }
 .product-record-kicker { font-size:12px; color:#64748b; font-weight:800; letter-spacing:.08em; text-transform:uppercase; }
 .product-record-title { margin:8px 0 10px; font-size:28px; line-height:1.25; color:#0f172a; }
@@ -2890,17 +2891,22 @@ function NbaaProductRecordDetail({ item, onClose, exportItemPdf }) {
         </RecordCard>
 
         <RecordCard title="② 日本拍卖">
+          <div className="record-subtitle">基础信息</div>
           <RecordField label="拍卖公司" value={auction?.platform || auction?.auctionHouse} />
-          <RecordField label="Lot" value={auction?.lotNo || auction?.auctionCode} />
+          <RecordField label="落札コード" value={auction?.auctionCode} />
+          <RecordField label="Lot" value={auction?.lotNo} />
           <RecordField label="箱番" value={auction?.boxNo} />
           <RecordField label="枝番" value={auction?.branchNo} />
           <RecordField label="Invoice" value={auction?.invoiceNo || auction?.invoice} />
+          <RecordField label="拍卖日" value={auction?.auctionDate} />
           <RecordField label="付款日期" value={auction?.paymentDate} />
+          <div className="record-subtitle">落札金额</div>
           <RecordField label="落札金额" value={auction ? jpy(auction.hammerPrice) : ""} />
           <RecordField label="落札消费税" value={auction ? jpy(auction.hammerTax) : ""} />
           <RecordField label="手续费" value={auction ? jpy(auction.buyerFee) : ""} />
           <RecordField label="手续费消费税" value={auction ? jpy(auction.buyerFeeTax) : ""} />
           <RecordField label="国内运费" value={auction ? jpy(auction.domesticShipping) : ""} />
+          <div className="record-subtitle">精算金额</div>
           <RecordField label="付款总额" value={auction ? jpy(auction.invoiceTotal) : ""} />
           <RecordField label="库存成本" value={auction ? jpy(auction.inventoryCost) : ""} />
           <RecordField label="消费税控除" value={auction ? jpy(auction.taxCredit) : ""} />
@@ -3061,6 +3067,9 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
 }
 function JapaneseAuctionPanel({ items, downloadCSV, setPreviewImage, setPreviewScale, exportItemPdf }) {
   const [auctionQuery, setAuctionQuery] = useState("");
+  const [auctionHouseFilter, setAuctionHouseFilter] = useState("全部");
+  const [auctionDateFilter, setAuctionDateFilter] = useState("");
+  const [paymentFilter, setPaymentFilter] = useState("全部");
   const [detailItem, setDetailItem] = useState(null);
   const keyword = auctionQuery.trim().toLowerCase();
 
@@ -3071,38 +3080,45 @@ function JapaneseAuctionPanel({ items, downloadCSV, setPreviewImage, setPreviewS
     return { ...normalized, ...raw, ...normalized };
   }
 
-  const auctionRecords = (items || [])
+  const baseAuctionRecords = (items || [])
     .map((item) => ({ item, auction: structuredAuction(item) }))
-    .filter((x) => x.auction)
-    .filter(({ item, auction }) => {
-      if (!keyword) return true;
-      return [
-        item.id, item.brand, item.item, item.category, item.status,
-        auction.platform, auction.auctionHouse, auction.auctionCode, auction.lotNo,
-        auction.boxNo, auction.branchNo, auction.invoiceNo, auction.itemNameJp
-      ].filter(Boolean).join(" ").toLowerCase().includes(keyword);
-    });
+    .filter((x) => x.auction);
+
+  const auctionHouses = ["全部", ...Array.from(new Set(baseAuctionRecords.map(({ auction }) => auction.platform || auction.auctionHouse).filter(Boolean))).sort()];
+
+  const auctionRecords = baseAuctionRecords.filter(({ item, auction }) => {
+    const house = auction.platform || auction.auctionHouse || "";
+    const date = auction.auctionDate || item.purchaseDate || "";
+    const paid = Boolean(auction.paymentDate || auction.paymentMethod || Number(auction.invoiceTotal || 0) > 0);
+    if (auctionHouseFilter !== "全部" && house !== auctionHouseFilter) return false;
+    if (auctionDateFilter && date !== auctionDateFilter) return false;
+    if (paymentFilter === "已付款" && !paid) return false;
+    if (paymentFilter === "未付款" && paid) return false;
+    if (!keyword) return true;
+    return [
+      item.id, item.brand, item.item, item.category, item.status,
+      auction.platform, auction.auctionHouse, auction.auctionCode, auction.lotNo,
+      auction.boxNo, auction.branchNo, auction.invoiceNo, auction.itemNameJp
+    ].filter(Boolean).join(" ").toLowerCase().includes(keyword);
+  });
 
   const summary = auctionRecords.reduce((a, { auction }) => {
     a.count += 1;
     a.paid += Number(auction.invoiceTotal || 0);
     a.cost += Number(auction.inventoryCost || 0);
     a.tax += Number(auction.taxCredit || 0);
+    if (auction.paymentDate || auction.paymentMethod) a.paidCount += 1;
     return a;
-  }, { count: 0, paid: 0, cost: 0, tax: 0 });
+  }, { count: 0, paid: 0, cost: 0, tax: 0, paidCount: 0 });
 
   const headers = ["图片", "商品编号", "品牌", "商品名", "拍卖公司", "落札コード", "Lot", "箱番", "枝番", "拍卖日", "付款总额", "库存成本", "消费税控除", "状态", "操作"];
-  const csvRows = [["商品编号", "品牌", "商品名", "拍卖公司", "落札コード", "Lot", "箱番", "枝番", "Invoice", "拍卖日", "付款日期", "落札金额", "落札消费税", "手续费", "手续费消费税", "国内运费", "付款总额", "库存成本", "消费税控除", "状态"]];
+  const csvRows = [headers.filter((h) => h !== "图片" && h !== "操作")];
 
   auctionRecords.forEach(({ item, auction }) => {
     csvRows.push([
-      item.id, item.brand, item.item, auction.platform || auction.auctionHouse || "", auction.auctionCode || "",
-      auction.lotNo || "", auction.boxNo || "", auction.branchNo || "", auction.invoiceNo || "",
-      auction.auctionDate || item.purchaseDate || "", auction.paymentDate || "",
-      Math.round(Number(auction.hammerPrice || 0)), Math.round(Number(auction.hammerTax || 0)),
-      Math.round(Number(auction.buyerFee || 0)), Math.round(Number(auction.buyerFeeTax || 0)),
-      Math.round(Number(auction.domesticShipping || 0)), Math.round(Number(auction.invoiceTotal || 0)),
-      Math.round(Number(auction.inventoryCost || 0)), Math.round(Number(auction.taxCredit || 0)), item.status
+      item.id, item.brand || "", item.item || "", auction.platform || auction.auctionHouse || "", auction.auctionCode || "",
+      auction.lotNo || "", auction.boxNo || "", auction.branchNo || "", auction.auctionDate || item.purchaseDate || "",
+      Math.round(Number(auction.invoiceTotal || 0)), Math.round(Number(auction.inventoryCost || 0)), Math.round(Number(auction.taxCredit || 0)), item.status || ""
     ]);
   });
 
@@ -3122,8 +3138,7 @@ function JapaneseAuctionPanel({ items, downloadCSV, setPreviewImage, setPreviewS
     moneyCell(auction.taxCredit),
     <StatusBadge status={item.status} />,
     <div className="table-actions">
-      <button className="ghost" onClick={() => setDetailItem(item)}>详情</button>
-      <button className="ghost" onClick={() => exportItemPdf?.(item)}>PDF</button>
+      <button className="ghost" onClick={() => setDetailItem(item)}>拍卖详情</button>
     </div>
   ]);
 
@@ -3136,6 +3151,14 @@ function JapaneseAuctionPanel({ items, downloadCSV, setPreviewImage, setPreviewS
             <Search size={16} />
             <input placeholder="搜索编号 / 品牌 / 落札コード / 箱番" value={auctionQuery} onChange={(e) => setAuctionQuery(e.target.value)} />
           </div>
+          <select value={auctionHouseFilter} onChange={(e) => setAuctionHouseFilter(e.target.value)}>
+            {auctionHouses.map((x) => <option key={x}>{x}</option>)}
+          </select>
+          <input type="date" value={auctionDateFilter} onChange={(e) => setAuctionDateFilter(e.target.value)} />
+          <select value={paymentFilter} onChange={(e) => setPaymentFilter(e.target.value)}>
+            {["全部", "已付款", "未付款"].map((x) => <option key={x}>{x}</option>)}
+          </select>
+          <button className="ghost" onClick={() => { setAuctionQuery(""); setAuctionHouseFilter("全部"); setAuctionDateFilter(""); setPaymentFilter("全部"); }}>清除筛选</button>
           <button onClick={() => downloadCSV(csvRows, "gouka_auction_records.csv")}>
             <Download size={16} /> CSV导出
           </button>
@@ -3147,6 +3170,7 @@ function JapaneseAuctionPanel({ items, downloadCSV, setPreviewImage, setPreviewS
         <div className="inventory-summary-card"><small>付款总额</small><b>{jpy(summary.paid)}</b></div>
         <div className="inventory-summary-card"><small>库存成本</small><b>{jpy(summary.cost)}</b></div>
         <div className="inventory-summary-card good"><small>消费税控除</small><b>{jpy(summary.tax)}</b></div>
+        <div className="inventory-summary-card"><small>付款记录</small><b>{summary.paidCount} 件</b></div>
       </div>
       <p className="note">日本拍卖页只读取商品档案里的 product.auction 结构化数据。付款总额、库存成本、消费税控除分开显示，消费税不进入库存成本。</p>
       <Table headers={headers} rows={rows} />
