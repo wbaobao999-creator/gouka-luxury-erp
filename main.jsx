@@ -2155,6 +2155,7 @@ function App() {
       return a;
     }, { paid: 0, cost: 0, tax: 0 });
     const rows = arr.map(({ item, auction }) => `<tr>
+      <td>${pdfImageHtml(item, 42)}</td>
       <td>${htmlEscape(item.id)}</td>
       <td>${htmlEscape(item.brand)}</td>
       <td>${htmlEscape(item.item)}</td>
@@ -2176,7 +2177,7 @@ function App() {
         <div class="field"><small>库存成本</small><b>${jpy(sum.cost)}</b></div>
         <div class="field"><small>消费税控除</small><b>${jpy(sum.tax)}</b></div>
       </div></div>
-      <div class="section"><h2>日本拍卖明细</h2><table><thead><tr><th>商品编号</th><th>品牌</th><th>商品</th><th>拍卖会</th><th>落札コード</th><th>Lot</th><th>箱番</th><th>枝番</th><th>拍卖日</th><th>付款总额</th><th>库存成本</th><th>消费税控除</th></tr></thead><tbody>${rows}</tbody></table></div>
+      <div class="section"><h2>日本拍卖明细</h2><table><thead><tr><th>图</th><th>商品编号</th><th>品牌</th><th>商品</th><th>拍卖会</th><th>落札コード</th><th>Lot</th><th>箱番</th><th>枝番</th><th>拍卖日</th><th>付款总额</th><th>库存成本</th><th>消费税控除</th></tr></thead><tbody>${rows}</tbody></table></div>
       <div class="footer">日本拍卖数据读取 product.auction。库存成本不含消费税，消费税控除进入消费税参考。</div>
     `;
     openPdfWindow("日本拍卖详情_PDF", body);
@@ -2189,9 +2190,9 @@ function App() {
     const importConsumptionTax = (customsBatches || []).reduce((sum, b) => sum + Number(b.importConsumptionTaxJpy || 0), 0);
     const salesOutputTax = soldItems.reduce((sum, x) => sum + calcSalesBreakdown(x).salesOutputTax, 0);
     const taxDifference = salesOutputTax - auctionInputTax - importConsumptionTax;
-    const auctionRows = auctionItems.map(({ item, auction }) => `<tr><td>${htmlEscape(item.id)}</td><td>${htmlEscape(item.brand)}</td><td>${htmlEscape(item.item)}</td><td>${htmlEscape(auction.auctionCode || "")}</td><td class="right">${jpy(auction.hammerTax)}</td><td class="right">${jpy(auction.buyerFeeTax)}</td><td class="right">${jpy(auction.taxCredit)}</td></tr>`).join("");
+    const auctionRows = auctionItems.map(({ item, auction }) => `<tr><td>${pdfImageHtml(item, 40)}</td><td>${htmlEscape(item.id)}</td><td>${htmlEscape(item.brand)}</td><td>${htmlEscape(item.item)}</td><td>${htmlEscape(auction.auctionCode || "")}</td><td class="right">${jpy(auction.hammerTax)}</td><td class="right">${jpy(auction.buyerFeeTax)}</td><td class="right">${jpy(auction.taxCredit)}</td></tr>`).join("");
     const importRows = (customsBatches || []).map((b) => `<tr><td>${htmlEscape(b.id)}</td><td>${htmlEscape(b.importDate || "")}</td><td class="right">${jpy(b.importConsumptionTaxJpy)}</td><td>${htmlEscape(b.memo || "")}</td></tr>`).join("");
-    const salesRows = soldItems.map((x) => { const sale = Number(x.soldPriceJpy || x.saleJpy || 0); const tax = sale * TAX_RATE / (1 + TAX_RATE); return `<tr><td>${htmlEscape(x.id)}</td><td>${htmlEscape(x.brand)}</td><td>${htmlEscape(x.item)}</td><td>${htmlEscape(x.soldDate || "")}</td><td class="right">${jpy(sale)}</td><td class="right">${jpy(tax)}</td></tr>`; }).join("");
+    const salesRows = soldItems.map((x) => { const sales = calcSalesBreakdown(x); return `<tr><td>${pdfImageHtml(x, 40)}</td><td>${htmlEscape(x.id)}</td><td>${htmlEscape(x.brand)}</td><td>${htmlEscape(x.item)}</td><td>${htmlEscape(x.soldDate || "")}</td><td class="right">${jpy(sales.saleTaxIncluded)}</td><td class="right">${jpy(sales.salesOutputTax)}</td></tr>`; }).join("");
     const body = `
       ${companyPdfHeader("消费税参考 PDF", "Consumption Tax Reference")}
       <div class="section"><h2>汇总</h2><div class="summary-grid">
@@ -2200,9 +2201,9 @@ function App() {
         <div class="field"><small>销售消费税</small><b>${jpy(salesOutputTax)}</b></div>
         <div class="field"><small>差额参考</small><b>${jpy(taxDifference)}</b></div>
       </div></div>
-      <div class="section"><h2>1. 日本拍卖进项税</h2><table><thead><tr><th>商品编号</th><th>品牌</th><th>商品</th><th>落札コード</th><th>落札消费税</th><th>手续费消费税</th><th>可抵扣消费税</th></tr></thead><tbody>${auctionRows}</tbody></table></div>
+      <div class="section"><h2>1. 日本拍卖进项税</h2><table><thead><tr><th>图</th><th>商品编号</th><th>品牌</th><th>商品</th><th>落札コード</th><th>落札消费税</th><th>手续费消费税</th><th>可抵扣消费税</th></tr></thead><tbody>${auctionRows}</tbody></table></div>
       <div class="section"><h2>2. 进口消费税</h2><table><thead><tr><th>批次号</th><th>报关日</th><th>进口消费税</th><th>备注</th></tr></thead><tbody>${importRows}</tbody></table></div>
-      <div class="section"><h2>3. 销售消费税</h2><table><thead><tr><th>商品编号</th><th>品牌</th><th>商品</th><th>销售日</th><th>销售税込</th><th>销售消费税</th></tr></thead><tbody>${salesRows}</tbody></table></div>
+      <div class="section"><h2>3. 销售消费税</h2><table><thead><tr><th>图</th><th>商品编号</th><th>品牌</th><th>商品</th><th>销售日</th><th>销售税込</th><th>销售消费税</th></tr></thead><tbody>${salesRows}</tbody></table></div>
       <div class="section"><h2>4. 差额参考</h2><table><tbody><tr><th>销售消费税</th><td class="right">${jpy(salesOutputTax)}</td></tr><tr><th>进项税合计</th><td class="right">${jpy(auctionInputTax + importConsumptionTax)}</td></tr><tr><th>差额参考</th><td class="right">${jpy(taxDifference)}</td></tr></tbody></table></div>
       <div class="footer">此页面为经营参考，不替代税理士正式申报。日本拍卖消费税不进入库存成本。</div>
     `;
@@ -3813,6 +3814,7 @@ function TaxReport({ items, totals, customsBatches, downloadCSV }) {
     const buyerFeeTax = Number(auction.buyerFeeTax || 0);
     const taxCredit = Number(auction.taxCredit || hammerTax + buyerFeeTax || 0);
     return [
+      <ProductThumb item={item} size={56} />,
       item.id,
       item.brand || "",
       productNameCell(item.item),
@@ -3833,6 +3835,7 @@ function TaxReport({ items, totals, customsBatches, downloadCSV }) {
   const salesRows = soldItems.map((x) => {
     const sales = calcSalesBreakdown(x);
     return [
+      <ProductThumb item={x} size={56} />,
       x.id,
       x.brand || "",
       productNameCell(x.item),
@@ -3882,7 +3885,7 @@ function TaxReport({ items, totals, customsBatches, downloadCSV }) {
 
       <h3>1. 日本拍卖进项税</h3>
       <p className="note">落札消费税 + 手续费消费税 = 可抵扣消费税。此处只读取 product.auction。</p>
-      <Table headers={["商品编号", "品牌", "商品名", "拍卖会", "落札コード", "落札消费税", "手续费消费税", "可抵扣消费税"]} rows={auctionRows} />
+      <Table headers={["图片", "商品编号", "品牌", "商品名", "拍卖会", "落札コード", "落札消费税", "手续费消费税", "可抵扣消费税"]} rows={auctionRows} />
 
       <h3>2. 进口消费税</h3>
       <p className="note">EMS / 报关批次的进口消费税参考，不进入单件库存成本。</p>
@@ -3890,7 +3893,7 @@ function TaxReport({ items, totals, customsBatches, downloadCSV }) {
 
       <h3>3. 销售消费税</h3>
       <p className="note">销售消费税按含税销售额倒算：销售税込 × 10 / 110。</p>
-      <Table headers={["商品编号", "品牌", "商品名", "销售日期", "销售平台", "销售JPY（税込）", "税抜销售", "销售消费税"]} rows={salesRows} />
+      <Table headers={["图片", "商品编号", "品牌", "商品名", "销售日期", "销售平台", "销售JPY（税込）", "税抜销售", "销售消费税"]} rows={salesRows} />
 
       <h3>4. 预计应缴消费税</h3>
       <Table headers={["项目", "金额"]} rows={[
