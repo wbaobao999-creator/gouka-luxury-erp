@@ -1091,6 +1091,52 @@ function calcSalesBreakdown(item) {
   };
 }
 
+
+function sourceKind(item) {
+  const auction = getAuction(item);
+  if (auction) return "日本拍卖";
+  const sourceText = [item.source, item.address, item.purchaseCurrency].join(" ").toLowerCase();
+  if (sourceText.includes("china") || sourceText.includes("中国") || item.purchaseCurrency === "CNY") return "中国采购";
+  if (sourceText.includes("japan") || sourceText.includes("日本") || item.purchaseCurrency === "JPY") return "日本国内采购";
+  return "普通采购";
+}
+
+function supplierAddressOf(item) {
+  return item.supplierAddress || item.address || item.supplier_address || "";
+}
+
+function idCheckOf(item) {
+  return item.idCheck || item.id_check || "Supplier invoice";
+}
+
+function buildSourceTrace(item) {
+  const auction = getAuction(item);
+  const sales = calcSalesBreakdown(item);
+  const purchaseAmount = auction
+    ? jpy(auction.invoiceTotal || 0)
+    : [item.purchaseCny || item.purchaseAmount || 0, item.purchaseCurrency || "CNY"].filter((x) => x !== "").join(" ");
+  const declaredAmount = [item.declaredCny || item.declaredAmount || 0, item.declaredCurrency || item.purchaseCurrency || "CNY"].filter((x) => x !== "").join(" ");
+  const saleDestination = item.soldPlatform || item.platform || item.listingPlatform || "";
+  const buyerName = item.buyer || item.buyerName || item.customer || item.customerName || item.soldBuyer || "";
+
+  return {
+    kind: sourceKind(item),
+    supplier: item.source || auction?.platform || auction?.auctionHouse || "",
+    address: supplierAddressOf(item),
+    idCheck: idCheckOf(item),
+    purchaseDate: item.purchaseDate || auction?.auctionDate || "",
+    purchaseAmount,
+    declaredAmount,
+    customsBatch: item.customsBatchId || item.customsBatchText || "",
+    transport: item.platform || "",
+    saleDestination,
+    soldDate: item.soldDate || "",
+    buyerName,
+    finalReceipt: sales.finalReceiptJpy || 0,
+    route: [sourceKind(item), item.customsBatchId ? "EMS/报关" : "", item.status || "库存", saleDestination ? "销售" : ""].filter(Boolean).join(" → ")
+  };
+}
+
 function LoginPage({ onLogin }) {
   const [username, setUsername] = useState("gouka");
   const [password, setPassword] = useState("");
@@ -2933,6 +2979,7 @@ function NbaaProductRecordDetail({ item, onClose, exportItemPdf }) {
   const sizeText = item.size || item.sizeText || item.dimensions || "";
   const refundJpy = Number(item.refundJpy || item.returnJpy || 0);
   const buyerName = item.buyer || item.buyerName || item.customer || item.customerName || item.soldBuyer || "";
+  const trace = buildSourceTrace(item);
   const emsPdfStatus = item.customsBatchId ? "PDF导出中心可生成" : "";
   const timeline = [
     ["采购", !!item.purchaseDate, item.purchaseDate],
@@ -3003,6 +3050,23 @@ function NbaaProductRecordDetail({ item, onClose, exportItemPdf }) {
           <RecordField label="尺寸" value={sizeText} />
           <RecordField label="产地" value={item.origin} />
           <RecordField label="备注" value={displayMemo(item)} full />
+        </RecordCard>
+
+        <RecordCard title="来源追溯">
+          <RecordField label="采购类型" value={trace.kind} />
+          <RecordField label="仕入先" value={trace.supplier} />
+          <RecordField label="地址" value={trace.address} />
+          <RecordField label="本人确认" value={trace.idCheck} />
+          <RecordField label="采购日" value={trace.purchaseDate} />
+          <RecordField label="采购/付款金额" value={trace.purchaseAmount} />
+          <RecordField label="申报金额" value={trace.declaredAmount} />
+          <RecordField label="报关批次" value={trace.customsBatch} />
+          <RecordField label="运输/平台" value={trace.transport} />
+          <RecordField label="销售去向" value={trace.saleDestination} />
+          <RecordField label="销售日" value={trace.soldDate} />
+          <RecordField label="买家" value={trace.buyerName} />
+          <RecordField label="最终到账" value={trace.finalReceipt ? jpy(trace.finalReceipt) : ""} />
+          <RecordField label="业务链路" value={trace.route} full />
         </RecordCard>
 
         <RecordCard title="② 日本拍卖">
@@ -3103,8 +3167,8 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
     return a;
   }, { count: 0, qty: 0, cost: 0, sale: 0, profit: 0, toList: 0, toCustoms: 0, longTerm: 0 });
 
-  const headers = ["图片", "商品编号", "入库日", "库龄", "品牌", "商品名", "状态", "库位", "平台", "库存成本", "售价（含税）", "利润", "操作"];
-  const csvHeaders = ["商品编号", "入库日期", "库龄", "库位", "品类", "品牌", "商品名", "材质", "颜色", "产地", "数量", "采购币种", "采购金额", "采购汇率", "申报币种", "申报金额", "申报汇率", "采购JPY", "附加成本JPY", "库存成本JPY", "报关批次", "进项消费税估算", "预计/成交销售JPY税込", "销售消费税", "税抜售价", "预计/实际利润", "状态"];
+  const headers = ["图片", "商品编号", "入库日", "库龄", "品牌", "商品名", "来源", "状态", "库位", "平台", "库存成本", "售价（含税）", "利润", "操作"];
+  const csvHeaders = ["商品编号", "入库日期", "库龄", "库位", "品类", "品牌", "商品名", "材质", "颜色", "产地", "采购类型", "仕入先", "供应商地址", "本人确认", "数量", "采购币种", "采购金额", "采购汇率", "申报币种", "申报金额", "申报汇率", "采购JPY", "附加成本JPY", "库存成本JPY", "报关批次", "进项消费税估算", "预计/成交销售JPY税込", "销售消费税", "税抜售价", "预计/实际利润", "状态"];
   const csvRows = [csvHeaders];
 
   inventoryItems.forEach((x) => {
@@ -3112,7 +3176,8 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
     const sales = calcSalesBreakdown(x);
     const displaySale = sales.sold ? sales.saleTaxIncluded : sales.expectedSaleTaxIncluded;
     const displayProfit = sales.sold ? sales.actualProfitJpy : sales.expectedProfitJpy;
-    csvRows.push([x.id, x.purchaseDate, stockDays(x), storageLocation(x), x.category, x.brand, x.item, x.material, x.color, x.origin, x.qty, x.purchaseCurrency || "CNY", x.purchaseCny, x.purchaseRateToJpy || x.rate, x.declaredCurrency || "CNY", x.declaredCny, x.declaredRateToJpy || x.rate, Math.round(t.baseCostJpy), Math.round(t.extraCostJpy), Math.round(t.costJpy), x.customsBatchId || "", Math.round(t.inputTax), Math.round(displaySale || 0), Math.round(sales.salesOutputTax || 0), Math.round(sales.salesRevenueExTax || 0), Math.round(displayProfit || 0), x.status]);
+    const trace = buildSourceTrace(x);
+    csvRows.push([x.id, x.purchaseDate, stockDays(x), storageLocation(x), x.category, x.brand, x.item, x.material, x.color, x.origin, trace.kind, trace.supplier, trace.address, trace.idCheck, x.qty, x.purchaseCurrency || "CNY", x.purchaseCny, x.purchaseRateToJpy || x.rate, x.declaredCurrency || "CNY", x.declaredCny, x.declaredRateToJpy || x.rate, Math.round(t.baseCostJpy), Math.round(t.extraCostJpy), Math.round(t.costJpy), x.customsBatchId || "", Math.round(t.inputTax), Math.round(displaySale || 0), Math.round(sales.salesOutputTax || 0), Math.round(sales.salesRevenueExTax || 0), Math.round(displayProfit || 0), x.status]);
   });
 
   const rows = pageItems.map((x) => {
@@ -3131,6 +3196,7 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
       <span className={"inventory-stock-age" + (days >= 365 ? " warn" : "")}>{days ? `${days}日` : "—"}</span>,
       x.brand,
       productNameCell(x.item),
+      buildSourceTrace(x).supplier || buildSourceTrace(x).kind || "—",
       <StatusBadge status={x.status} />,
       <span className="inventory-location">{storageLocation(x)}</span>,
       x.platform || "—",
@@ -3914,15 +3980,17 @@ function SalesReport({ items, downloadCSV }) {
     return matchText && matchMonth;
   });
 
-  const headers = ["图片", "商品编号", "品牌", "商品名", "销售日期", "销售平台", "售价（含税）", "销售收入（未税）", "销项消费税", "平台手续费", "手续费消费税", "退款", "调整金额", "最终到账", "库存成本", "实际利润", "备注"];
-  const csvHeaders = headers.filter((h) => h !== "图片");
+  const headers = ["图片", "商品编号", "品牌", "商品名", "采购来源", "销售日期", "销售平台", "售价（含税）", "销售收入（未税）", "销项消费税", "平台手续费", "手续费消费税", "退款", "调整金额", "最终到账", "库存成本", "实际利润", "备注"];
+  const csvHeaders = ["商品编号", "品牌", "商品名", "采购类型", "仕入先", "供应商地址", "本人确认", "报关批次", "销售日期", "销售平台", "售价（含税）", "销售收入（未税）", "销项消费税", "平台手续费", "手续费消费税", "退款", "调整金额", "最终到账", "库存成本", "实际利润", "备注"];
   const rows = filteredSold.map((x) => {
     const sales = calcSalesBreakdown(x);
+    const trace = buildSourceTrace(x);
     return [
       <ProductThumb item={x} />,
       x.id,
       x.brand,
       productNameCell(x.item),
+      trace.supplier || trace.kind || "—",
       x.soldDate || "",
       x.soldPlatform || x.platform || "",
       jpy(sales.saleTaxIncluded),
@@ -3940,10 +4008,16 @@ function SalesReport({ items, downloadCSV }) {
   });
   const csvRows = filteredSold.map((x) => {
     const sales = calcSalesBreakdown(x);
+    const trace = buildSourceTrace(x);
     return [
       x.id,
       x.brand,
       x.item,
+      trace.kind,
+      trace.supplier,
+      trace.address,
+      trace.idCheck,
+      trace.customsBatch,
       x.soldDate || "",
       x.soldPlatform || x.platform || "",
       Math.round(sales.saleTaxIncluded),
