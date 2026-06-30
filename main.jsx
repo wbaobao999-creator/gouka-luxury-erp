@@ -2014,6 +2014,7 @@ function App() {
   const menu = [
     ["dashboard", "控制台"],
     ["add", editingId ? "编辑商品" : "商品录入"],
+    ["auction", "日本拍卖"],
     ["inventory", "库存管理"],
     ["listing", "出品管理"],
     ["sales", "销售记录"],
@@ -2080,6 +2081,7 @@ function App() {
             customsBatches={customsBatches}
           />
         )}
+        {tab === "auction" && <JapaneseAuctionPanel items={computedItems} downloadCSV={downloadCSV} setPreviewImage={setPreviewImage} setPreviewScale={setPreviewScale} exportItemPdf={exportItemPdf} />}
         {tab === "inventory" && (
           <Inventory
             items={filtered}
@@ -3045,6 +3047,108 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
         <div className="inventory-summary-card"><small>默认分页</small><b>{pageSize} 件</b></div>
       </div>
       <p className="note">库存管理只显示日常查货字段：库龄、库位、成本、预计售价和预计/实际利润。税务、报关、销售明细请点「详情」进入 Product Record。</p>
+      <Table headers={headers} rows={rows} />
+
+      {detailItem && (
+        <div className="image-modal" onClick={() => setDetailItem(null)}>
+          <div className="panel" style={{ width: "1180px", maxWidth: "94vw", maxHeight: "88vh", overflow: "auto" }} onClick={(e) => e.stopPropagation()}>
+            <NbaaProductRecordDetail item={detailItem} onClose={() => setDetailItem(null)} exportItemPdf={exportItemPdf} />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+function JapaneseAuctionPanel({ items, downloadCSV, setPreviewImage, setPreviewScale, exportItemPdf }) {
+  const [auctionQuery, setAuctionQuery] = useState("");
+  const [detailItem, setDetailItem] = useState(null);
+  const keyword = auctionQuery.trim().toLowerCase();
+
+  function structuredAuction(item) {
+    const raw = item?.auction && typeof item.auction === "object" ? item.auction : null;
+    const normalized = normalizeAuction(raw);
+    if (!normalized) return null;
+    return { ...normalized, ...raw, ...normalized };
+  }
+
+  const auctionRecords = (items || [])
+    .map((item) => ({ item, auction: structuredAuction(item) }))
+    .filter((x) => x.auction)
+    .filter(({ item, auction }) => {
+      if (!keyword) return true;
+      return [
+        item.id, item.brand, item.item, item.category, item.status,
+        auction.platform, auction.auctionHouse, auction.auctionCode, auction.lotNo,
+        auction.boxNo, auction.branchNo, auction.invoiceNo, auction.itemNameJp
+      ].filter(Boolean).join(" ").toLowerCase().includes(keyword);
+    });
+
+  const summary = auctionRecords.reduce((a, { auction }) => {
+    a.count += 1;
+    a.paid += Number(auction.invoiceTotal || 0);
+    a.cost += Number(auction.inventoryCost || 0);
+    a.tax += Number(auction.taxCredit || 0);
+    return a;
+  }, { count: 0, paid: 0, cost: 0, tax: 0 });
+
+  const headers = ["图片", "商品编号", "品牌", "商品名", "拍卖公司", "落札コード", "Lot", "箱番", "枝番", "拍卖日", "付款总额", "库存成本", "消费税控除", "状态", "操作"];
+  const csvRows = [["商品编号", "品牌", "商品名", "拍卖公司", "落札コード", "Lot", "箱番", "枝番", "Invoice", "拍卖日", "付款日期", "落札金额", "落札消费税", "手续费", "手续费消费税", "国内运费", "付款总额", "库存成本", "消费税控除", "状态"]];
+
+  auctionRecords.forEach(({ item, auction }) => {
+    csvRows.push([
+      item.id, item.brand, item.item, auction.platform || auction.auctionHouse || "", auction.auctionCode || "",
+      auction.lotNo || "", auction.boxNo || "", auction.branchNo || "", auction.invoiceNo || "",
+      auction.auctionDate || item.purchaseDate || "", auction.paymentDate || "",
+      Math.round(Number(auction.hammerPrice || 0)), Math.round(Number(auction.hammerTax || 0)),
+      Math.round(Number(auction.buyerFee || 0)), Math.round(Number(auction.buyerFeeTax || 0)),
+      Math.round(Number(auction.domesticShipping || 0)), Math.round(Number(auction.invoiceTotal || 0)),
+      Math.round(Number(auction.inventoryCost || 0)), Math.round(Number(auction.taxCredit || 0)), item.status
+    ]);
+  });
+
+  const rows = auctionRecords.map(({ item, auction }) => [
+    <ProductThumb item={item} onPreview={(src) => { setPreviewScale?.(1); setPreviewImage?.(src); }} />,
+    item.id,
+    item.brand || "—",
+    productNameCell(item.item),
+    auction.platform || auction.auctionHouse || "—",
+    auction.auctionCode || "—",
+    auction.lotNo || "—",
+    auction.boxNo || "—",
+    auction.branchNo || "—",
+    auction.auctionDate || item.purchaseDate || "—",
+    moneyCell(auction.invoiceTotal),
+    moneyCell(auction.inventoryCost),
+    moneyCell(auction.taxCredit),
+    <StatusBadge status={item.status} />,
+    <div className="table-actions">
+      <button className="ghost" onClick={() => setDetailItem(item)}>详情</button>
+      <button className="ghost" onClick={() => exportItemPdf?.(item)}>PDF</button>
+    </div>
+  ]);
+
+  return (
+    <div className="panel">
+      <div className="toolbar">
+        <h2>日本拍卖</h2>
+        <div className="toolbar-right">
+          <div className="search">
+            <Search size={16} />
+            <input placeholder="搜索编号 / 品牌 / 落札コード / 箱番" value={auctionQuery} onChange={(e) => setAuctionQuery(e.target.value)} />
+          </div>
+          <button onClick={() => downloadCSV(csvRows, "gouka_auction_records.csv")}>
+            <Download size={16} /> CSV导出
+          </button>
+        </div>
+      </div>
+
+      <div className="inventory-summary-grid">
+        <div className="inventory-summary-card"><small>拍卖商品</small><b>{summary.count} 件</b></div>
+        <div className="inventory-summary-card"><small>付款总额</small><b>{jpy(summary.paid)}</b></div>
+        <div className="inventory-summary-card"><small>库存成本</small><b>{jpy(summary.cost)}</b></div>
+        <div className="inventory-summary-card good"><small>消费税控除</small><b>{jpy(summary.tax)}</b></div>
+      </div>
+      <p className="note">日本拍卖页只读取商品档案里的 product.auction 结构化数据。付款总额、库存成本、消费税控除分开显示，消费税不进入库存成本。</p>
       <Table headers={headers} rows={rows} />
 
       {detailItem && (
