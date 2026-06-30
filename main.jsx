@@ -1818,7 +1818,7 @@ function App() {
     if (!item) return;
     const t = calcTax(item);
     const body = `
-      ${companyPdfHeader("商品资料 PDF", "Product Sheet")}
+      ${companyPdfHeader("商品档案 PDF", "Product Record")}
 
       <div class="section">
         <h2>商品图片</h2>
@@ -1865,7 +1865,7 @@ function App() {
         <div class="memo">${htmlEscape(displayMemo(item) || "")}</div>
       </div>
       ${getAuction(item) ? `<div class="section"><h2>日本拍卖结算</h2><div class="memo">${htmlEscape(auctionDetailText(item))}</div></div>` : ""}
-      <div class="footer">此PDF由 GOUKA Luxury ERP 自动生成。金额与消费税为内部参考，正式申告请交由税理士确认。</div>
+      <div class="footer">此PDF由 GOUKA ERP 自动生成。金额与消费税为经营参考，正式申告请交由税理士确认。</div>
     `;
     openPdfWindow(`商品资料_${item.id}`, body);
   }
@@ -1974,6 +1974,71 @@ function App() {
       <div class="footer">Non-CITES material statement is based on internal entry. Please verify before official customs submission.</div>
     `;
     openPdfWindow("EMS报关_PDF", body);
+  }
+  function exportAuctionPdf(targetItems = null) {
+    const arr = (Array.isArray(targetItems) ? targetItems : (computedItems || []))
+      .map((x) => ({ item: x, auction: normalizeAuction(x?.auction) }))
+      .filter((x) => x.auction);
+    if (!arr.length) return alert("没有可导出的日本拍卖商品。 ");
+    const sum = arr.reduce((a, x) => {
+      a.paid += Number(x.auction.invoiceTotal || 0);
+      a.cost += Number(x.auction.inventoryCost || 0);
+      a.tax += Number(x.auction.taxCredit || 0);
+      return a;
+    }, { paid: 0, cost: 0, tax: 0 });
+    const rows = arr.map(({ item, auction }) => `<tr>
+      <td>${htmlEscape(item.id)}</td>
+      <td>${htmlEscape(item.brand)}</td>
+      <td>${htmlEscape(item.item)}</td>
+      <td>${htmlEscape(auction.platform || auction.auctionHouse || "")}</td>
+      <td>${htmlEscape(auction.auctionCode || "")}</td>
+      <td>${htmlEscape(auction.lotNo || "")}</td>
+      <td>${htmlEscape(auction.boxNo || "")}</td>
+      <td>${htmlEscape(auction.branchNo || "")}</td>
+      <td>${htmlEscape(auction.auctionDate || item.purchaseDate || "")}</td>
+      <td class="right">${jpy(auction.invoiceTotal)}</td>
+      <td class="right">${jpy(auction.inventoryCost)}</td>
+      <td class="right">${jpy(auction.taxCredit)}</td>
+    </tr>`).join("");
+    const body = `
+      ${companyPdfHeader("日本拍卖详情 PDF", "Auction Detail Report")}
+      <div class="section"><h2>汇总</h2><div class="summary-grid">
+        <div class="field"><small>拍卖商品</small><b>${arr.length} 件</b></div>
+        <div class="field"><small>付款总额</small><b>${jpy(sum.paid)}</b></div>
+        <div class="field"><small>库存成本</small><b>${jpy(sum.cost)}</b></div>
+        <div class="field"><small>消费税控除</small><b>${jpy(sum.tax)}</b></div>
+      </div></div>
+      <div class="section"><h2>日本拍卖明细</h2><table><thead><tr><th>商品编号</th><th>品牌</th><th>商品</th><th>拍卖会</th><th>落札コード</th><th>Lot</th><th>箱番</th><th>枝番</th><th>拍卖日</th><th>付款总额</th><th>库存成本</th><th>消费税控除</th></tr></thead><tbody>${rows}</tbody></table></div>
+      <div class="footer">日本拍卖数据读取 product.auction。库存成本不含消费税，消费税控除进入消费税参考。</div>
+    `;
+    openPdfWindow("日本拍卖详情_PDF", body);
+  }
+
+  function exportTaxPdf() {
+    const soldItems = (computedItems || []).filter((x) => isSoldStatus(x.status) && Number(x.soldPriceJpy || x.saleJpy || 0) > 0);
+    const auctionItems = (computedItems || []).map((x) => ({ item: x, auction: normalizeAuction(x?.auction) })).filter((x) => x.auction);
+    const auctionInputTax = auctionItems.reduce((sum, x) => sum + Number(x.auction.taxCredit || Number(x.auction.hammerTax || 0) + Number(x.auction.buyerFeeTax || 0)), 0);
+    const importConsumptionTax = (customsBatches || []).reduce((sum, b) => sum + Number(b.importConsumptionTaxJpy || 0), 0);
+    const salesOutputTax = soldItems.reduce((sum, x) => sum + Number(x.soldPriceJpy || x.saleJpy || 0) * TAX_RATE / (1 + TAX_RATE), 0);
+    const taxDifference = salesOutputTax - auctionInputTax - importConsumptionTax;
+    const auctionRows = auctionItems.map(({ item, auction }) => `<tr><td>${htmlEscape(item.id)}</td><td>${htmlEscape(item.brand)}</td><td>${htmlEscape(item.item)}</td><td>${htmlEscape(auction.auctionCode || "")}</td><td class="right">${jpy(auction.hammerTax)}</td><td class="right">${jpy(auction.buyerFeeTax)}</td><td class="right">${jpy(auction.taxCredit)}</td></tr>`).join("");
+    const importRows = (customsBatches || []).map((b) => `<tr><td>${htmlEscape(b.id)}</td><td>${htmlEscape(b.importDate || "")}</td><td class="right">${jpy(b.importConsumptionTaxJpy)}</td><td>${htmlEscape(b.memo || "")}</td></tr>`).join("");
+    const salesRows = soldItems.map((x) => { const sale = Number(x.soldPriceJpy || x.saleJpy || 0); const tax = sale * TAX_RATE / (1 + TAX_RATE); return `<tr><td>${htmlEscape(x.id)}</td><td>${htmlEscape(x.brand)}</td><td>${htmlEscape(x.item)}</td><td>${htmlEscape(x.soldDate || "")}</td><td class="right">${jpy(sale)}</td><td class="right">${jpy(tax)}</td></tr>`; }).join("");
+    const body = `
+      ${companyPdfHeader("消费税参考 PDF", "Consumption Tax Reference")}
+      <div class="section"><h2>汇总</h2><div class="summary-grid">
+        <div class="field"><small>日本拍卖进项税</small><b>${jpy(auctionInputTax)}</b></div>
+        <div class="field"><small>进口消费税</small><b>${jpy(importConsumptionTax)}</b></div>
+        <div class="field"><small>销售消费税</small><b>${jpy(salesOutputTax)}</b></div>
+        <div class="field"><small>差额参考</small><b>${jpy(taxDifference)}</b></div>
+      </div></div>
+      <div class="section"><h2>1. 日本拍卖进项税</h2><table><thead><tr><th>商品编号</th><th>品牌</th><th>商品</th><th>落札コード</th><th>落札消费税</th><th>手续费消费税</th><th>可抵扣消费税</th></tr></thead><tbody>${auctionRows}</tbody></table></div>
+      <div class="section"><h2>2. 进口消费税</h2><table><thead><tr><th>批次号</th><th>报关日</th><th>进口消费税</th><th>备注</th></tr></thead><tbody>${importRows}</tbody></table></div>
+      <div class="section"><h2>3. 销售消费税</h2><table><thead><tr><th>商品编号</th><th>品牌</th><th>商品</th><th>销售日</th><th>销售税込</th><th>销售消费税</th></tr></thead><tbody>${salesRows}</tbody></table></div>
+      <div class="section"><h2>4. 差额参考</h2><table><tbody><tr><th>销售消费税</th><td class="right">${jpy(salesOutputTax)}</td></tr><tr><th>进项税合计</th><td class="right">${jpy(auctionInputTax + importConsumptionTax)}</td></tr><tr><th>差额参考</th><td class="right">${jpy(taxDifference)}</td></tr></tbody></table></div>
+      <div class="footer">此页面为经营参考，不替代税理士正式申报。日本拍卖消费税不进入库存成本。</div>
+    `;
+    openPdfWindow("消费税参考_PDF", body);
   }
 
 
@@ -2106,7 +2171,7 @@ function App() {
         {tab === "tax" && <TaxReport items={filtered} totals={totals} customsBatches={customsBatches} downloadCSV={downloadCSV} />}
         {tab === "listing" && <ListingManagement items={computedItems} updateListingItem={updateListingItem} editItem={editItem} setPreviewImage={setPreviewImage} setPreviewScale={setPreviewScale} />}
         {tab === "sales" && <SalesReport items={computedItems} downloadCSV={downloadCSV} />}
-        {tab === "pdf" && <PdfExportPanel items={computedItems} totals={totals} exportInventoryPdf={exportInventoryPdf} exportLedgerPdf={exportLedgerPdf} exportCustomsPdf={exportCustomsPdf} exportItemPdf={exportItemPdf} />}
+        {tab === "pdf" && <PdfExportPanel items={computedItems} totals={totals} exportInventoryPdf={exportInventoryPdf} exportLedgerPdf={exportLedgerPdf} exportCustomsPdf={exportCustomsPdf} exportItemPdf={exportItemPdf} exportAuctionPdf={exportAuctionPdf} exportTaxPdf={exportTaxPdf} />}
         {tab === "suppliers" && <SupplierPanel suppliers={suppliers} setSuppliers={setSuppliers} downloadCSV={downloadCSV} />}
         {tab === "dictionary" && <DictionaryPanel dictionaries={dictionaries} setDictionaries={setDictionaries} />}
         {tab === "deleteLogs" && <DeleteLogPanel deleteLogs={deleteLogs} downloadCSV={downloadCSV} restoreDeletedItem={restoreDeletedItem} />}
@@ -3854,7 +3919,7 @@ function SalesReport({ items, downloadCSV }) {
 }
 
 
-function PdfExportPanel({ items, totals, exportInventoryPdf }) {
+function PdfExportPanel({ items, totals, exportInventoryPdf, exportLedgerPdf, exportCustomsPdf, exportItemPdf, exportAuctionPdf, exportTaxPdf }) {
   const [pdfQuery, setPdfQuery] = useState("");
   const [status, setStatus] = useState("全部");
   const [startDate, setStartDate] = useState("");
@@ -3901,7 +3966,7 @@ function PdfExportPanel({ items, totals, exportInventoryPdf }) {
   return (
     <div className="panel">
       <h2><FileText size={20} /> PDF导出中心</h2>
-      <p className="note">Enterprise 3.0 PDF：统一企业页眉、公司印章、適格請求書登録番号、古物商許可番号。支持全部导出、勾选导出、按日期导出。</p>
+      <p className="note">PDF中心：统一企业页眉、公司章、Document No.、登録番号、古物商許可番号。PDF只做留档，不把网页所有列硬塞进去。</p>
 
       <div className="grid4" style={{marginTop:"16px"}}>
         <Card icon={<Package />} title="商品记录" value={`${items.length} 件`} />
@@ -3918,9 +3983,14 @@ function PdfExportPanel({ items, totals, exportInventoryPdf }) {
       </div>
 
       <div className="action-row" style={{marginTop:"20px", flexWrap:"wrap"}}>
-        <button className="primary" onClick={() => exportInventoryPdf(items, "全部库存报告")}>全部导出PDF</button>
-        <button className="primary" onClick={exportSelected}>勾选导出PDF</button>
-        <button className="primary" onClick={exportByDate}>按日期导出PDF</button>
+        <button className="primary" onClick={() => exportInventoryPdf(items, "全部库存报告")}>库存PDF</button>
+        <button className="primary" onClick={exportSelected}>选中库存PDF</button>
+        <button className="primary" onClick={exportByDate}>按日期库存PDF</button>
+        <button className="ghost" onClick={exportLedgerPdf}>古物台账PDF</button>
+        <button className="ghost" onClick={exportCustomsPdf}>EMS PDF</button>
+        <button className="ghost" onClick={() => exportAuctionPdf(filteredPdfItems)}>日本拍卖PDF</button>
+        <button className="ghost" onClick={exportTaxPdf}>消费税参考PDF</button>
+        <button className="ghost" onClick={() => selectedItems.length === 1 ? exportItemPdf(selectedItems[0]) : alert("请只勾选 1 件商品导出商品档案PDF。 ")}>商品档案PDF</button>
         <button className="ghost" onClick={() => { setPdfQuery(""); setStatus("全部"); setStartDate(""); setEndDate(""); setSelectedIds([]); }}>清除条件</button>
       </div>
 
