@@ -1043,6 +1043,54 @@ function calcTax(x) {
   return { baseCostJpy, extraCostJpy, costJpy, declaredJpy, inputTax, saleJpy, outputTax, saleExTax, grossProfit, taxBalance, profitExTax, margin, warnings };
 }
 
+
+function calcSalesBreakdown(item) {
+  const t = calcTax(item);
+  const auction = getAuction(item);
+  const sold = isSoldStatus(item.status);
+  const saleTaxIncluded = Number(item.soldPriceJpy || item.saleJpy || 0);
+  const expectedSaleTaxIncluded = Number(item.saleJpy || item.expectedSaleJpy || item.listingPriceJpy || 0);
+  const salesRevenueExTax = saleTaxIncluded > 0 ? saleTaxIncluded / (1 + TAX_RATE) : 0;
+  const salesOutputTax = saleTaxIncluded - salesRevenueExTax;
+  const expectedRevenueExTax = expectedSaleTaxIncluded > 0 ? expectedSaleTaxIncluded / (1 + TAX_RATE) : 0;
+  const platformFeeTaxIncluded = Number(item.platformFeeJpy || item.platformFee || 0);
+  const platformFeeExTax = platformFeeTaxIncluded > 0 ? platformFeeTaxIncluded / (1 + TAX_RATE) : 0;
+  const platformFeeTax = platformFeeTaxIncluded - platformFeeExTax;
+  const refundJpy = Number(item.refundJpy || item.returnJpy || item.refundAmountJpy || 0);
+  const adjustmentJpy = Number(item.adjustmentJpy || item.adjustJpy || item.adjustmentAmountJpy || 0);
+  const finalReceiptJpy = Number(item.finalReceiptJpy || item.netReceiptJpy || 0) || (saleTaxIncluded ? saleTaxIncluded - platformFeeTaxIncluded - refundJpy + adjustmentJpy : 0);
+  const inventoryCostJpy = Number(t.costJpy || 0);
+  const inputConsumptionTaxJpy = auction ? Number(auction.taxCredit || 0) : 0;
+  const grossProfitJpy = saleTaxIncluded > 0 ? salesRevenueExTax - inventoryCostJpy : 0;
+  const expectedProfitJpy = expectedSaleTaxIncluded > 0 ? expectedRevenueExTax - inventoryCostJpy : 0;
+  const actualProfitJpy = sold && saleTaxIncluded > 0 ? grossProfitJpy : 0;
+  const payableConsumptionTaxJpy = salesOutputTax - inputConsumptionTaxJpy;
+  const margin = salesRevenueExTax > 0 ? grossProfitJpy / salesRevenueExTax * 100 : 0;
+
+  return {
+    ...t,
+    sold,
+    saleTaxIncluded,
+    expectedSaleTaxIncluded,
+    salesRevenueExTax,
+    salesOutputTax,
+    expectedRevenueExTax,
+    platformFeeTaxIncluded,
+    platformFeeExTax,
+    platformFeeTax,
+    refundJpy,
+    adjustmentJpy,
+    finalReceiptJpy,
+    inventoryCostJpy,
+    inputConsumptionTaxJpy,
+    grossProfitJpy,
+    expectedProfitJpy,
+    actualProfitJpy,
+    payableConsumptionTaxJpy,
+    margin
+  };
+}
+
 function LoginPage({ onLogin }) {
   const [username, setUsername] = useState("gouka");
   const [password, setPassword] = useState("");
@@ -2019,7 +2067,7 @@ function App() {
     const auctionItems = (computedItems || []).map((x) => ({ item: x, auction: normalizeAuction(x?.auction) })).filter((x) => x.auction);
     const auctionInputTax = auctionItems.reduce((sum, x) => sum + Number(x.auction.taxCredit || Number(x.auction.hammerTax || 0) + Number(x.auction.buyerFeeTax || 0)), 0);
     const importConsumptionTax = (customsBatches || []).reduce((sum, b) => sum + Number(b.importConsumptionTaxJpy || 0), 0);
-    const salesOutputTax = soldItems.reduce((sum, x) => sum + Number(x.soldPriceJpy || x.saleJpy || 0) * TAX_RATE / (1 + TAX_RATE), 0);
+    const salesOutputTax = soldItems.reduce((sum, x) => sum + calcSalesBreakdown(x).salesOutputTax, 0);
     const taxDifference = salesOutputTax - auctionInputTax - importConsumptionTax;
     const auctionRows = auctionItems.map(({ item, auction }) => `<tr><td>${htmlEscape(item.id)}</td><td>${htmlEscape(item.brand)}</td><td>${htmlEscape(item.item)}</td><td>${htmlEscape(auction.auctionCode || "")}</td><td class="right">${jpy(auction.hammerTax)}</td><td class="right">${jpy(auction.buyerFeeTax)}</td><td class="right">${jpy(auction.taxCredit)}</td></tr>`).join("");
     const importRows = (customsBatches || []).map((b) => `<tr><td>${htmlEscape(b.id)}</td><td>${htmlEscape(b.importDate || "")}</td><td class="right">${jpy(b.importConsumptionTaxJpy)}</td><td>${htmlEscape(b.memo || "")}</td></tr>`).join("");
@@ -2869,16 +2917,17 @@ function NbaaProductRecordDetail({ item, onClose, exportItemPdf }) {
   const auction = getAuction(item);
   const images = Array.isArray(item.images) ? item.images.filter(Boolean) : [];
   const mainImage = images[0] || "";
-  const saleJpy = Number(t.saleJpy || 0);
-  const expectedSaleJpy = Number(item.saleJpy || item.expectedSaleJpy || 0);
-  const expectedProfit = expectedSaleJpy > 0 ? expectedSaleJpy - Number(t.costJpy || 0) : 0;
-  const grossProfit = saleJpy > 0 ? Number(t.grossProfit || 0) : 0;
-  const actualProfit = saleJpy > 0 ? Number(t.profitExTax || 0) : 0;
-  const taxRef = Number(t.taxBalance || 0);
+  const sales = calcSalesBreakdown(item);
+  const saleJpy = Number(sales.saleTaxIncluded || 0);
+  const expectedSaleJpy = Number(sales.expectedSaleTaxIncluded || 0);
+  const expectedProfit = Number(sales.expectedProfitJpy || 0);
+  const grossProfit = Number(sales.grossProfitJpy || 0);
+  const actualProfit = Number(sales.actualProfitJpy || 0);
+  const taxRef = Number(sales.payableConsumptionTaxJpy || 0);
   const paymentTotal = auction ? Number(auction.invoiceTotal || 0) : Number(t.costJpy || 0);
   const inventoryCost = auction ? Number(auction.inventoryCost || 0) : Number(t.costJpy || 0);
   const taxCredit = auction ? Number(auction.taxCredit || 0) : Number(t.inputTax || 0);
-  const finalReceipt = saleJpy ? saleJpy - Number(item.platformFeeJpy || 0) - Number(item.otherCostJpy || 0) : 0;
+  const finalReceipt = Number(sales.finalReceiptJpy || 0);
   const importConsumptionTax = Number(item.importConsumptionTaxJpy || item.customsConsumptionTaxJpy || 0);
   const customsDate = item.customsDate || item.customsDeclarationDate || item.customsBatchDate || "";
   const sizeText = item.size || item.sizeText || item.dimensions || "";
@@ -2928,9 +2977,10 @@ function NbaaProductRecordDetail({ item, onClose, exportItemPdf }) {
                 <RecordField label="付款总额" value={jpy(paymentTotal)} />
                 <RecordField label="库存成本" value={jpy(inventoryCost)} />
                 <RecordField label="消费税控除" value={jpy(taxCredit)} />
-                <RecordField label="预计售价" value={expectedSaleJpy ? jpy(expectedSaleJpy) : ""} />
+                <RecordField label="预计售价（含税）" value={expectedSaleJpy ? jpy(expectedSaleJpy) : ""} />
                 <RecordField label="预计利润" value={expectedSaleJpy ? jpy(expectedProfit) : ""} />
                 <RecordField label="实际利润" value={saleJpy ? jpy(actualProfit) : ""} />
+                <RecordField label="应缴消费税" value={saleJpy ? jpy(taxRef) : ""} />
               </div>
             </div>
           </div>
@@ -3040,34 +3090,39 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
   }
 
   const inventorySummary = inventoryItems.reduce((a, x) => {
-    const t = calcTax(x);
-    const sold = isSoldStatus(x.status);
-    const sale = Number(x.saleJpy || x.soldPriceJpy || 0);
+    const sales = calcSalesBreakdown(x);
     a.count += 1;
     a.qty += Number(x.qty || 1);
-    a.cost += Number(t.costJpy || 0);
-    a.sale += sale;
-    if (sold || sale > 0) a.profit += Number(t.profitExTax || 0);
+    a.cost += Number(sales.inventoryCostJpy || 0);
+    a.sale += Number(sales.sold ? sales.saleTaxIncluded : sales.expectedSaleTaxIncluded || 0);
+    if (sales.sold) a.profit += Number(sales.actualProfitJpy || 0);
+    else if (sales.expectedSaleTaxIncluded > 0) a.profit += Number(sales.expectedProfitJpy || 0);
     if (x.status === "待出品" || x.status === "已入库") a.toList += 1;
     if (x.status === "报关准备" || x.platform === "EMS" || x.customsBatchId) a.toCustoms += 1;
-    if (!sold && stockDays(x) >= 365) a.longTerm += 1;
+    if (!sales.sold && stockDays(x) >= 365) a.longTerm += 1;
     return a;
   }, { count: 0, qty: 0, cost: 0, sale: 0, profit: 0, toList: 0, toCustoms: 0, longTerm: 0 });
 
-  const headers = ["图片", "商品编号", "入库日", "库龄", "品牌", "商品名", "状态", "库位", "平台", "库存成本", "预计售价", "预计/实际利润", "操作"];
-  const csvHeaders = ["商品编号", "入库日期", "库龄", "库位", "品类", "品牌", "商品名", "材质", "颜色", "产地", "数量", "采购币种", "采购金额", "采购汇率", "申报币种", "申报金额", "申报汇率", "采购JPY", "附加成本JPY", "库存成本JPY", "报关批次", "进项消费税估算", "预计销售JPY税込", "销售消费税", "税抜售价", "预计/实际利润", "状态"];
+  const headers = ["图片", "商品编号", "入库日", "库龄", "品牌", "商品名", "状态", "库位", "平台", "库存成本", "售价（含税）", "利润", "操作"];
+  const csvHeaders = ["商品编号", "入库日期", "库龄", "库位", "品类", "品牌", "商品名", "材质", "颜色", "产地", "数量", "采购币种", "采购金额", "采购汇率", "申报币种", "申报金额", "申报汇率", "采购JPY", "附加成本JPY", "库存成本JPY", "报关批次", "进项消费税估算", "预计/成交销售JPY税込", "销售消费税", "税抜售价", "预计/实际利润", "状态"];
   const csvRows = [csvHeaders];
 
   inventoryItems.forEach((x) => {
     const t = calcTax(x);
-    csvRows.push([x.id, x.purchaseDate, stockDays(x), storageLocation(x), x.category, x.brand, x.item, x.material, x.color, x.origin, x.qty, x.purchaseCurrency || "CNY", x.purchaseCny, x.purchaseRateToJpy || x.rate, x.declaredCurrency || "CNY", x.declaredCny, x.declaredRateToJpy || x.rate, Math.round(t.baseCostJpy), Math.round(t.extraCostJpy), Math.round(t.costJpy), x.customsBatchId || "", Math.round(t.inputTax), x.saleJpy, Math.round(t.outputTax), Math.round(t.saleExTax), Math.round(t.profitExTax), x.status]);
+    const sales = calcSalesBreakdown(x);
+    const displaySale = sales.sold ? sales.saleTaxIncluded : sales.expectedSaleTaxIncluded;
+    const displayProfit = sales.sold ? sales.actualProfitJpy : sales.expectedProfitJpy;
+    csvRows.push([x.id, x.purchaseDate, stockDays(x), storageLocation(x), x.category, x.brand, x.item, x.material, x.color, x.origin, x.qty, x.purchaseCurrency || "CNY", x.purchaseCny, x.purchaseRateToJpy || x.rate, x.declaredCurrency || "CNY", x.declaredCny, x.declaredRateToJpy || x.rate, Math.round(t.baseCostJpy), Math.round(t.extraCostJpy), Math.round(t.costJpy), x.customsBatchId || "", Math.round(t.inputTax), Math.round(displaySale || 0), Math.round(sales.salesOutputTax || 0), Math.round(sales.salesRevenueExTax || 0), Math.round(displayProfit || 0), x.status]);
   });
 
   const rows = pageItems.map((x) => {
     const t = calcTax(x);
-    const sold = isSoldStatus(x.status);
-    const hasExpectedSale = Number(x.saleJpy || x.soldPriceJpy || 0) > 0;
-    const profitDisplay = sold || hasExpectedSale ? moneyCell(t.profitExTax) : "未定";
+    const sales = calcSalesBreakdown(x);
+    const sold = sales.sold;
+    const displaySale = sold ? sales.saleTaxIncluded : sales.expectedSaleTaxIncluded;
+    const displayProfit = sold ? sales.actualProfitJpy : sales.expectedProfitJpy;
+    const profitDisplay = displaySale > 0 ? moneyCell(displayProfit) : "未定";
+    const saleDisplay = displaySale > 0 ? expectedSaleCell(displaySale) : "未定";
     const days = stockDays(x);
     return [
       x.images && x.images.length ? <img className="thumb" src={x.images[0]} alt={x.item} style={{ width: 72, height: 72 }} onClick={() => { setPreviewScale(1); setPreviewImage(x.images[0]); }} /> : "—",
@@ -3080,7 +3135,7 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
       <span className="inventory-location">{storageLocation(x)}</span>,
       x.platform || "—",
       moneyCell(t.costJpy),
-      expectedSaleCell(x.saleJpy),
+      saleDisplay,
       profitDisplay,
       <div className="table-actions">
         <button className="ghost" onClick={() => setDetailItem(x)}>详情</button>
@@ -3111,13 +3166,13 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
         <div className="inventory-summary-card"><small>当前库存</small><b>{inventorySummary.count} 件</b></div>
         <div className="inventory-summary-card"><small>库存数量</small><b>{inventorySummary.qty} 点</b></div>
         <div className="inventory-summary-card"><small>库存总成本</small><b>{jpy(inventorySummary.cost)}</b></div>
-        <div className="inventory-summary-card good"><small>预计/实际利润</small><b>{jpy(inventorySummary.profit)}</b></div>
+        <div className="inventory-summary-card good"><small>预计/实际利润合计</small><b>{jpy(inventorySummary.profit)}</b></div>
         <div className="inventory-summary-card"><small>待出品</small><b>{inventorySummary.toList} 件</b></div>
         <div className="inventory-summary-card"><small>报关相关</small><b>{inventorySummary.toCustoms} 件</b></div>
         <div className="inventory-summary-card warn"><small>长期库存（365日以上）</small><b>{inventorySummary.longTerm} 件</b></div>
         <div className="inventory-summary-card"><small>默认分页</small><b>{pageSize} 件</b></div>
       </div>
-      <p className="note">库存管理只显示日常查货字段：库龄、库位、成本、预计售价和预计/实际利润。税务、报关、销售明细请点「详情」进入 Product Record。</p>
+      <p className="note">库存管理只显示日常查货字段：库龄、库位、库存成本、售价和利润。未售商品显示预计利润，已售商品显示实际利润；税务、报关、销售明细请点「详情」进入 Product Record。</p>
       <Table headers={headers} rows={rows} />
 
       {detailItem && (
@@ -3547,11 +3602,27 @@ function Customs({ items, customsBatches, downloadCSV }) {
 }
 
 function Profit({ items }) {
-  const headers = ["图片", "商品编号", "品牌", "商品名", "报关批次", "基础成本JPY", "附加成本JPY", "真实成本JPY", "销售JPY（税込）", "销售不含税", "销售消费税", "预计毛利", "不含税利润参考", "利润率"];
+  const headers = ["图片", "商品编号", "品牌", "商品名", "库存成本", "销售收入（未税）", "毛利润", "预计利润", "实际利润", "利润率", "销项消费税", "进项消费税", "应缴消费税"];
   const rows = items.map((x) => {
-    const t = calcTax(x);
-    const margin = t.saleExTax ? ((t.profitExTax / t.saleExTax) * 100).toFixed(1) + "%" : "";
-    return [<ProductThumb item={x} />, x.id, x.brand, x.item, x.customsBatchId || "", Math.round(t.baseCostJpy), Math.round(t.extraCostJpy), Math.round(t.costJpy), x.saleJpy, Math.round(t.saleExTax), Math.round(t.outputTax), Math.round(t.grossProfit), Math.round(t.profitExTax), margin];
+    const sales = calcSalesBreakdown(x);
+    const saleRevenue = sales.saleTaxIncluded > 0 ? sales.salesRevenueExTax : 0;
+    const expectedProfit = sales.expectedSaleTaxIncluded > 0 ? sales.expectedProfitJpy : 0;
+    const margin = sales.salesRevenueExTax > 0 ? sales.margin.toFixed(1) + "%" : "";
+    return [
+      <ProductThumb item={x} />,
+      x.id,
+      x.brand,
+      productNameCell(x.item),
+      jpy(sales.inventoryCostJpy),
+      saleRevenue ? jpy(saleRevenue) : "",
+      sales.saleTaxIncluded ? jpy(sales.grossProfitJpy) : "",
+      sales.expectedSaleTaxIncluded ? jpy(expectedProfit) : "",
+      sales.actualProfitJpy ? jpy(sales.actualProfitJpy) : "",
+      margin,
+      sales.salesOutputTax ? jpy(sales.salesOutputTax) : "",
+      sales.inputConsumptionTaxJpy ? jpy(sales.inputConsumptionTaxJpy) : "",
+      sales.saleTaxIncluded ? jpy(sales.payableConsumptionTaxJpy) : ""
+    ];
   });
 
   return (
@@ -3559,6 +3630,7 @@ function Profit({ items }) {
       <h2>
         <Calculator size={20} /> 利润分析
       </h2>
+      <p className="note">利润按销售收入（未税） - 库存成本计算。消费税单独统计，不混入利润。</p>
       <Table headers={headers} rows={rows} />
     </div>
   );
@@ -3591,17 +3663,16 @@ function TaxReport({ items, totals, customsBatches, downloadCSV }) {
   });
 
   const salesRows = soldItems.map((x) => {
-    const saleJpy = Number(x.soldPriceJpy || x.saleJpy || 0);
-    const outputTax = saleJpy * TAX_RATE / (1 + TAX_RATE);
+    const sales = calcSalesBreakdown(x);
     return [
       x.id,
       x.brand || "",
       productNameCell(x.item),
       x.soldDate || "",
       x.soldPlatform || x.platform || "",
-      jpy(saleJpy),
-      jpy(saleJpy - outputTax),
-      jpy(outputTax)
+      jpy(sales.saleTaxIncluded),
+      jpy(sales.salesRevenueExTax),
+      jpy(sales.salesOutputTax)
     ];
   });
 
@@ -3623,9 +3694,8 @@ function TaxReport({ items, totals, customsBatches, downloadCSV }) {
     }),
     ...(customsBatches || []).map((b) => ["进口消费税", b.id, "", "", b.importDate || "", "EMS/报关批次", "", "", Math.round(Number(b.importConsumptionTaxJpy || 0)), "", "", "", Math.round(Number(b.importConsumptionTaxJpy || 0))]),
     ...soldItems.map((x) => {
-      const saleJpy = Number(x.soldPriceJpy || x.saleJpy || 0);
-      const outputTax = saleJpy * TAX_RATE / (1 + TAX_RATE);
-      return ["销售消费税", x.id, x.brand || "", x.item || "", x.soldDate || "", x.soldPlatform || x.platform || "", "", "", "", Math.round(saleJpy), Math.round(saleJpy - outputTax), Math.round(outputTax), Math.round(outputTax)];
+      const sales = calcSalesBreakdown(x);
+      return ["销售消费税", x.id, x.brand || "", x.item || "", x.soldDate || "", x.soldPlatform || x.platform || "", "", "", "", Math.round(sales.saleTaxIncluded), Math.round(sales.salesRevenueExTax), Math.round(sales.salesOutputTax), Math.round(sales.salesOutputTax)];
     }),
     ["消费税差额参考", "", "", "", "", "销项税 - 进项税", "", "", Math.round(importConsumptionTax), "", "", Math.round(salesOutputTax), Math.round(taxDifference)]
   ];
@@ -3633,13 +3703,13 @@ function TaxReport({ items, totals, customsBatches, downloadCSV }) {
   return (
     <div className="panel">
       <Toolbar title="消费税参考" onDownload={() => downloadCSV(csv, "gouka_consumption_tax_reference.csv")} />
-      <p className="note">此页面为经营参考，不替代税理士正式申报。日本拍卖消费税不进入库存成本，作为进项税参考；销售消费税按含税销售额 10/110 倒算。</p>
+      <p className="note">本页面仅供经营参考，正式申报请以税理士计算结果为准。日本拍卖消费税不进入库存成本，作为进项税参考；销售消费税按含税销售额 10/110 倒算。</p>
 
       <div className="grid4" style={{ marginBottom: "18px" }}>
         <Card icon={<Calculator />} title="日本拍卖进项税" value={jpy(auctionInputTax)} />
         <Card icon={<Calculator />} title="进口消费税" value={jpy(importConsumptionTax)} />
         <Card icon={<Calculator />} title="销售消费税" value={jpy(salesOutputTax)} />
-        <Card icon={<Calculator />} title="消费税差额参考" value={jpy(taxDifference)} />
+        <Card icon={<Calculator />} title="预计应缴消费税" value={jpy(taxDifference)} />
       </div>
 
       <h3>1. 日本拍卖进项税</h3>
@@ -3654,7 +3724,7 @@ function TaxReport({ items, totals, customsBatches, downloadCSV }) {
       <p className="note">销售消费税按含税销售额倒算：销售税込 × 10 / 110。</p>
       <Table headers={["商品编号", "品牌", "商品名", "销售日期", "销售平台", "销售JPY（税込）", "税抜销售", "销售消费税"]} rows={salesRows} />
 
-      <h3>4. 消费税差额参考</h3>
+      <h3>4. 预计应缴消费税</h3>
       <Table headers={["项目", "金额"]} rows={[
         ["销售消费税（销项税）", jpy(salesOutputTax)],
         ["日本拍卖进项税", jpy(auctionInputTax)],
@@ -3662,7 +3732,7 @@ function TaxReport({ items, totals, customsBatches, downloadCSV }) {
         ["  - 手续费消费税", jpy(auctionFeeTax)],
         ["进口消费税", jpy(importConsumptionTax)],
         ["进项税合计", jpy(inputTaxTotal)],
-        ["差额参考（销项税 - 进项税）", jpy(taxDifference)]
+        ["预计应缴消费税（销项税 - 进项税）", jpy(taxDifference)]
       ]} />
     </div>
   );
@@ -3844,46 +3914,58 @@ function SalesReport({ items, downloadCSV }) {
     return matchText && matchMonth;
   });
 
-  const headers = ["图片", "商品编号", "品牌", "商品名", "销售日期", "销售平台", "销售额JPY（税込）", "采购成本JPY", "销售消费税", "预计毛利", "不含税利润参考", "备注"];
+  const headers = ["图片", "商品编号", "品牌", "商品名", "销售日期", "销售平台", "售价（含税）", "销售收入（未税）", "销项消费税", "平台手续费", "手续费消费税", "退款", "调整金额", "最终到账", "库存成本", "实际利润", "备注"];
   const csvHeaders = headers.filter((h) => h !== "图片");
   const rows = filteredSold.map((x) => {
-    const t = calcTax(x);
+    const sales = calcSalesBreakdown(x);
     return [
       <ProductThumb item={x} />,
       x.id,
       x.brand,
-      x.item,
+      productNameCell(x.item),
       x.soldDate || "",
       x.soldPlatform || x.platform || "",
-      Math.round(t.saleJpy),
-      Math.round(t.costJpy),
-      Math.round(t.outputTax),
-      Math.round(t.grossProfit),
-      Math.round(t.profitExTax),
+      jpy(sales.saleTaxIncluded),
+      jpy(sales.salesRevenueExTax),
+      jpy(sales.salesOutputTax),
+      jpy(sales.platformFeeTaxIncluded),
+      jpy(sales.platformFeeTax),
+      jpy(sales.refundJpy),
+      jpy(sales.adjustmentJpy),
+      jpy(sales.finalReceiptJpy),
+      jpy(sales.inventoryCostJpy),
+      jpy(sales.actualProfitJpy),
       x.soldMemo || ""
     ];
   });
   const csvRows = filteredSold.map((x) => {
-    const t = calcTax(x);
+    const sales = calcSalesBreakdown(x);
     return [
       x.id,
       x.brand,
       x.item,
       x.soldDate || "",
       x.soldPlatform || x.platform || "",
-      Math.round(t.saleJpy),
-      Math.round(t.costJpy),
-      Math.round(t.outputTax),
-      Math.round(t.grossProfit),
-      Math.round(t.profitExTax),
+      Math.round(sales.saleTaxIncluded),
+      Math.round(sales.salesRevenueExTax),
+      Math.round(sales.salesOutputTax),
+      Math.round(sales.platformFeeTaxIncluded),
+      Math.round(sales.platformFeeTax),
+      Math.round(sales.refundJpy),
+      Math.round(sales.adjustmentJpy),
+      Math.round(sales.finalReceiptJpy),
+      Math.round(sales.inventoryCostJpy),
+      Math.round(sales.actualProfitJpy),
       x.soldMemo || ""
     ];
   });
 
-  const totalSale = filteredSold.reduce((a, x) => a + Number(x.soldPriceJpy || x.saleJpy || 0), 0);
-  const totalCost = filteredSold.reduce((a, x) => a + calcTax(x).costJpy, 0);
-  const totalProfit = filteredSold.reduce((a, x) => a + calcTax(x).grossProfit, 0);
-  const totalOutputTax = filteredSold.reduce((a, x) => a + calcTax(x).outputTax, 0);
+  const totalSale = filteredSold.reduce((a, x) => a + calcSalesBreakdown(x).saleTaxIncluded, 0);
+  const totalRevenue = filteredSold.reduce((a, x) => a + calcSalesBreakdown(x).salesRevenueExTax, 0);
+  const totalOutputTax = filteredSold.reduce((a, x) => a + calcSalesBreakdown(x).salesOutputTax, 0);
+  const totalCost = filteredSold.reduce((a, x) => a + calcSalesBreakdown(x).inventoryCostJpy, 0);
+  const totalProfit = filteredSold.reduce((a, x) => a + calcSalesBreakdown(x).actualProfitJpy, 0);
+  const totalReceipt = filteredSold.reduce((a, x) => a + calcSalesBreakdown(x).finalReceiptJpy, 0);
 
   return (
     <div className="panel">
@@ -3903,16 +3985,16 @@ function SalesReport({ items, downloadCSV }) {
         <button onClick={() => { setSalesQuery(""); setSalesMonth(""); }}>清除筛选</button>
       </div>
 
-      <p className="note">状态改为「已售出」或「已发货」后，会自动进入这里。可按品牌、商品名、销售平台、月份筛选。</p>
+      <p className="note">销售页按日本消费税逻辑拆分：售价为税込，系统自动倒算销售收入（未税）和销项消费税。最终到账用于现金流，销售收入用于利润。</p>
 
       <div className="grid4" style={{marginBottom:"16px"}}>
-        <Card icon={<Calculator />} title="筛选已售件数" value={`${filteredSold.length} 件`} />
-        <Card icon={<Calculator />} title="筛选销售额" value={jpy(totalSale)} />
-        <Card icon={<Calculator />} title="筛选成本" value={jpy(totalCost)} />
-        <Card icon={<Calculator />} title="筛选毛利" value={jpy(totalProfit)} />
+        <Card icon={<Calculator />} title="筛选已售件数" value={filteredSold.length + " 件"} />
+        <Card icon={<Calculator />} title="售价（含税）" value={jpy(totalSale)} />
+        <Card icon={<Calculator />} title="销售收入（未税）" value={jpy(totalRevenue)} />
+        <Card icon={<Calculator />} title="实际利润" value={jpy(totalProfit)} />
       </div>
 
-      <p>销售消费税参考：{jpy(totalOutputTax)}</p>
+      <p>销项消费税：{jpy(totalOutputTax)}　库存成本：{jpy(totalCost)}　最终到账：{jpy(totalReceipt)}</p>
       <Table headers={headers} rows={rows} />
     </div>
   );
