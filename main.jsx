@@ -1092,6 +1092,42 @@ function calcSalesBreakdown(item) {
 }
 
 
+function getNbaaSellerSettlement(item) {
+  const sales = calcSalesBreakdown(item || {});
+  const source = item?.nbaaListing || item?.listingSettlement || item?.sellerSettlement || item?.seller_settlement || {};
+  const platformText = String(item?.soldPlatform || item?.platform || item?.listingPlatform || source.platform || "").toUpperCase();
+  const feeTaxIncluded = Number(source.sellerFeeTaxIncludedJpy || source.platformFeeTaxIncludedJpy || item?.platformFeeJpy || item?.platformFee || 0);
+  const sellerFeeExTax = Number(source.sellerFeeJpy || source.sellerFeeExTaxJpy || item?.sellerFeeJpy || 0) || (feeTaxIncluded ? feeTaxIncluded / (1 + TAX_RATE) : Number(sales.platformFeeExTax || 0));
+  const sellerFeeTax = Number(source.sellerFeeTaxJpy || item?.sellerFeeTaxJpy || 0) || (feeTaxIncluded ? feeTaxIncluded - sellerFeeExTax : Number(sales.platformFeeTax || 0));
+  const saleAmountExTax = Number(source.saleAmountJpy || source.amountJpy || source.hammerPriceJpy || item?.nbaaSaleAmountJpy || item?.sellerSaleAmountJpy || 0) || Number(sales.salesRevenueExTax || 0);
+  const saleTaxJpy = Number(source.saleTaxJpy || source.consumptionTaxJpy || item?.nbaaSaleTaxJpy || item?.sellerSaleTaxJpy || 0) || Number(sales.salesOutputTax || 0);
+  const settlementTotalJpy = Number(source.settlementTotalJpy || source.totalJpy || item?.listingSettlementTotalJpy || item?.sellerSettlementTotalJpy || item?.finalReceiptJpy || item?.netReceiptJpy || 0) || (saleAmountExTax + saleTaxJpy - sellerFeeExTax - sellerFeeTax - Number(sales.refundJpy || 0) + Number(sales.adjustmentJpy || 0));
+  const listingCode = source.listingCode || source.sellCode || item?.listingCode || item?.sellerListingCode || item?.nbaaListingCode || "";
+  const listingDate = source.listingDate || item?.listingDate || item?.listedDate || item?.soldDate || "";
+  const boxNo = source.boxNo || item?.listingBoxNo || item?.sellerBoxNo || "";
+  const branchNo = source.branchNo || item?.listingBranchNo || item?.sellerBranchNo || "";
+  const hasData = platformText.includes("NBAA") || !!(listingCode || source.listingDate || source.saleAmountJpy || source.settlementTotalJpy || item?.listingCode || item?.nbaaListingCode || item?.listingSettlementTotalJpy);
+
+  return {
+    hasData,
+    listingCode,
+    listingDate,
+    boxNo,
+    branchNo,
+    itemNameJp: source.itemNameJp || item?.itemNameJp || item?.item || "",
+    brandName: source.brandName || item?.brandJp || item?.brand || "",
+    productName: source.productName || item?.productTitle || item?.item || "",
+    reservePriceJpy: Number(source.reservePriceJpy || item?.reservePriceJpy || item?.listingPriceJpy || item?.expectedSaleJpy || 0),
+    saleAmountExTax,
+    saleTaxJpy,
+    sellerFeeExTax,
+    sellerFeeTax,
+    settlementTotalJpy,
+    systemCode: source.systemCode || item?.selfSystemCode || item?.systemCode || item?.id || "",
+    companyMemo: source.companyMemo || source.memo || item?.listingMemo || item?.soldMemo || ""
+  };
+}
+
 function sourceKind(item) {
   const auction = getAuction(item);
   if (auction) return "日本拍卖";
@@ -1112,6 +1148,7 @@ function idCheckOf(item) {
 function buildSourceTrace(item) {
   const auction = getAuction(item);
   const sales = calcSalesBreakdown(item);
+  const sellerSettlement = getNbaaSellerSettlement(item);
   const purchaseAmount = auction
     ? jpy(auction.invoiceTotal || 0)
     : [item.purchaseCny || item.purchaseAmount || 0, item.purchaseCurrency || "CNY"].filter((x) => x !== "").join(" ");
@@ -3206,6 +3243,26 @@ function NbaaProductRecordDetail({ item, onClose, exportItemPdf }) {
           <RecordField label="最终到账" value={finalReceipt ? jpy(finalReceipt) : ""} />
         </RecordCard>
 
+        {sellerSettlement.hasData && (
+          <RecordCard title="NBAA出品结算">
+            <RecordField label="出品コード" value={sellerSettlement.listingCode} />
+            <RecordField label="出品日" value={sellerSettlement.listingDate} />
+            <RecordField label="箱番" value={sellerSettlement.boxNo} />
+            <RecordField label="枝番" value={sellerSettlement.branchNo} />
+            <RecordField label="アイテム名" value={sellerSettlement.itemNameJp} />
+            <RecordField label="ブランド名" value={sellerSettlement.brandName} />
+            <RecordField label="商品名" value={sellerSettlement.productName} />
+            <RecordField label="指値" value={sellerSettlement.reservePriceJpy ? jpy(sellerSettlement.reservePriceJpy) : ""} />
+            <RecordField label="金額（税抜）" value={sellerSettlement.saleAmountExTax ? jpy(sellerSettlement.saleAmountExTax) : ""} />
+            <RecordField label="销售消费税" value={sellerSettlement.saleTaxJpy ? jpy(sellerSettlement.saleTaxJpy) : ""} />
+            <RecordField label="出品手数料" value={sellerSettlement.sellerFeeExTax ? jpy(sellerSettlement.sellerFeeExTax) : ""} />
+            <RecordField label="手数料消费税" value={sellerSettlement.sellerFeeTax ? jpy(sellerSettlement.sellerFeeTax) : ""} />
+            <RecordField label="合计 / 最终到账" value={sellerSettlement.settlementTotalJpy ? jpy(sellerSettlement.settlementTotalJpy) : ""} />
+            <RecordField label="自社システムコード" value={sellerSettlement.systemCode} />
+            <RecordField label="自社備考欄" value={sellerSettlement.companyMemo} full />
+          </RecordCard>
+        )}
+
         <RecordCard title="⑤ 利润分析">
           <RecordField label="库存成本" value={jpy(t.costJpy)} />
           <RecordField label="销售金额" value={saleJpy ? jpy(saleJpy) : ""} />
@@ -4147,11 +4204,12 @@ function SalesReport({ items, downloadCSV }) {
     return matchText && matchMonth;
   });
 
-  const headers = ["图片", "商品编号", "品牌", "商品名", "采购来源", "销售日期", "销售平台", "售价（含税）", "销售收入（未税）", "销项消费税", "平台手续费", "手续费消费税", "退款", "调整金额", "最终到账", "库存成本", "实际利润", "备注"];
-  const csvHeaders = ["商品编号", "品牌", "商品名", "采购类型", "仕入先", "供应商地址", "本人确认", "报关批次", "资料状态", "缺失资料", "销售日期", "销售平台", "售价（含税）", "销售收入（未税）", "销项消费税", "平台手续费", "手续费消费税", "退款", "调整金额", "最终到账", "库存成本", "实际利润", "备注"];
+  const headers = ["图片", "商品编号", "品牌", "商品名", "采购来源", "销售日期", "销售平台", "出品コード", "指値", "金額（税抜）", "NBAA合计", "售价（含税）", "销售收入（未税）", "销项消费税", "平台手续费", "手续费消费税", "退款", "调整金额", "最终到账", "库存成本", "实际利润", "备注"];
+  const csvHeaders = ["商品编号", "品牌", "商品名", "采购类型", "仕入先", "供应商地址", "本人确认", "报关批次", "资料状态", "缺失资料", "销售日期", "销售平台", "出品コード", "指値", "金額（税抜）", "NBAA合计", "售价（含税）", "销售收入（未税）", "销项消费税", "平台手续费", "手续费消费税", "退款", "调整金额", "最终到账", "库存成本", "实际利润", "备注"];
   const rows = filteredSold.map((x) => {
     const sales = calcSalesBreakdown(x);
     const trace = buildSourceTrace(x);
+    const sellerSettlement = getNbaaSellerSettlement(x);
     return [
       <ProductThumb item={x} />,
       x.id,
@@ -4160,6 +4218,10 @@ function SalesReport({ items, downloadCSV }) {
       trace.supplier || trace.kind || "—",
       x.soldDate || "",
       x.soldPlatform || x.platform || "",
+      sellerSettlement.listingCode || "",
+      sellerSettlement.reservePriceJpy ? jpy(sellerSettlement.reservePriceJpy) : "",
+      sellerSettlement.saleAmountExTax ? jpy(sellerSettlement.saleAmountExTax) : "",
+      sellerSettlement.settlementTotalJpy ? jpy(sellerSettlement.settlementTotalJpy) : "",
       jpy(sales.saleTaxIncluded),
       jpy(sales.salesRevenueExTax),
       jpy(sales.salesOutputTax),
@@ -4177,6 +4239,7 @@ function SalesReport({ items, downloadCSV }) {
     const sales = calcSalesBreakdown(x);
     const trace = buildSourceTrace(x);
     const evidence = buildEvidenceCheck(x);
+    const sellerSettlement = getNbaaSellerSettlement(x);
     return [
       x.id,
       x.brand,
@@ -4190,6 +4253,10 @@ function SalesReport({ items, downloadCSV }) {
       evidence.text,
       x.soldDate || "",
       x.soldPlatform || x.platform || "",
+      sellerSettlement.listingCode || "",
+      Math.round(sellerSettlement.reservePriceJpy || 0),
+      Math.round(sellerSettlement.saleAmountExTax || 0),
+      Math.round(sellerSettlement.settlementTotalJpy || 0),
       Math.round(sales.saleTaxIncluded),
       Math.round(sales.salesRevenueExTax),
       Math.round(sales.salesOutputTax),
