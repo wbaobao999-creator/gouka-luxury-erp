@@ -3884,6 +3884,34 @@ function TaxReport({ items, totals, customsBatches, downloadCSV }) {
   const inputTaxTotal = auctionInputTax + importConsumptionTax;
   const taxDifference = salesOutputTax - inputTaxTotal;
 
+  const taxAuditRows = [
+    ...auctionItems.flatMap(({ item, auction }) => {
+      const rows = [];
+      if (!auction.auctionCode) rows.push(["HIGH", item.id, "日本拍卖", "缺少落札コード", "补录拍卖落札コード，便于对应拍卖会记录"]);
+      if (!auction.invoiceNo) rows.push(["HIGH", item.id, "日本拍卖", "缺少Invoice", "补录拍卖公司Invoice编号或付款凭证编号"]);
+      if (!auction.auctionDate && !item.purchaseDate) rows.push(["MEDIUM", item.id, "日本拍卖", "缺少拍卖日/取得日", "补录拍卖日或取得日"]);
+      if (!auction.boxNo && !auction.lotNo) rows.push(["MEDIUM", item.id, "日本拍卖", "缺少箱番或Lot", "至少保留Lot或箱番，方便追溯拍卖明细"]);
+      if (Number(auction.taxCredit || 0) > 0 && !auction.invoiceNo) rows.push(["HIGH", item.id, "日本拍卖", "有进项税但缺Invoice", "进项税控除建议对应Invoice凭证"]);
+      return rows;
+    }),
+    ...soldItems.flatMap((item) => {
+      const rows = [];
+      const saleAmount = Number(item.soldPriceJpy || item.saleJpy || 0);
+      if (saleAmount > 0 && !item.soldDate) rows.push(["HIGH", item.id, "销售", "有销售额但缺销售日期", "补录销售日期，消费税期间判断需要日期"]);
+      if (saleAmount > 0 && !(item.soldPlatform || item.platform)) rows.push(["MEDIUM", item.id, "销售", "有销售额但缺销售平台", "补录销售平台，方便核对平台结算"]);
+      if (isSoldStatus(item.status) && saleAmount <= 0) rows.push(["HIGH", item.id, "销售", "已售状态但缺含税售价", "补录售价（含税），否则无法计算销项税"]);
+      return rows;
+    }),
+    ...(customsBatches || []).flatMap((batch) => {
+      const rows = [];
+      if (Number(batch.importConsumptionTaxJpy || 0) > 0 && !batch.importDate) rows.push(["MEDIUM", batch.id || "未命名批次", "进口消费税", "有进口消费税但缺报关日期", "补录报关日期，便于期间归属"]);
+      if (Number(batch.importConsumptionTaxJpy || 0) > 0 && !batch.id) rows.push(["MEDIUM", "未命名批次", "进口消费税", "缺少报关批次号", "补录EMS或报关批次号"]);
+      return rows;
+    })
+  ];
+
+  const taxAuditCsvRows = taxAuditRows.map((r) => ["税务检查提示", r[1], "", r[3], "", r[2], r[4], "", "", "", "", "", "", ""]);
+
   const csv = [
     ["区分", "商品编号/批次", "品牌", "商品名", "日期", "平台/拍卖会", "来源凭证", "落札消费税", "手续费消费税", "进口消费税", "销售JPY税込", "税抜销售", "销售消费税", "税额JPY"],
     ...auctionItems.map(({ item, auction }) => {
@@ -3897,7 +3925,8 @@ function TaxReport({ items, totals, customsBatches, downloadCSV }) {
       const sales = calcSalesBreakdown(x);
       return ["销售消费税", x.id, x.brand || "", x.item || "", x.soldDate || "", x.soldPlatform || x.platform || "", [(x.buyer || x.buyerName || x.customer || x.customerName || x.soldBuyer) ? "买家:" + (x.buyer || x.buyerName || x.customer || x.customerName || x.soldBuyer) : "", sales.finalReceiptJpy ? "最终到账:" + Math.round(sales.finalReceiptJpy) : "", x.soldMemo || ""].filter(Boolean).join(" / "), "", "", "", Math.round(sales.saleTaxIncluded), Math.round(sales.salesRevenueExTax), Math.round(sales.salesOutputTax), Math.round(sales.salesOutputTax)];
     }),
-    ["消费税差额参考", "", "", "", "", "销项税 - 进项税", "销售消费税 - 日本拍卖进项税 - 进口消费税", "", "", Math.round(importConsumptionTax), "", "", Math.round(salesOutputTax), Math.round(taxDifference)]
+    ["消费税差额参考", "", "", "", "", "销项税 - 进项税", "销售消费税 - 日本拍卖进项税 - 进口消费税", "", "", Math.round(importConsumptionTax), "", "", Math.round(salesOutputTax), Math.round(taxDifference)],
+    ...taxAuditCsvRows
   ];
 
   return (
@@ -3911,6 +3940,10 @@ function TaxReport({ items, totals, customsBatches, downloadCSV }) {
         <Card icon={<Calculator />} title="销售消费税" value={jpy(salesOutputTax)} />
         <Card icon={<Calculator />} title="预计应缴消费税" value={jpy(taxDifference)} />
       </div>
+
+      <h3>税务检查提示</h3>
+      <p className="note">这里用于提前发现税务检查时可能被追问的缺项。没有提示不代表正式申报完成，正式申报仍以税理士确认结果为准。</p>
+      <Table headers={["级别", "商品编号/批次", "业务类型", "检查项目", "建议处理"]} rows={taxAuditRows.length ? taxAuditRows : [["OK", "—", "税务参考", "暂无明显缺项", "继续保持商品、拍卖、销售、报关资料一致"]]} />
 
       <h3>1. 日本拍卖进项税</h3>
       <p className="note">落札消费税 + 手续费消费税 = 可抵扣消费税。此处只读取 product.auction。</p>
