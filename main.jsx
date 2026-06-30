@@ -21,6 +21,12 @@ productRecordStyle.textContent = `
 .product-record-summary h3 { margin:0 0 10px; font-size:16px; border-left:5px solid #16a34a; padding-left:10px; }
 .timeline-date { display:block; margin-top:5px; font-size:11px; color:#64748b; font-weight:700; }
 .record-subtitle { grid-column:1 / -1; margin:4px 0 2px; padding:7px 10px; border-left:4px solid #16a34a; background:#f0fdf4; color:#166534; font-weight:800; font-size:13px; }
+.record-card-head { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px; }
+.record-card-head button { flex:1; display:flex; align-items:center; gap:10px; text-align:left; border:0; background:transparent; padding:0; color:inherit; cursor:pointer; }
+.record-card-head h3 { margin:0; }
+.record-card-summary { color:#64748b; font-size:12px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.record-card-toggle { flex:0 0 auto; border:1px solid #cbd5e1; border-radius:999px; padding:4px 10px; color:#334155; background:#fff; font-size:12px; font-weight:800; }
+.record-card.collapsed { padding-bottom:12px; }
 .product-record-identity { background:#fff; border:1px solid #dde5ef; border-radius:12px; padding:18px; display:flex; flex-direction:column; justify-content:space-between; }
 .product-record-kicker { font-size:12px; color:#64748b; font-weight:800; letter-spacing:.08em; text-transform:uppercase; }
 .product-record-title { margin:8px 0 10px; font-size:28px; line-height:1.25; color:#0f172a; }
@@ -3035,11 +3041,18 @@ function RecordField({ label, value, full = false }) {
   );
 }
 
-function RecordCard({ title, children, className = "" }) {
+function RecordCard({ title, children, className = "", summary = "", defaultOpen = false }) {
+  const [open, setOpen] = useState(defaultOpen);
   return (
-    <section className={"record-card " + className}>
-      <h3>{title}</h3>
-      <div className="record-field-grid">{children}</div>
+    <section className={"record-card " + className + (open ? "" : " collapsed")}>
+      <div className="record-card-head">
+        <button type="button" onClick={() => setOpen(!open)}>
+          <h3>{title}</h3>
+          {summary && <span className="record-card-summary">{summary}</span>}
+        </button>
+        <span className="record-card-toggle">{open ? "\u6536\u8d77" : "\u5c55\u5f00"}</span>
+      </div>
+      {open && <div className="record-field-grid">{children}</div>}
     </section>
   );
 }
@@ -3172,7 +3185,7 @@ function NbaaProductRecordDetail({ item, onClose, exportItemPdf }) {
       </div>
 
       <div className="product-record-grid">
-        <RecordCard title="① 基本资料">
+        <RecordCard title="① 基本资料" summary={[item.id, item.brand, item.item].filter(Boolean).join(" / ")} defaultOpen>
           <RecordField label="品牌" value={item.brand} />
           <RecordField label="型号" value={item.productTitle || item.model || item.item} />
           <RecordField label="颜色" value={item.color} />
@@ -3182,7 +3195,7 @@ function NbaaProductRecordDetail({ item, onClose, exportItemPdf }) {
           <RecordField label="备注" value={displayMemo(item)} full />
         </RecordCard>
 
-        <RecordCard title="来源追溯">
+        <RecordCard title="来源追溯" summary={[trace.kind, trace.supplier, evidence.status].filter(Boolean).join(" / ")} defaultOpen>
           <RecordField label="采购类型" value={trace.kind} />
           <RecordField label="仕入先" value={trace.supplier} />
           <RecordField label="地址" value={trace.address} />
@@ -3202,7 +3215,7 @@ function NbaaProductRecordDetail({ item, onClose, exportItemPdf }) {
           <RecordField label="需补充" value={evidence.text} full />
         </RecordCard>
 
-        <RecordCard title="② 日本拍卖">
+        <RecordCard title="② 日本拍卖" summary={auction ? [auction.platform || auction.auctionHouse, auction.auctionCode, jpy(paymentTotal)].filter(Boolean).join(" / ") : ""} defaultOpen={!!auction}>
           <div className="record-subtitle">基础信息</div>
           <RecordField label="拍卖公司" value={auction?.platform || auction?.auctionHouse} />
           <RecordField label="落札コード" value={auction?.auctionCode} />
@@ -3224,7 +3237,7 @@ function NbaaProductRecordDetail({ item, onClose, exportItemPdf }) {
           <RecordField label="消费税控除" value={auction ? jpy(auction.taxCredit) : ""} />
         </RecordCard>
 
-        <RecordCard title="③ EMS">
+        <RecordCard title="③ EMS" summary={[item.customsBatchId, importConsumptionTax ? jpy(importConsumptionTax) : ""].filter(Boolean).join(" / ")} defaultOpen={!!item.customsBatchId}>
           <RecordField label="批次" value={item.customsBatchId} />
           <RecordField label="EMS PDF" value={emsPdfStatus} />
           <RecordField label="申报金额" value={[item.declaredCny, item.declaredCurrency || "CNY"].filter(Boolean).join(" ")} />
@@ -3234,7 +3247,7 @@ function NbaaProductRecordDetail({ item, onClose, exportItemPdf }) {
           <RecordField label="报关日期" value={customsDate} />
         </RecordCard>
 
-        <RecordCard title="④ 销售">
+        <RecordCard title="④ 销售" summary={saleJpy ? [(item.soldPlatform || item.platform), jpy(saleJpy)].filter(Boolean).join(" / ") : ""} defaultOpen={saleJpy > 0}>
           <RecordField label="买家" value={buyerName} />
           <RecordField label="平台" value={item.soldPlatform || item.platform} />
           <RecordField label="售价" value={saleJpy ? jpy(saleJpy) : ""} />
@@ -3245,7 +3258,7 @@ function NbaaProductRecordDetail({ item, onClose, exportItemPdf }) {
         </RecordCard>
 
         {sellerSettlement.hasData && (
-          <RecordCard title="NBAA出品结算">
+          <RecordCard title="NBAA出品结算" summary={sellerSettlement.hasData ? [sellerSettlement.listingCode, sellerSettlement.settlementTotalJpy ? jpy(sellerSettlement.settlementTotalJpy) : ""].filter(Boolean).join(" / ") : ""} defaultOpen={sellerSettlement.hasData}>
             <RecordField label="出品コード" value={sellerSettlement.listingCode} />
             <RecordField label="出品日" value={sellerSettlement.listingDate} />
             <RecordField label="箱番" value={sellerSettlement.boxNo} />
@@ -3264,7 +3277,7 @@ function NbaaProductRecordDetail({ item, onClose, exportItemPdf }) {
           </RecordCard>
         )}
 
-        <RecordCard title="⑤ 利润分析">
+        <RecordCard title="⑤ 利润分析" summary={saleJpy ? jpy(actualProfit) : (expectedSaleJpy ? jpy(expectedProfit) : "")} defaultOpen={saleJpy > 0 || expectedSaleJpy > 0}>
           <RecordField label="库存成本" value={jpy(t.costJpy)} />
           <RecordField label="销售金额" value={saleJpy ? jpy(saleJpy) : ""} />
           <RecordField label="毛利润" value={saleJpy ? jpy(grossProfit) : ""} />
@@ -3273,7 +3286,7 @@ function NbaaProductRecordDetail({ item, onClose, exportItemPdf }) {
           <RecordField label="利润率" value={saleJpy ? `${Number(t.margin || 0).toFixed(1)}%` : ""} />
         </RecordCard>
 
-        <RecordCard title="⑥ Timeline" className="timeline-card">
+        <RecordCard title="⑥ Timeline" className="timeline-card" summary="Product lifecycle" defaultOpen={false}>
           <div className="product-timeline">
             {timeline.map(([label, done, date]) => <TimelineStep key={label} label={label} done={done} date={date} />)}
           </div>
