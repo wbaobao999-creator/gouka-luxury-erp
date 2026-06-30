@@ -1233,6 +1233,15 @@ function buildTaxAuditRows(items) {
   const rows = (items || []).map((item) => {
     const trace = buildSourceTrace(item);
     const evidence = buildEvidenceCheck(item);
+  const auditChecklist = [
+    { group: "商品基础", ok: !!item.id && !!item.brand && !!item.item && images.length > 0, detail: [item.id ? "编号OK" : "缺商品编号", item.brand ? "品牌OK" : "缺品牌", item.item ? "商品名OK" : "缺商品名", images.length > 0 ? "图片OK" : "缺商品图片"].join(" / ") },
+    { group: "采购来源", ok: !!trace.supplier && !!trace.address && !!trace.idCheck && !!trace.purchaseDate, detail: [trace.supplier ? "仕入先OK" : "缺仕入先", trace.address ? "地址OK" : "缺地址", trace.idCheck ? "本人确认OK" : "缺本人确认", trace.purchaseDate ? "日期OK" : "缺采购日"].join(" / ") },
+    { group: "日本拍卖", ok: !auction || (!!auction.auctionCode && !!auction.invoiceTotal && !!auction.inventoryCost && !!auction.taxCredit), detail: auction ? [auction.auctionCode ? "落札コードOK" : "缺落札コード", auction.invoiceTotal ? "付款总额OK" : "缺付款总额", auction.inventoryCost ? "库存成本OK" : "缺库存成本", auction.taxCredit ? "消费税控除OK" : "缺消费税控除"].join(" / ") : "非日本拍卖商品" },
+    { group: "EMS/报关", ok: trace.kind !== "中国采购" || !!trace.customsBatch || !!item.customsBatchId, detail: trace.kind === "中国采购" ? (trace.customsBatch || item.customsBatchId ? "报关批次OK" : "中国采购商品建议补报关批次") : "非中国采购或暂不需要EMS批次" },
+    { group: "销售", ok: !saleJpy || (!!item.soldDate && !!(item.soldPlatform || item.platform)), detail: saleJpy ? [item.soldDate ? "销售日期OK" : "缺销售日期", (item.soldPlatform || item.platform) ? "销售平台OK" : "缺销售平台", finalReceipt ? "最终到账OK" : "最终到账未填"].join(" / ") : "未销售商品" },
+    { group: "税务保存", ok: true, detail: "本页为经营资料检查；正式申报仍以税理士确认结果为准" }
+  ];
+  const auditMissingCount = auditChecklist.filter((x) => !x.ok).length;
     const sales = calcSalesBreakdown(item);
     const tax = calcTax(item);
     const auction = getAuction(item) || {};
@@ -3213,6 +3222,17 @@ function NbaaProductRecordDetail({ item, onClose, exportItemPdf }) {
           <RecordField label="资料状态" value={evidence.status} />
           <RecordField label="完整度" value={evidence.score + "%"} />
           <RecordField label="需补充" value={evidence.text} full />
+        </RecordCard>
+
+        <RecordCard title="税务资料检查" summary={auditMissingCount ? ("需补充 " + auditMissingCount + " 项") : "资料检查OK"} defaultOpen={false}>
+          {auditChecklist.map((row) => (
+            <RecordField
+              key={row.group}
+              label={row.ok ? ("OK " + row.group) : ("需补充 " + row.group)}
+              value={row.detail}
+              full
+            />
+          ))}
         </RecordCard>
 
         <RecordCard title="② 日本拍卖" summary={auction ? [auction.platform || auction.auctionHouse, auction.auctionCode, jpy(paymentTotal)].filter(Boolean).join(" / ") : ""} defaultOpen={!!auction}>
