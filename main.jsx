@@ -1109,13 +1109,17 @@ function getNbaaSellerSettlement(item) {
   const saleTaxJpy = Number(source.saleTaxJpy || source.consumptionTaxJpy || item?.nbaaSaleTaxJpy || item?.sellerSaleTaxJpy || 0) || Number(sales.salesOutputTax || 0);
   const settlementTotalJpy = Number(source.settlementTotalJpy || source.totalJpy || item?.listingSettlementTotalJpy || item?.sellerSettlementTotalJpy || item?.finalReceiptJpy || item?.netReceiptJpy || 0) || (saleAmountExTax + saleTaxJpy - sellerFeeExTax - sellerFeeTax - Number(sales.refundJpy || 0) + Number(sales.adjustmentJpy || 0));
   const listingCode = source.listingCode || source.sellCode || item?.listingCode || item?.sellerListingCode || item?.nbaaListingCode || "";
+  const settlementCode = source.settlementCode || source.paymentCode || source.paymentNo || item?.settlementCode || item?.nbaaSettlementCode || item?.nbaaPaymentCode || item?.paymentCode || "";
   const listingDate = source.listingDate || item?.listingDate || item?.listedDate || item?.soldDate || "";
+  const settlementDate = source.settlementDate || source.paymentDate || item?.settlementDate || item?.nbaaPaymentDate || item?.paymentDate || listingDate || "";
   const boxNo = source.boxNo || item?.listingBoxNo || item?.sellerBoxNo || "";
   const branchNo = source.branchNo || item?.listingBranchNo || item?.sellerBranchNo || "";
-  const hasData = platformText.includes("NBAA") || !!(listingCode || source.listingDate || source.saleAmountJpy || source.settlementTotalJpy || item?.listingCode || item?.nbaaListingCode || item?.listingSettlementTotalJpy);
+  const hasData = platformText.includes("NBAA") || !!(settlementCode || listingCode || source.listingDate || source.saleAmountJpy || source.settlementTotalJpy || item?.listingCode || item?.nbaaListingCode || item?.listingSettlementTotalJpy);
 
   return {
     hasData,
+    settlementCode,
+    settlementDate,
     listingCode,
     listingDate,
     boxNo,
@@ -1233,15 +1237,6 @@ function buildTaxAuditRows(items) {
   const rows = (items || []).map((item) => {
     const trace = buildSourceTrace(item);
     const evidence = buildEvidenceCheck(item);
-  const auditChecklist = [
-    { group: "商品基础", ok: !!item.id && !!item.brand && !!item.item && images.length > 0, detail: [item.id ? "编号OK" : "缺商品编号", item.brand ? "品牌OK" : "缺品牌", item.item ? "商品名OK" : "缺商品名", images.length > 0 ? "图片OK" : "缺商品图片"].join(" / ") },
-    { group: "采购来源", ok: !!trace.supplier && !!trace.address && !!trace.idCheck && !!trace.purchaseDate, detail: [trace.supplier ? "仕入先OK" : "缺仕入先", trace.address ? "地址OK" : "缺地址", trace.idCheck ? "本人确认OK" : "缺本人确认", trace.purchaseDate ? "日期OK" : "缺采购日"].join(" / ") },
-    { group: "日本拍卖", ok: !auction || (!!auction.auctionCode && !!auction.invoiceTotal && !!auction.inventoryCost && !!auction.taxCredit), detail: auction ? [auction.auctionCode ? "落札コードOK" : "缺落札コード", auction.invoiceTotal ? "付款总额OK" : "缺付款总额", auction.inventoryCost ? "库存成本OK" : "缺库存成本", auction.taxCredit ? "消费税控除OK" : "缺消费税控除"].join(" / ") : "非日本拍卖商品" },
-    { group: "EMS/报关", ok: trace.kind !== "中国采购" || !!trace.customsBatch || !!item.customsBatchId, detail: trace.kind === "中国采购" ? (trace.customsBatch || item.customsBatchId ? "报关批次OK" : "中国采购商品建议补报关批次") : "非中国采购或暂不需要EMS批次" },
-    { group: "销售", ok: !saleJpy || (!!item.soldDate && !!(item.soldPlatform || item.platform)), detail: saleJpy ? [item.soldDate ? "销售日期OK" : "缺销售日期", (item.soldPlatform || item.platform) ? "销售平台OK" : "缺销售平台", finalReceipt ? "最终到账OK" : "最终到账未填"].join(" / ") : "未销售商品" },
-    { group: "税务保存", ok: true, detail: "本页为经营资料检查；正式申报仍以税理士确认结果为准" }
-  ];
-  const auditMissingCount = auditChecklist.filter((x) => !x.ok).length;
     const sales = calcSalesBreakdown(item);
     const tax = calcTax(item);
     const auction = getAuction(item) || {};
@@ -3132,6 +3127,21 @@ function NbaaProductRecordDetail({ item, onClose, exportItemPdf }) {
   const buyerName = item.buyer || item.buyerName || item.customer || item.customerName || item.soldBuyer || "";
   const trace = buildSourceTrace(item);
   const evidence = buildEvidenceCheck(item);
+  const auditChecklist = [
+    { group: "商品基础", ok: !!item.id && !!item.brand && !!item.item && images.length > 0, detail: [item.id ? "编号OK" : "缺商品编号", item.brand ? "品牌OK" : "缺品牌", item.item ? "商品名OK" : "缺商品名", images.length > 0 ? "图片OK" : "缺商品图片"].join(" / ") },
+    { group: "采购来源", ok: !!trace.supplier && !!trace.address && !!trace.idCheck && !!trace.purchaseDate, detail: [trace.supplier ? "仕入先OK" : "缺仕入先", trace.address ? "地址OK" : "缺地址", trace.idCheck ? "本人确认OK" : "缺本人确认", trace.purchaseDate ? "日期OK" : "缺采购日"].join(" / ") },
+    { group: "日本拍卖", ok: !auction || (!!auction.auctionCode && !!auction.invoiceTotal && !!auction.inventoryCost && !!auction.taxCredit), detail: auction ? [auction.auctionCode ? "落札コードOK" : "缺落札コード", auction.invoiceNo || auction.paymentStatementNo || sellerSettlement.settlementCode ? "精算/Invoice凭证OK" : "建议补精算コード或Invoice", auction.invoiceTotal ? "付款总额OK" : "缺付款总额", auction.inventoryCost ? "库存成本OK" : "缺库存成本", auction.taxCredit ? "消费税控除OK" : "缺消费税控除"].join(" / ") : "非日本拍卖商品" },
+    { group: "NBAA精算", ok: !sellerSettlement.hasData || !!sellerSettlement.settlementCode || !!sellerSettlement.listingCode, detail: sellerSettlement.hasData ? [sellerSettlement.settlementCode ? "精算コードOK" : "建议补精算コード", sellerSettlement.listingCode ? "出品コードOK" : "建议补出品コード", sellerSettlement.settlementTotalJpy ? "精算合计OK" : "建议补合计金额"].join(" / ") : "无NBAA出品精算" },
+    { group: "EMS/报关", ok: trace.kind !== "中国采购" || !!trace.customsBatch || !!item.customsBatchId, detail: trace.kind === "中国采购" ? (trace.customsBatch || item.customsBatchId ? "报关批次OK" : "中国采购商品建议补报关批次") : "非中国采购或暂不需要EMS批次" },
+    { group: "销售", ok: !saleJpy || (!!item.soldDate && !!(item.soldPlatform || item.platform)), detail: saleJpy ? [item.soldDate ? "销售日期OK" : "缺销售日期", (item.soldPlatform || item.platform) ? "销售平台OK" : "缺销售平台", finalReceipt ? "最终到账OK" : "最终到账未填"].join(" / ") : "未销售商品" },
+    { group: "税务保存", ok: true, detail: "NBAA出品销售与落札采购在同一PAYMENT精算时，可保存精算コード作为核对线索；正式申报以税理士确认为准" }
+  ];
+  const auditMissingCount = auditChecklist.filter((x) => !x.ok).length;
+  const nbaaWinningPaymentJpy = auction && String(auction.platform || auction.auctionHouse || "").toUpperCase().includes("NBAA") ? Number(auction.invoiceTotal || 0) : 0;
+  const nbaaSellerGrossJpy = Number(sellerSettlement.saleAmountExTax || 0) + Number(sellerSettlement.saleTaxJpy || 0);
+  const nbaaSellerFeeGrossJpy = Number(sellerSettlement.sellerFeeExTax || 0) + Number(sellerSettlement.sellerFeeTax || 0);
+  const nbaaPaymentNetReference = Number(sellerSettlement.settlementTotalJpy || 0) - nbaaWinningPaymentJpy;
+  const nbaaPaymentMode = sellerSettlement.hasData && nbaaWinningPaymentJpy ? "出品销售 + 落札采购 / PAYMENT抵扣" : (sellerSettlement.hasData ? "出品销售精算" : (nbaaWinningPaymentJpy ? "落札采购精算" : ""));
   const emsPdfStatus = item.customsBatchId ? "PDF导出中心可生成" : "";
   const timeline = [
     ["采购", !!item.purchaseDate, item.purchaseDate],
@@ -3278,7 +3288,10 @@ function NbaaProductRecordDetail({ item, onClose, exportItemPdf }) {
         </RecordCard>
 
         {sellerSettlement.hasData && (
-          <RecordCard title="NBAA出品结算" summary={sellerSettlement.hasData ? [sellerSettlement.listingCode, sellerSettlement.settlementTotalJpy ? jpy(sellerSettlement.settlementTotalJpy) : ""].filter(Boolean).join(" / ") : ""} defaultOpen={sellerSettlement.hasData}>
+          <RecordCard title="NBAA出品结算" summary={sellerSettlement.hasData ? [sellerSettlement.settlementCode ? "精算 " + sellerSettlement.settlementCode : "", sellerSettlement.listingCode ? "出品 " + sellerSettlement.listingCode : "", sellerSettlement.settlementTotalJpy ? jpy(sellerSettlement.settlementTotalJpy) : ""].filter(Boolean).join(" / ") : ""} defaultOpen={sellerSettlement.hasData}>
+            <RecordField label="精算コード" value={sellerSettlement.settlementCode} />
+            <RecordField label="精算日" value={sellerSettlement.settlementDate} />
+            <RecordField label="精算类型" value={nbaaPaymentMode} />
             <RecordField label="出品コード" value={sellerSettlement.listingCode} />
             <RecordField label="出品日" value={sellerSettlement.listingDate} />
             <RecordField label="箱番" value={sellerSettlement.boxNo} />
@@ -3291,6 +3304,12 @@ function NbaaProductRecordDetail({ item, onClose, exportItemPdf }) {
             <RecordField label="销售消费税" value={sellerSettlement.saleTaxJpy ? jpy(sellerSettlement.saleTaxJpy) : ""} />
             <RecordField label="出品手数料" value={sellerSettlement.sellerFeeExTax ? jpy(sellerSettlement.sellerFeeExTax) : ""} />
             <RecordField label="手数料消费税" value={sellerSettlement.sellerFeeTax ? jpy(sellerSettlement.sellerFeeTax) : ""} />
+            <RecordField label="出品金额（含税）" value={nbaaSellerGrossJpy ? jpy(nbaaSellerGrossJpy) : ""} />
+            <RecordField label="出品手续费（含税）" value={nbaaSellerFeeGrossJpy ? jpy(nbaaSellerFeeGrossJpy) : ""} />
+            <RecordField label="落札付款总额" value={nbaaWinningPaymentJpy ? jpy(nbaaWinningPaymentJpy) : ""} />
+            <RecordField label="落札进项税控除" value={auction ? jpy(auction.taxCredit || 0) : ""} />
+            <RecordField label="PAYMENT差额参考" value={(sellerSettlement.hasData || nbaaWinningPaymentJpy) ? jpy(nbaaPaymentNetReference) : ""} />
+            <RecordField label="抵扣说明" value="NBAA同一张PAYMENT中同时存在自社出品销售和落札采购时，可用精算コード核对销售收入、出品手续费、落札付款和消费税控除。正式申报以税理士确认为准。" full />
             <RecordField label="合计 / 最终到账" value={sellerSettlement.settlementTotalJpy ? jpy(sellerSettlement.settlementTotalJpy) : ""} />
             <RecordField label="自社システムコード" value={sellerSettlement.systemCode} />
             <RecordField label="自社備考欄" value={sellerSettlement.companyMemo} full />
@@ -3978,11 +3997,21 @@ function TaxReport({ items, totals, customsBatches, downloadCSV }) {
   const taxAuditRows = [
     ...auctionItems.flatMap(({ item, auction }) => {
       const rows = [];
+      const sellerSettlement = getNbaaSellerSettlement(item);
+      const settlementCode = auction.invoiceNo || auction.paymentNo || auction.paymentCode || auction.settlementCode || sellerSettlement.settlementCode || "";
+      const hasPaymentEvidence = !!settlementCode || !!sellerSettlement.listingCode || !!sellerSettlement.hasData;
+      const taxCredit = Number(auction.taxCredit || 0);
+
       if (!auction.auctionCode) rows.push(["HIGH", item.id, "日本拍卖", "缺少落札コード", "补录拍卖落札コード，便于对应拍卖会记录"]);
-      if (!auction.invoiceNo) rows.push(["HIGH", item.id, "日本拍卖", "缺少Invoice", "补录拍卖公司Invoice编号或付款凭证编号"]);
       if (!auction.auctionDate && !item.purchaseDate) rows.push(["MEDIUM", item.id, "日本拍卖", "缺少拍卖日/取得日", "补录拍卖日或取得日"]);
       if (!auction.boxNo && !auction.lotNo) rows.push(["MEDIUM", item.id, "日本拍卖", "缺少箱番或Lot", "至少保留Lot或箱番，方便追溯拍卖明细"]);
-      if (Number(auction.taxCredit || 0) > 0 && !auction.invoiceNo) rows.push(["HIGH", item.id, "日本拍卖", "有进项税但缺Invoice", "进项税控除建议对应Invoice凭证"]);
+      if (!auction.invoiceTotal || !auction.inventoryCost) rows.push(["HIGH", item.id, "日本拍卖", "缺少付款总额或库存成本", "补录落札金额、消费税、手续费和国内运费，系统会自动计算"]);
+
+      if (taxCredit > 0 && !settlementCode && hasPaymentEvidence) {
+        rows.push(["LOW", item.id, "NBAA精算", "使用PAYMENT精算抵扣", "此商品存在NBAA出品/落札精算线索。建议补录精算コード，作为进项税控除和销售结算的核对依据"]);
+      } else if (taxCredit > 0 && !settlementCode) {
+        rows.push(["MEDIUM", item.id, "日本拍卖", "缺少Invoice或精算コード", "NBAA同一张PAYMENT可作为核对凭证。建议补录精算コード或付款凭证编号"]);
+      }
       return rows;
     }),
     ...soldItems.flatMap((item) => {
