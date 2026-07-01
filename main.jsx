@@ -4047,22 +4047,42 @@ function TaxReport({ items, totals, customsBatches, downloadCSV }) {
   const severityRank = { HIGH: 1, MEDIUM: 2, LOW: 3, OK: 4 };
   const taxAuditDisplayRows = [...taxAuditRows].sort((a, b) => (severityRank[a[0]] || 9) - (severityRank[b[0]] || 9));
 
-  const taxAuditCsvRows = taxAuditDisplayRows.map((r) => ["税务检查提示", r[1], "", r[3], "", r[2], r[4], "", "", "", "", "", "", ""]);
+  const taxAuditCsvRows = taxAuditDisplayRows.map((r) => ["税务检查提示", r[1], "", r[3], "", r[2], r[0], r[4], "", "", "", "", "", "", ""]);
 
   const csv = [
-    ["区分", "商品编号/批次", "品牌", "商品名", "日期", "平台/拍卖会", "来源凭证", "落札消费税", "手续费消费税", "进口消费税", "销售JPY税込", "税抜销售", "销售消费税", "税额JPY"],
+    ["区分", "商品编号/批次", "品牌", "商品名", "日期", "平台/拍卖会", "凭证状态", "来源凭证", "落札消费税", "手续费消费税", "进口消费税", "销售JPY税込", "税抜销售", "销售消费税", "税额JPY"],
     ...auctionItems.map(({ item, auction }) => {
       const hammerTax = Number(auction.hammerTax || 0);
       const buyerFeeTax = Number(auction.buyerFeeTax || 0);
       const taxCredit = Number(auction.taxCredit || hammerTax + buyerFeeTax || 0);
-      return ["日本拍卖进项税", item.id, item.brand || "", item.item || "", auction.auctionDate || item.purchaseDate || "", auction.platform || auction.auctionHouse || "", [auction.invoiceNo ? "Invoice:" + auction.invoiceNo : "", auction.lotNo ? "Lot:" + auction.lotNo : "", auction.boxNo ? "箱番:" + auction.boxNo : "", auction.branchNo ? "枝番:" + auction.branchNo : ""].filter(Boolean).join(" / "), Math.round(hammerTax), Math.round(buyerFeeTax), "", "", "", "", Math.round(taxCredit)];
+      const sellerSettlement = getNbaaSellerSettlement(item);
+      const settlementCode = auction.invoiceNo || auction.paymentNo || auction.paymentCode || auction.settlementCode || sellerSettlement.settlementCode || "";
+      const hasPaymentOffset = !auction.invoiceNo && !!sellerSettlement.hasData && taxCredit > 0;
+      const evidenceStatus = auction.invoiceNo
+        ? "Invoice对应"
+        : settlementCode
+          ? "精算コード对应"
+          : hasPaymentOffset
+            ? "PAYMENT抵扣线索"
+            : taxCredit > 0
+              ? "建议补凭证号"
+              : "无进项税";
+      const evidence = [
+        auction.invoiceNo ? "Invoice:" + auction.invoiceNo : "",
+        sellerSettlement.settlementCode ? "精算コード:" + sellerSettlement.settlementCode : "",
+        sellerSettlement.listingCode ? "出品コード:" + sellerSettlement.listingCode : "",
+        auction.lotNo ? "Lot:" + auction.lotNo : "",
+        auction.boxNo ? "箱番:" + auction.boxNo : "",
+        auction.branchNo ? "枝番:" + auction.branchNo : ""
+      ].filter(Boolean).join(" / ");
+      return ["日本拍卖进项税", item.id, item.brand || "", item.item || "", auction.auctionDate || item.purchaseDate || "", auction.platform || auction.auctionHouse || "", evidenceStatus, evidence, Math.round(hammerTax), Math.round(buyerFeeTax), "", "", "", "", Math.round(taxCredit)];
     }),
-    ...(customsBatches || []).map((b) => ["进口消费税", b.id, "", "", b.importDate || "", "EMS/报关批次", b.memo || "", "", "", Math.round(Number(b.importConsumptionTaxJpy || 0)), "", "", "", Math.round(Number(b.importConsumptionTaxJpy || 0))]),
+    ...(customsBatches || []).map((b) => ["进口消费税", b.id, "", "", b.importDate || "", "EMS/报关批次", b.importConsumptionTaxJpy ? "报关税单参考" : "未录入税额", b.memo || "", "", "", Math.round(Number(b.importConsumptionTaxJpy || 0)), "", "", "", Math.round(Number(b.importConsumptionTaxJpy || 0))]),
     ...soldItems.map((x) => {
       const sales = calcSalesBreakdown(x);
-      return ["销售消费税", x.id, x.brand || "", x.item || "", x.soldDate || "", x.soldPlatform || x.platform || "", [(x.buyer || x.buyerName || x.customer || x.customerName || x.soldBuyer) ? "买家:" + (x.buyer || x.buyerName || x.customer || x.customerName || x.soldBuyer) : "", sales.finalReceiptJpy ? "最终到账:" + Math.round(sales.finalReceiptJpy) : "", x.soldMemo || ""].filter(Boolean).join(" / "), "", "", "", Math.round(sales.saleTaxIncluded), Math.round(sales.salesRevenueExTax), Math.round(sales.salesOutputTax), Math.round(sales.salesOutputTax)];
+      return ["销售消费税", x.id, x.brand || "", x.item || "", x.soldDate || "", x.soldPlatform || x.platform || "", x.soldDate ? "销售日期OK" : "缺销售日期", [(x.buyer || x.buyerName || x.customer || x.customerName || x.soldBuyer) ? "买家:" + (x.buyer || x.buyerName || x.customer || x.customerName || x.soldBuyer) : "", sales.finalReceiptJpy ? "最终到账:" + Math.round(sales.finalReceiptJpy) : "", x.soldMemo || ""].filter(Boolean).join(" / "), "", "", "", Math.round(sales.saleTaxIncluded), Math.round(sales.salesRevenueExTax), Math.round(sales.salesOutputTax), Math.round(sales.salesOutputTax)];
     }),
-    ["消费税差额参考", "", "", "", "", "销项税 - 进项税", "销售消费税 - 日本拍卖进项税 - 进口消费税", "", "", Math.round(importConsumptionTax), "", "", Math.round(salesOutputTax), Math.round(taxDifference)],
+    ["消费税差额参考", "", "", "", "", "销项税 - 进项税", "经营参考", "销售消费税 - 日本拍卖进项税 - 进口消费税", "", "", Math.round(importConsumptionTax), "", "", Math.round(salesOutputTax), Math.round(taxDifference)],
     ...taxAuditCsvRows
   ];
 
