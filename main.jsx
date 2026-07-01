@@ -3939,11 +3939,25 @@ function TaxReport({ items, totals, customsBatches, downloadCSV }) {
     const hammerTax = Number(auction.hammerTax || 0);
     const buyerFeeTax = Number(auction.buyerFeeTax || 0);
     const taxCredit = Number(auction.taxCredit || hammerTax + buyerFeeTax || 0);
+    const sellerSettlement = getNbaaSellerSettlement(item);
+    const settlementCode = auction.invoiceNo || auction.paymentNo || auction.paymentCode || auction.settlementCode || sellerSettlement.settlementCode || "";
+    const hasPaymentOffset = !auction.invoiceNo && !!sellerSettlement.hasData && taxCredit > 0;
+    const evidenceStatus = auction.invoiceNo
+      ? "Invoice对应"
+      : settlementCode
+        ? "精算コード对应"
+        : hasPaymentOffset
+          ? "PAYMENT抵扣线索"
+          : taxCredit > 0
+            ? "建议补凭证号"
+            : "无进项税";
     const sourceEvidence = [
-      auction.invoiceNo ? `Invoice: ${auction.invoiceNo}` : "",
-      auction.lotNo ? `Lot: ${auction.lotNo}` : "",
-      auction.boxNo ? `箱番: ${auction.boxNo}` : "",
-      auction.branchNo ? `枝番: ${auction.branchNo}` : ""
+      auction.invoiceNo ? "Invoice: " + auction.invoiceNo : "",
+      sellerSettlement.settlementCode ? "精算コード: " + sellerSettlement.settlementCode : "",
+      sellerSettlement.listingCode ? "出品コード: " + sellerSettlement.listingCode : "",
+      auction.lotNo ? "Lot: " + auction.lotNo : "",
+      auction.boxNo ? "箱番: " + auction.boxNo : "",
+      auction.branchNo ? "枝番: " + auction.branchNo : ""
     ].filter(Boolean).join(" / ");
     return [
       <ProductThumb item={item} size={56} />,
@@ -3952,6 +3966,7 @@ function TaxReport({ items, totals, customsBatches, downloadCSV }) {
       productNameCell(item.item),
       auction.platform || auction.auctionHouse || item.source || "",
       auction.auctionCode || "",
+      evidenceStatus,
       sourceEvidence,
       jpy(hammerTax),
       jpy(buyerFeeTax),
@@ -4029,8 +4044,10 @@ function TaxReport({ items, totals, customsBatches, downloadCSV }) {
       return rows;
     })
   ];
+  const severityRank = { HIGH: 1, MEDIUM: 2, LOW: 3, OK: 4 };
+  const taxAuditDisplayRows = [...taxAuditRows].sort((a, b) => (severityRank[a[0]] || 9) - (severityRank[b[0]] || 9));
 
-  const taxAuditCsvRows = taxAuditRows.map((r) => ["税务检查提示", r[1], "", r[3], "", r[2], r[4], "", "", "", "", "", "", ""]);
+  const taxAuditCsvRows = taxAuditDisplayRows.map((r) => ["税务检查提示", r[1], "", r[3], "", r[2], r[4], "", "", "", "", "", "", ""]);
 
   const csv = [
     ["区分", "商品编号/批次", "品牌", "商品名", "日期", "平台/拍卖会", "来源凭证", "落札消费税", "手续费消费税", "进口消费税", "销售JPY税込", "税抜销售", "销售消费税", "税额JPY"],
@@ -4063,11 +4080,11 @@ function TaxReport({ items, totals, customsBatches, downloadCSV }) {
 
       <h3>税务检查提示</h3>
       <p className="note">这里用于提前发现税务检查时可能被追问的缺项。没有提示不代表正式申报完成，正式申报仍以税理士确认结果为准。</p>
-      <Table headers={["级别", "商品编号/批次", "业务类型", "检查项目", "建议处理"]} rows={taxAuditRows.length ? taxAuditRows : [["OK", "—", "税务参考", "暂无明显缺项", "继续保持商品、拍卖、销售、报关资料一致"]]} />
+      <Table headers={["级别", "商品编号/批次", "业务类型", "检查项目", "建议处理"]} rows={taxAuditDisplayRows.length ? taxAuditDisplayRows : [["OK", "—", "税务参考", "暂无明显缺项", "继续保持商品、拍卖、销售、报关资料一致"]]} />
 
       <h3>1. 日本拍卖进项税</h3>
       <p className="note">落札消费税 + 手续费消费税 = 可抵扣消费税。此处只读取 product.auction。</p>
-      <Table headers={["图片", "商品编号", "品牌", "商品名", "拍卖会", "落札コード", "凭证来源", "落札消费税", "手续费消费税", "可抵扣消费税"]} rows={auctionRows} />
+      <Table headers={["图片", "商品编号", "品牌", "商品名", "拍卖会", "落札コード", "凭证状态", "凭证来源", "落札消费税", "手续费消费税", "可抵扣消费税"]} rows={auctionRows} />
 
       <h3>2. 进口消费税</h3>
       <p className="note">EMS / 报关批次的进口消费税参考，不进入单件库存成本。</p>
