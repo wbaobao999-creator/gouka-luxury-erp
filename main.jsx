@@ -612,6 +612,29 @@ function calcImportBatchAllocation(batch, linkedProducts = []) {
   });
 }
 
+function calcImportBatchReview(batch, products = []) {
+  const b = normalizeImportBatch(batch);
+  const progress = calcImportBatchProgress(b, products);
+  const cost = calcImportBatchCostSummary(b);
+  const tax = calcImportBatchTaxSummary(b);
+  const linkedProducts = getImportBatchLinkedProducts(b, products);
+  const issues = [];
+
+  if (!b.id) issues.push({ level: "HIGH", title: "缺少 Import Batch ID", detail: "请补录批次编号，建议使用 EMS-YYYYMMDD-001 格式。" });
+  if (!b.emsNo) issues.push({ level: "MEDIUM", title: "缺少 EMS 单号", detail: "长期查账时建议保留 EMS 单号。" });
+  if (!b.customsDeclarationNo) issues.push({ level: "MEDIUM", title: "缺少报关编号", detail: "请补录进口申告 / 报关编号。" });
+  if (!b.importDate) issues.push({ level: "MEDIUM", title: "缺少进口日期", detail: "建议与报关单日期保持一致。" });
+  if (progress.targetCount && progress.linkedCount < progress.targetCount) issues.push({ level: "HIGH", title: "商品未全部关联", detail: "还差 " + progress.remainingCount + " 件商品未关联到本批次。" });
+  if (progress.linkedCount > 0 && !progress.allocationDone) issues.push({ level: "HIGH", title: "成本尚未分摊", detail: "已关联商品，但关税、代理费、国际运费还没有完整分摊。" });
+  if (!linkedProducts.length) issues.push({ level: "HIGH", title: "没有关联商品", detail: "请从商品档案中选择本票进口商品加入批次。" });
+  if (Number(b.goodsValueJpy || b.declaredTotalJpy || 0) <= 0) issues.push({ level: "MEDIUM", title: "缺少申报货值", detail: "请录入报关货值 JPY。" });
+  if (cost.costInInventoryJpy > 0 && linkedProducts.length > 0 && !progress.allocationDone) issues.push({ level: "HIGH", title: "进成本费用未落到商品", detail: "关税、代理费、国际运费、其他费用需要分摊到商品库存成本。" });
+  if (tax.taxCreditJpy > 0 && !(b.attachments || []).length) issues.push({ level: "MEDIUM", title: "消费税凭证未附加", detail: "建议上传报关单、进口许可通知书或税费凭证。" });
+
+  const status = issues.some((x) => x.level === "HIGH") ? "需要处理" : issues.length ? "建议补充" : "资料正常";
+  return { status, issues, progress };
+}
+
 function calcImportBatchTradeSummary(batch, products = []) {
   const b = normalizeImportBatch(batch);
   const linkedProducts = getImportBatchLinkedProducts(b, products);
@@ -4549,6 +4572,7 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
     };
   })() : summary;
   const activeProgress = activeBatch.id ? calcImportBatchProgress(activeBatch, items) : null;
+  const activeReview = activeBatch.id ? calcImportBatchReview(activeBatch, items) : null;
   const activeTrade = activeBatch.id ? calcImportBatchTradeSummary(activeBatch, items) : null;
   const activeAllocations = activeBatch.id ? calcImportBatchAllocation(activeBatch, activeTrade?.linkedProducts || []) : [];
   const activeAllocationMap = Object.fromEntries(activeAllocations.map((x) => [x.item.id, x]));
@@ -4654,6 +4678,25 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
             <div className="progressbar"><i style={{ width: activeProgress.progressPercent + "%" }} /></div>
             <strong>{activeProgress.progressPercent}%</strong>
           </div>
+
+          {activeReview && (
+            <div className={"batch-review " + (activeReview.status === "资料正常" ? "ok" : activeReview.status === "建议补充" ? "warn" : "danger") }>
+              <div className="batch-review-head">
+                <b>批次检查</b>
+                <span>{activeReview.status}</span>
+              </div>
+              {activeReview.issues.length ? (
+                <div className="batch-review-list">
+                  {activeReview.issues.slice(0, 6).map((issue) => (
+                    <div key={issue.title} className={"batch-review-item " + issue.level.toLowerCase()}>
+                      <strong>{issue.title}</strong>
+                      <span>{issue.detail}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : <p>当前批次资料、商品关联和成本分摊状态正常。</p>}
+            </div>
+          )}
 
           <div className="batch-timeline">
             {activeTimeline.map((step) => (
