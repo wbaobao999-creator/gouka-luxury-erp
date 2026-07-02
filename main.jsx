@@ -3679,29 +3679,31 @@ function NbaaProductRecordDetail({ item, onClose, exportItemPdf, isOwner = true 
               <RecordField label="状态" value={<StatusBadge status={item.status} />} />
             </div>
             {isOwner && (
-              <div className="product-record-summary">
-                <h3>Business Summary</h3>
-                <div className="record-field-grid">
-                  <RecordField label="付款总额" value={jpy(paymentTotal)} />
-                  <RecordField label="库存成本" value={jpy(inventoryCost)} />
-                  <RecordField label="消费税控除" value={jpy(taxCredit)} />
-                  <RecordField label="预计售价（含税）" value={expectedSaleJpy ? jpy(expectedSaleJpy) : ""} />
-                  <RecordField label="预计利润" value={expectedSaleJpy ? jpy(expectedProfit) : ""} />
-                  <RecordField label="实际利润" value={saleJpy ? jpy(actualProfit) : ""} />
-                  <RecordField label="应缴消费税" value={saleJpy ? jpy(taxRef) : ""} />
+              <>
+                <div className="product-record-summary">
+                  <h3>Business Summary</h3>
+                  <div className="record-field-grid">
+                    <RecordField label="付款总额" value={jpy(paymentTotal)} />
+                    <RecordField label="库存成本" value={jpy(inventoryCost)} />
+                    <RecordField label="消费税控除" value={jpy(taxCredit)} />
+                    <RecordField label="预计售价（含税）" value={expectedSaleJpy ? jpy(expectedSaleJpy) : ""} />
+                    <RecordField label="预计利润" value={expectedSaleJpy ? jpy(expectedProfit) : ""} />
+                    <RecordField label="实际利润" value={saleJpy ? jpy(actualProfit) : ""} />
+                    <RecordField label="应缴消费税" value={saleJpy ? jpy(taxRef) : ""} />
+                  </div>
                 </div>
-              </div>
-              <div className="product-record-status-panel">
-                <h3>Record Status</h3>
-                <div className="product-record-status-grid">
-                  {productRecordStatusItems.map((row) => (
-                    <div key={row.label} className={"product-record-status-item " + row.tone}>
-                      <span>{row.label}</span>
-                      <b>{row.value}</b>
-                    </div>
-                  ))}
+                <div className="product-record-status-panel">
+                  <h3>Record Status</h3>
+                  <div className="product-record-status-grid">
+                    {productRecordStatusItems.map((row) => (
+                      <div key={row.label} className={"product-record-status-item " + row.tone}>
+                        <span>{row.label}</span>
+                        <b>{row.value}</b>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              </>
             )}
           </div>
           <div className="product-record-actions">
