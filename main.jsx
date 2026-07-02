@@ -3610,6 +3610,31 @@ function NbaaProductRecordDetail({ item, onClose, exportItemPdf, isOwner = true 
     { group: "税务保存", ok: true, detail: "NBAA出品销售与落札采购在同一PAYMENT精算时，可保存精算コード作为核对线索；正式申报以税理士确认为准" }
   ];
   const auditMissingCount = auditChecklist.filter((x) => !x.ok).length;
+  const productImportAllocatedCost = Number(productImportBatch.allocatedDutyJpy || item.allocatedDutyJpy || item.batchAllocatedDutyJpy || 0)
+    + Number(productImportBatch.allocatedAgentFeeJpy || item.allocatedAgentFeeJpy || item.batchAllocatedCustomsFeeJpy || 0)
+    + Number(productImportBatch.allocatedInternationalShippingJpy || item.allocatedInternationalShippingJpy || item.batchAllocatedShippingJpy || 0)
+    + Number(productImportBatch.allocatedOtherImportCostJpy || item.allocatedOtherImportCostJpy || item.batchAllocatedOtherCostJpy || 0);
+  const productSourceLabel = isChinaPurchaseRecord ? "中国采购 / Import Batch" : (isJapanAuctionRecord ? "日本拍卖 / Auction Record" : (trace.kind || "普通采购"));
+  const productCostStatus = isChinaPurchaseRecord
+    ? (productImportBatch.id || item.importBatchId || item.customsBatchId ? (productImportAllocatedCost > 0 ? "进口成本已分摊" : "已关联批次，待分摊确认") : "待关联 Import Batch")
+    : (isJapanAuctionRecord ? (auction?.inventoryCost ? "拍卖库存成本已确认" : "待确认拍卖库存成本") : (inventoryCost ? "采购成本已记录" : "待记录采购成本"));
+  const productTaxStatus = isChinaPurchaseRecord
+    ? (Number(productImportBatch.importTaxCreditJpy || importConsumptionTax || 0) > 0 ? "进口消费税已记录" : "待补进口消费税参考")
+    : (isJapanAuctionRecord ? (Number(auction?.taxCredit || 0) > 0 ? "拍卖进项税已记录" : "待补消费税控除") : (taxCredit ? "进项税参考已记录" : "无进项税参考"));
+  const productSalesStatus = saleJpy ? (finalReceipt ? "已销售 / 已回款" : "已销售 / 待确认到账") : (expectedSaleJpy ? "未销售 / 有预计售价" : "未销售 / 待填写预计售价");
+  const productNextAction = auditMissingCount
+    ? "补齐资料检查 " + auditMissingCount + " 项"
+    : (isChinaPurchaseRecord && !(productImportBatch.id || item.importBatchId || item.customsBatchId)
+      ? "关联 Import Batch"
+      : (saleJpy && !finalReceipt ? "确认最终到账" : (saleJpy ? "保存销售与税务凭证" : "继续库存/出品管理")));
+  const productRecordStatusItems = [
+    { label: "采购来源", value: productSourceLabel, tone: isJapanAuctionRecord ? "auction" : (isChinaPurchaseRecord ? "import" : "normal") },
+    { label: "资料完整度", value: evidence.score + "% / " + evidence.status, tone: auditMissingCount ? "warn" : "ok" },
+    { label: "成本状态", value: productCostStatus, tone: productCostStatus.includes("待") ? "warn" : "ok" },
+    { label: "税务状态", value: productTaxStatus, tone: productTaxStatus.includes("待") ? "warn" : "ok" },
+    { label: "销售状态", value: productSalesStatus, tone: saleJpy ? "ok" : "normal" },
+    { label: "下一步", value: productNextAction, tone: productNextAction.includes("补") || productNextAction.includes("确认") || productNextAction.includes("关联") ? "warn" : "ok" }
+  ];
   const nbaaWinningPaymentJpy = auction && String(auction.platform || auction.auctionHouse || "").toUpperCase().includes("NBAA") ? Number(auction.invoiceTotal || 0) : 0;
   const nbaaSellerGrossJpy = Number(sellerSettlement.saleAmountExTax || 0) + Number(sellerSettlement.saleTaxJpy || 0);
   const nbaaSellerFeeGrossJpy = Number(sellerSettlement.sellerFeeExTax || 0) + Number(sellerSettlement.sellerFeeTax || 0);
@@ -3664,6 +3689,17 @@ function NbaaProductRecordDetail({ item, onClose, exportItemPdf, isOwner = true 
                   <RecordField label="预计利润" value={expectedSaleJpy ? jpy(expectedProfit) : ""} />
                   <RecordField label="实际利润" value={saleJpy ? jpy(actualProfit) : ""} />
                   <RecordField label="应缴消费税" value={saleJpy ? jpy(taxRef) : ""} />
+                </div>
+              </div>
+              <div className="product-record-status-panel">
+                <h3>Record Status</h3>
+                <div className="product-record-status-grid">
+                  {productRecordStatusItems.map((row) => (
+                    <div key={row.label} className={"product-record-status-item " + row.tone}>
+                      <span>{row.label}</span>
+                      <b>{row.value}</b>
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
