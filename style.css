@@ -869,3 +869,5 @@ main { min-width: 0; max-width: 100%; overflow-x: hidden; }
 .attachment-main span{font-weight:700;color:#10233f;word-break:break-all}
 .attachment-main small{color:#66758a}
 .button-link{display:inline-flex;align-items:center;justify-content:center;text-decoration:none}
+
+.small-text{font-size:12px;color:#64748b;}
