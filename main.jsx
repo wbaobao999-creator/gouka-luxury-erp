@@ -4167,6 +4167,15 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
     return Math.max(1, Math.round(bytes / 1024)) + "KB";
   }
 
+  function batchInfoField(label, value) {
+    return (
+      <div className="record-field">
+        <label>{label}</label>
+        <div>{value || "—"}</div>
+      </div>
+    );
+  }
+
   function deleteBatch(id) {
     if (!window.confirm("确认删除这个报关批次吗？商品不会删除，但会失去批次分摊关系。")) return;
     setBatches(batches.filter((b) => b.id !== id));
@@ -4381,21 +4390,21 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
             <div className="record-card">
               <h3>Financial Analysis（资金流）</h3>
               <div className="record-field-grid">
-                <Field label="申报货值" value={jpy(activeBatch.goodsValueJpy || activeBatch.declaredTotalJpy || 0)} />
-                <Field label="进入库存成本" value={jpy(activeTrade.cost.costInInventoryJpy)} />
-                <Field label="商品库存成本合计" value={jpy(activeTrade.productCostJpy)} />
-                <Field label="预计销售（含税）" value={jpy(activeTrade.expectedSalesJpy)} />
-                <Field label="已回款" value={jpy(activeTrade.receivedJpy)} />
-                <Field label="实际利润" value={jpy(activeTrade.actualProfitJpy)} />
+                {batchInfoField("申报货值", jpy(activeBatch.goodsValueJpy || activeBatch.declaredTotalJpy || 0))}
+                {batchInfoField("进入库存成本", jpy(activeTrade.cost.costInInventoryJpy))}
+                {batchInfoField("商品库存成本合计", jpy(activeTrade.productCostJpy))}
+                {batchInfoField("预计销售（含税）", jpy(activeTrade.expectedSalesJpy))}
+                {batchInfoField("已回款", jpy(activeTrade.receivedJpy))}
+                {batchInfoField("实际利润", jpy(activeTrade.actualProfitJpy))}
               </div>
             </div>
             <div className="record-card">
               <h3>Tax Summary（消费税抵扣）</h3>
               <div className="record-field-grid">
-                <Field label="进口消费税" value={jpy(activeTrade.tax.importConsumptionTaxJpy)} />
-                <Field label="地方消费税" value={jpy(activeTrade.tax.localConsumptionTaxJpy)} />
-                <Field label="可抵扣进项税参考" value={jpy(activeTrade.tax.taxCreditJpy)} />
-                <Field label="库存成本处理" value="不进入库存成本" />
+                {batchInfoField("进口消费税", jpy(activeTrade.tax.importConsumptionTaxJpy))}
+                {batchInfoField("地方消费税", jpy(activeTrade.tax.localConsumptionTaxJpy))}
+                {batchInfoField("可抵扣进项税参考", jpy(activeTrade.tax.taxCreditJpy))}
+                {batchInfoField("库存成本处理", "不进入库存成本")}
               </div>
             </div>
           </div>
