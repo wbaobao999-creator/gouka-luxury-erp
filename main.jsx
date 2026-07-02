@@ -4011,7 +4011,7 @@ function CustomsBatchPanel({ batches, setBatches, items, downloadCSV }) {
   function normalizeBatchAttachments(batchForm) {
     const saved = Array.isArray(batchForm.attachments) ? batchForm.attachments : [];
     const textItems = String(batchForm.attachmentsText || "").split(new RegExp("\\n|," )).map((x) => x.trim()).filter(Boolean);
-    const textObjects = textItems.map((name) => ({ name, url: name, type: "link", documentType: attachmentType || "报关库存表", uploadedAt: new Date().toISOString() }));
+    const textObjects = textItems.map((name) => ({ name, url: name, type: "link", documentType: attachmentType || "报关库存表", uploadedAt: new Date().toISOString(), storageMode: "external-link" }));
     const seen = new Set();
     return [...saved, ...textObjects].filter((att) => {
       const key = typeof att === "string" ? att : (att.dataUrl || att.url || att.name || "");
@@ -4024,18 +4024,21 @@ function CustomsBatchPanel({ batches, setBatches, items, downloadCSV }) {
   function handleBatchFiles(files) {
     const selected = Array.from(files || []);
     if (!selected.length) return;
-    selected.forEach((file) => {
-      if (file.size > 2.5 * 1024 * 1024) {
-        alert("附件过大，建议先压缩PDF或后续使用云端附件库：" + file.name);
-        return;
-      }
-      const reader = new FileReader();
-      reader.onload = () => {
-        const attachment = { name: file.name, type: file.type || "application/octet-stream", mimeType: file.type || "application/octet-stream", documentType: attachmentType || "报关库存表", size: file.size, uploadedAt: new Date().toISOString(), dataUrl: reader.result };
-        setForm((prev) => ({ ...prev, attachments: [...(Array.isArray(prev.attachments) ? prev.attachments : []), attachment] }));
-      };
-      reader.readAsDataURL(file);
-    });
+    const nextAttachments = selected.map((file) => ({
+      name: file.name,
+      type: "metadata",
+      mimeType: file.type || "application/octet-stream",
+      documentType: attachmentType || "报关库存表",
+      size: file.size,
+      uploadedAt: new Date().toISOString(),
+      storageMode: "metadata-only",
+      storageNote: "文件本体未保存到ERP，请保存到公司云盘或本地报关档案。"
+    }));
+    setForm((prev) => ({
+      ...prev,
+      attachments: [...(Array.isArray(prev.attachments) ? prev.attachments : []), ...nextAttachments]
+    }));
+    alert("已登记附件信息。为避免系统变大，ERP不保存文件本体，请将原件保存到公司云盘或本地报关档案。");
   }
 
   function removeBatchAttachment(index) {
@@ -4044,14 +4047,21 @@ function CustomsBatchPanel({ batches, setBatches, items, downloadCSV }) {
 
   function attachmentLabel(att) {
     if (typeof att === "string") return att;
-    const sizeKb = att.size ? " / " + Math.round(att.size / 1024) + "KB" : "";
+    const sizeKb = att.size ? " / " + formatFileSize(att.size) : "";
     const docType = att.documentType || att.kind || "附件";
     return docType + "：" + (att.name || att.url || "附件") + sizeKb;
   }
 
   function attachmentSize(att) {
     if (!att || !att.size) return "—";
-    return Math.round(att.size / 1024) + "KB";
+    return formatFileSize(att.size);
+  }
+
+  function formatFileSize(size) {
+    const bytes = Number(size || 0);
+    if (!bytes) return "—";
+    if (bytes >= 1024 * 1024) return (bytes / 1024 / 1024).toFixed(1) + "MB";
+    return Math.max(1, Math.round(bytes / 1024)) + "KB";
   }
 
   function deleteBatch(id) {
@@ -4146,7 +4156,7 @@ function CustomsBatchPanel({ batches, setBatches, items, downloadCSV }) {
         <label>附件类型<select value={attachmentType} onChange={(e) => setAttachmentType(e.target.value)}>{attachmentTypes.map((x) => <option key={x} value={x}>{x}</option>)}</select></label>
         <label className="file-upload-box">附件导入（PDF / 图片 / 报关库存表）
           <input type="file" accept="application/pdf,image/*,.pdf,.jpg,.jpeg,.png,.webp" multiple onChange={(e) => handleBatchFiles(e.target.files)} />
-          <span>先选择附件类型，再选择文件。大文件建议截图或保存云盘链接。</span>
+          <span>只登记文件名、类型和大小，不保存文件本体。原件请放公司云盘或报关档案。</span>
         </label>
         <label>附件清单 / URL<textarea value={form.attachmentsText || ""} onChange={(e) => set("attachmentsText", e.target.value)} placeholder="也可以一行一个附件名或URL" /></label>
         {!!(form.attachments || []).length && (
@@ -4156,10 +4166,10 @@ function CustomsBatchPanel({ batches, setBatches, items, downloadCSV }) {
                 <div className="attachment-main">
                   <strong>{att.documentType || "附件"}</strong>
                   <span>{att.name || att.url || attachmentLabel(att)}</span>
-                  <small>{attachmentSize(att)}</small>
+                  <small>{attachmentSize(att)} / {att.storageMode === "metadata-only" ? "仅登记" : "可查看"}</small>
                 </div>
                 <div className="table-actions">
-                  {(att.dataUrl || att.url) && <a className="ghost button-link" href={att.dataUrl || att.url} download={att.name || undefined} target="_blank" rel="noreferrer">查看</a>}
+                  {(att.dataUrl || att.url) ? <a className="ghost button-link" href={att.dataUrl || att.url} download={att.name || undefined} target="_blank" rel="noreferrer">查看</a> : <span className="muted small-text">原件外部保存</span>}
                   <button type="button" className="ghost" onClick={() => removeBatchAttachment(index)}>删除</button>
                 </div>
               </div>
