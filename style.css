@@ -958,3 +958,54 @@ main { min-width: 0; max-width: 100%; overflow-x: hidden; }
   padding:6px 10px;
   font-size:12px;
 }
+
+
+/* Import Batch Enterprise 5.3 analysis */
+.cashflow-list,.mini-stat-list{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+.cashflow-row,.mini-stat-row{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  gap:10px;
+  align-items:center;
+  padding:10px 12px;
+  border:1px solid #e5e7eb;
+  border-radius:8px;
+  background:#fff;
+}
+.cashflow-row span,.mini-stat-row span{
+  color:#334155;
+  font-weight:700;
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.cashflow-row b,.mini-stat-row b{
+  color:#0f172a;
+  font-variant-numeric:tabular-nums;
+}
+.cashflow-row.out b{color:#dc2626;}
+.cashflow-row.in b{color:#059669;}
+.cashflow-row.pending b{color:#b45309;}
+.mini-stat-row small{
+  grid-column:1 / -1;
+  color:#64748b;
+  font-size:12px;
+}
+.batch-timeline .timeline-step{
+  gap:4px;
+  min-height:62px;
+}
+.batch-timeline .timeline-step b{
+  font-size:13px;
+}
+.batch-timeline .timeline-step small{
+  display:block;
+  color:#64748b;
+  font-size:11px;
+  margin-top:2px;
+}
