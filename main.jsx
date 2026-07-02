@@ -3906,6 +3906,8 @@ function CustomsBatchPanel({ batches, setBatches, items, downloadCSV }) {
   const emptyBatch = { id: "", name: "", emsNo: "", customsDeclarationNo: "", importDate: localDateString(), declaredTotalJpy: "", goodsValueJpy: "", goodsCount: "", grossWeightKg: "", dutyJpy: "", importConsumptionTaxJpy: "", localConsumptionTaxJpy: "", shippingJpy: "", internationalShippingAmount: "", internationalShippingCurrency: "JPY", internationalShippingRateToJpy: "1", internationalShippingJpy: "", customsFeeJpy: "", agencyFeeJpy: "", otherCostJpy: "", attachments: [], attachmentsText: "", memo: "" };
   const [form, setForm] = useState(emptyBatch);
   const [editingId, setEditingId] = useState(null);
+  const [attachmentType, setAttachmentType] = useState("报关库存表");
+  const attachmentTypes = ["报关库存表", "輸入許可通知書 / 报关单", "Invoice", "Packing List", "EMS凭证", "其他"];
   const set = (k, v) => setForm((prev) => ({ ...prev, [k]: v }));
   const shippingAmount = Number(form.internationalShippingAmount || form.shippingAmount || form.internationalShippingJpy || form.shippingJpy || 0);
   const shippingCurrency = form.internationalShippingCurrency || form.shippingCurrency || "JPY";
@@ -3915,6 +3917,7 @@ function CustomsBatchPanel({ batches, setBatches, items, downloadCSV }) {
   function reset() {
     setForm(emptyBatch);
     setEditingId(null);
+    setAttachmentType("报关库存表");
   }
 
   function saveBatch() {
@@ -4008,7 +4011,7 @@ function CustomsBatchPanel({ batches, setBatches, items, downloadCSV }) {
   function normalizeBatchAttachments(batchForm) {
     const saved = Array.isArray(batchForm.attachments) ? batchForm.attachments : [];
     const textItems = String(batchForm.attachmentsText || "").split(new RegExp("\\n|," )).map((x) => x.trim()).filter(Boolean);
-    const textObjects = textItems.map((name) => ({ name, url: name, type: "link", uploadedAt: new Date().toISOString() }));
+    const textObjects = textItems.map((name) => ({ name, url: name, type: "link", documentType: attachmentType || "报关库存表", uploadedAt: new Date().toISOString() }));
     const seen = new Set();
     return [...saved, ...textObjects].filter((att) => {
       const key = typeof att === "string" ? att : (att.dataUrl || att.url || att.name || "");
@@ -4028,7 +4031,7 @@ function CustomsBatchPanel({ batches, setBatches, items, downloadCSV }) {
       }
       const reader = new FileReader();
       reader.onload = () => {
-        const attachment = { name: file.name, type: file.type || "application/octet-stream", size: file.size, uploadedAt: new Date().toISOString(), dataUrl: reader.result };
+        const attachment = { name: file.name, type: file.type || "application/octet-stream", mimeType: file.type || "application/octet-stream", documentType: attachmentType || "报关库存表", size: file.size, uploadedAt: new Date().toISOString(), dataUrl: reader.result };
         setForm((prev) => ({ ...prev, attachments: [...(Array.isArray(prev.attachments) ? prev.attachments : []), attachment] }));
       };
       reader.readAsDataURL(file);
@@ -4042,7 +4045,13 @@ function CustomsBatchPanel({ batches, setBatches, items, downloadCSV }) {
   function attachmentLabel(att) {
     if (typeof att === "string") return att;
     const sizeKb = att.size ? " / " + Math.round(att.size / 1024) + "KB" : "";
-    return (att.name || att.url || "附件") + sizeKb;
+    const docType = att.documentType || att.kind || "附件";
+    return docType + "：" + (att.name || att.url || "附件") + sizeKb;
+  }
+
+  function attachmentSize(att) {
+    if (!att || !att.size) return "—";
+    return Math.round(att.size / 1024) + "KB";
   }
 
   function deleteBatch(id) {
@@ -4093,7 +4102,7 @@ function CustomsBatchPanel({ batches, setBatches, items, downloadCSV }) {
       Math.round(Number(batch.agencyFeeJpy || batch.customsFeeJpy || 0)),
       Math.round(Number(batch.internationalShippingJpy || batch.shippingJpy || 0)),
       Math.round(st.allocatedCost),
-      (batch.attachments || []).length ? <div className="attachment-mini-list">{batch.attachments.map((att, i) => (att.dataUrl || att.url) ? <a key={i} href={att.dataUrl || att.url} download={att.name || undefined} target="_blank" rel="noreferrer">{att.name || "附件" + (i + 1)}</a> : <span key={i}>{attachmentLabel(att)}</span>)}</div> : "—",
+      (batch.attachments || []).length ? <div className="attachment-mini-list">{batch.attachments.map((att, i) => (att.dataUrl || att.url) ? <a key={i} href={att.dataUrl || att.url} download={att.name || undefined} target="_blank" rel="noreferrer">{att.documentType || "附件"}：{att.name || "附件" + (i + 1)}</a> : <span key={i}>{attachmentLabel(att)}</span>)}</div> : "—",
       <div className="table-actions">
         <button className="edit" onClick={() => editBatch(batch)}>编辑</button>
         <button className="danger" onClick={() => deleteBatch(batch.id)}>删除</button>
@@ -4134,17 +4143,25 @@ function CustomsBatchPanel({ batches, setBatches, items, downloadCSV }) {
         <Input label="国际运费汇率" type="number" value={form.internationalShippingRateToJpy || ""} onChange={(v) => { set("internationalShippingRateToJpy", v); set("internationalShippingJpy", Math.round(shippingAmount * Number(v || 0))); set("shippingJpy", Math.round(shippingAmount * Number(v || 0))); }} />
         <Input label="国际运费 JPY（自动）" type="number" value={shippingJpyPreview || ""} onChange={(v) => { set("internationalShippingJpy", v); set("shippingJpy", v); }} />
         <Input label="其他费用 JPY（进成本）" type="number" value={form.otherCostJpy || ""} onChange={(v) => set("otherCostJpy", v)} />
-        <label className="file-upload-box">附件导入（PDF / Invoice / Packing List）
+        <label>附件类型<select value={attachmentType} onChange={(e) => setAttachmentType(e.target.value)}>{attachmentTypes.map((x) => <option key={x} value={x}>{x}</option>)}</select></label>
+        <label className="file-upload-box">附件导入（PDF / 图片 / 报关库存表）
           <input type="file" accept="application/pdf,image/*,.pdf,.jpg,.jpeg,.png,.webp" multiple onChange={(e) => handleBatchFiles(e.target.files)} />
-          <span>选择PDF或图片附件</span>
+          <span>先选择附件类型，再选择文件。大文件建议截图或保存云盘链接。</span>
         </label>
         <label>附件清单 / URL<textarea value={form.attachmentsText || ""} onChange={(e) => set("attachmentsText", e.target.value)} placeholder="也可以一行一个附件名或URL" /></label>
         {!!(form.attachments || []).length && (
           <div className="attachment-list">
             {(form.attachments || []).map((att, index) => (
-              <div key={index} className="attachment-row">
-                {(att.dataUrl || att.url) ? <a href={att.dataUrl || att.url} download={att.name || undefined} target="_blank" rel="noreferrer">{attachmentLabel(att)}</a> : <span>{attachmentLabel(att)}</span>}
-                <button type="button" className="ghost" onClick={() => removeBatchAttachment(index)}>移除</button>
+              <div key={index} className="attachment-row attachment-row-detail">
+                <div className="attachment-main">
+                  <strong>{att.documentType || "附件"}</strong>
+                  <span>{att.name || att.url || attachmentLabel(att)}</span>
+                  <small>{attachmentSize(att)}</small>
+                </div>
+                <div className="table-actions">
+                  {(att.dataUrl || att.url) && <a className="ghost button-link" href={att.dataUrl || att.url} download={att.name || undefined} target="_blank" rel="noreferrer">查看</a>}
+                  <button type="button" className="ghost" onClick={() => removeBatchAttachment(index)}>删除</button>
+                </div>
               </div>
             ))}
           </div>
