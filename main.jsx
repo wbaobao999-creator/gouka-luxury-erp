@@ -353,6 +353,8 @@ function normalizeImportBatch(batch = {}) {
     customsDeclarationNo: batch.customsDeclarationNo || batch.declarationNo || batch.customsNo || "",
     importDate: batch.importDate || batch.customsDate || batch.declarationDate || "",
     goodsValueJpy: Number(batch.goodsValueJpy || batch.declaredTotalJpy || 0),
+    goodsCount: Number(batch.goodsCount || batch.itemCount || 0),
+    itemCount: Number(batch.itemCount || batch.goodsCount || 0),
     grossWeightKg: Number(batch.grossWeightKg || batch.weightKg || batch.weight || 0),
     dutyJpy: Number(batch.dutyJpy || 0),
     importConsumptionTaxJpy,
@@ -2911,7 +2913,7 @@ function AuctionSettlementBox({ form, setForm }) {
 
 
 function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, removeImage, dictionaries, suppliers, customsBatches }) {
-  const set = (k, v) => setForm({ ...form, [k]: v });
+  const set = (k, v) => setForm((prev) => ({ ...prev, [k]: v }));
   function setPurchaseCurrency(v) {
     setForm({ ...form, purchaseCurrency: v, purchaseRateToJpy: defaultRateFor(v) });
   }
@@ -3893,7 +3895,7 @@ function Ledger({ items, setItems, isOwner, downloadCSV, exportItemPdf }) {
 }
 
 function CustomsBatchPanel({ batches, setBatches, items, downloadCSV }) {
-  const emptyBatch = { id: "", name: "", emsNo: "", customsDeclarationNo: "", importDate: localDateString(), declaredTotalJpy: "", goodsValueJpy: "", grossWeightKg: "", dutyJpy: "", importConsumptionTaxJpy: "", localConsumptionTaxJpy: "", shippingJpy: "", internationalShippingJpy: "", customsFeeJpy: "", agencyFeeJpy: "", otherCostJpy: "", attachmentsText: "", memo: "" };
+  const emptyBatch = { id: "", name: "", emsNo: "", customsDeclarationNo: "", importDate: localDateString(), declaredTotalJpy: "", goodsValueJpy: "", goodsCount: "", grossWeightKg: "", dutyJpy: "", importConsumptionTaxJpy: "", localConsumptionTaxJpy: "", shippingJpy: "", internationalShippingJpy: "", customsFeeJpy: "", agencyFeeJpy: "", otherCostJpy: "", attachments: [], attachmentsText: "", memo: "" };
   const [form, setForm] = useState(emptyBatch);
   const [editingId, setEditingId] = useState(null);
   const set = (k, v) => setForm({ ...form, [k]: v });
@@ -3910,15 +3912,18 @@ function CustomsBatchPanel({ batches, setBatches, items, downloadCSV }) {
       name: form.name || form.id || editingId || "进口批次",
       declaredTotalJpy: Number(form.declaredTotalJpy || form.goodsValueJpy || 0),
       goodsValueJpy: Number(form.goodsValueJpy || form.declaredTotalJpy || 0),
+      goodsCount: Number(form.goodsCount || form.itemCount || 0),
+      itemCount: Number(form.goodsCount || form.itemCount || 0),
       grossWeightKg: Number(form.grossWeightKg || 0),
       dutyJpy: Number(form.dutyJpy || 0),
-      importConsumptionTaxJpy: Number(form.importConsumptionTaxJpy || 0),
-      localConsumptionTaxJpy: Number(form.localConsumptionTaxJpy || 0),
+      importConsumptionTaxJpy: Number(form.importConsumptionTaxJpy || 0) + Number(form.localConsumptionTaxJpy || 0),
+      localConsumptionTaxJpy: 0,
       shippingJpy: Number(form.internationalShippingJpy || form.shippingJpy || 0),
       internationalShippingJpy: Number(form.internationalShippingJpy || form.shippingJpy || 0),
       customsFeeJpy: Number(form.agencyFeeJpy || form.customsFeeJpy || 0),
       agencyFeeJpy: Number(form.agencyFeeJpy || form.customsFeeJpy || 0),
-      otherCostJpy: Number(form.otherCostJpy || 0)
+      otherCostJpy: Number(form.otherCostJpy || 0),
+      attachments: normalizeBatchAttachments(form)
     });
     if (editingId) {
       setBatches(batches.map((b) => b.id === editingId ? next : b));
@@ -3931,8 +3936,63 @@ function CustomsBatchPanel({ batches, setBatches, items, downloadCSV }) {
   }
 
   function editBatch(b) {
-    setForm(b);
-    setEditingId(b.id);
+    const batch = normalizeImportBatch(b);
+    setForm({
+      ...batch,
+      importConsumptionTaxJpy: Number(batch.totalImportConsumptionTaxJpy || 0),
+      localConsumptionTaxJpy: 0,
+      attachmentsText: (batch.attachments || []).filter((x) => typeof x === "string").join("\n")
+    });
+    setEditingId(batch.id);
+  }
+
+  function normalizeBatchAttachments(batchForm) {
+    const saved = Array.isArray(batchForm.attachments) ? batchForm.attachments : [];
+    const textItems = String(batchForm.attachmentsText || "").split(/\n|,/).map((x) => x.trim()).filter(Boolean);
+    const textObjects = textItems.map((name) => ({ name, url: name, type: "link", uploadedAt: new Date().toISOString() }));
+    const seen = new Set();
+    return [...saved, ...textObjects].filter((att) => {
+      const key = typeof att === "string" ? att : (att.dataUrl || att.url || att.name || "");
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
+  function handleBatchFiles(files) {
+    const selected = Array.from(files || []);
+    if (!selected.length) return;
+    selected.forEach((file) => {
+      if (file.size > 2.5 * 1024 * 1024) {
+        alert("附件过大，建议先压缩PDF或后续使用云端附件库：" + file.name);
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        const attachment = {
+          name: file.name,
+          type: file.type || "application/octet-stream",
+          size: file.size,
+          uploadedAt: new Date().toISOString(),
+          dataUrl: reader.result
+        };
+        setForm((prev) => ({
+          ...prev,
+          attachments: [...(Array.isArray(prev.attachments) ? prev.attachments : []), attachment]
+        }));
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function removeBatchAttachment(index) {
+    setForm((prev) => ({ ...prev, attachments: (prev.attachments || []).filter((_, i) => i !== index) }));
+  }
+
+  function attachmentLabel(att) {
+    if (typeof att === "string") return att;
+    const sizeKb = att.size ? " / " + Math.round(att.size / 1024) + "KB" : "";
+    return (att.name || att.url || "附件") + sizeKb;
   }
 
   function deleteBatch(id) {
@@ -3947,7 +4007,7 @@ function CustomsBatchPanel({ batches, setBatches, items, downloadCSV }) {
     return { count: arr.length, declared, allocatedCost };
   }
 
-  const headers = ["Import Batch", "EMS单号", "报关编号", "进口日期", "商品件数", "货值JPY", "重量kg", "关税", "进口消费税", "地方消费税", "代理费", "国际运费", "分摊成本", "附件", "操作"];
+  const headers = ["Import Batch", "EMS单号", "报关编号", "进口日期", "商品件数", "货值JPY", "重量kg", "关税", "消费・地方消费税", "代理费", "国际运费", "分摊成本", "附件", "操作"];
   const rows = batches.map((b) => {
     const batch = normalizeImportBatch(b);
     const st = batchStats(batch);
@@ -3956,16 +4016,15 @@ function CustomsBatchPanel({ batches, setBatches, items, downloadCSV }) {
       batch.emsNo || "",
       batch.customsDeclarationNo || "",
       batch.importDate || "",
-      `${st.count} 件`,
+      `${st.count} / ${Number(batch.goodsCount || batch.itemCount || st.count || 0)} 件`,
       Math.round(Number(batch.goodsValueJpy || batch.declaredTotalJpy || st.declared || 0)),
       batch.grossWeightKg || "",
       Math.round(Number(batch.dutyJpy || 0)),
-      Math.round(Number(batch.importConsumptionTaxJpy || 0)),
-      Math.round(Number(batch.localConsumptionTaxJpy || 0)),
+      Math.round(Number(batch.totalImportConsumptionTaxJpy || 0)),
       Math.round(Number(batch.agencyFeeJpy || batch.customsFeeJpy || 0)),
       Math.round(Number(batch.internationalShippingJpy || batch.shippingJpy || 0)),
       Math.round(st.allocatedCost),
-      (batch.attachments || []).length ? `${batch.attachments.length} 件` : "—",
+      (batch.attachments || []).length ? <div className="attachment-mini-list">{batch.attachments.map((att, i) => (att.dataUrl || att.url) ? <a key={i} href={att.dataUrl || att.url} download={att.name || undefined} target="_blank" rel="noreferrer">{att.name || "附件" + (i + 1)}</a> : <span key={i}>{attachmentLabel(att)}</span>)}</div> : "—",
       <div className="table-actions">
         <button className="edit" onClick={() => editBatch(b)}>编辑</button>
         <button className="danger" onClick={() => deleteBatch(b.id)}>删除</button>
@@ -3976,7 +4035,7 @@ function CustomsBatchPanel({ batches, setBatches, items, downloadCSV }) {
   return (
     <div className="panel">
       <h2>进口批次（Import Batch）</h2>
-      <p className="note">一票报关对应一个 Import Batch。商品只关联批次，关税、代理费、国际运费按申报金额比例分摊到库存成本；进口消费税和地方消费税不进库存成本，只进入消费税管理中心。</p>
+      <p className="note">一票报关对应一个 Import Batch。商品只关联批次，关税、代理费、国际运费按申报金额比例分摊到库存成本；海关单上的「消费・地方消费税」合并录入，不进库存成本，只进入消费税管理中心。</p>
       <div className="formgrid">
         <Input label="Import Batch ID" value={form.id} onChange={(v) => set("id", v)} placeholder="空白则自动生成 EMS-年月-001" />
         <Input label="批次名称" value={form.name} onChange={(v) => set("name", v)} placeholder="例：2026年7月进口第1批" />
@@ -3984,14 +4043,28 @@ function CustomsBatchPanel({ batches, setBatches, items, downloadCSV }) {
         <Input label="报关编号" value={form.customsDeclarationNo || ""} onChange={(v) => set("customsDeclarationNo", v)} />
         <Input label="进口日期" type="date" value={form.importDate || ""} onChange={(v) => set("importDate", v)} />
         <Input label="货值 JPY" type="number" value={form.goodsValueJpy || form.declaredTotalJpy || ""} onChange={(v) => { set("goodsValueJpy", v); set("declaredTotalJpy", v); }} />
+        <Input label="商品件数" type="number" value={form.goodsCount || form.itemCount || ""} onChange={(v) => { set("goodsCount", v); set("itemCount", v); }} />
         <Input label="重量 kg" type="number" value={form.grossWeightKg || ""} onChange={(v) => set("grossWeightKg", v)} />
         <Input label="关税 JPY（进成本）" type="number" value={form.dutyJpy || ""} onChange={(v) => set("dutyJpy", v)} />
-        <Input label="进口消费税 JPY（不进成本）" type="number" value={form.importConsumptionTaxJpy || ""} onChange={(v) => set("importConsumptionTaxJpy", v)} />
-        <Input label="地方消费税 JPY（不进成本）" type="number" value={form.localConsumptionTaxJpy || ""} onChange={(v) => set("localConsumptionTaxJpy", v)} />
+        <Input label="消费・地方消费税 JPY（不进成本）" type="number" value={form.importConsumptionTaxJpy || ""} onChange={(v) => { set("importConsumptionTaxJpy", v); set("localConsumptionTaxJpy", ""); }} />
         <Input label="代理费 JPY（进成本）" type="number" value={form.agencyFeeJpy || form.customsFeeJpy || ""} onChange={(v) => { set("agencyFeeJpy", v); set("customsFeeJpy", v); }} />
         <Input label="国际运费 JPY（进成本）" type="number" value={form.internationalShippingJpy || form.shippingJpy || ""} onChange={(v) => { set("internationalShippingJpy", v); set("shippingJpy", v); }} />
         <Input label="其他费用 JPY（进成本）" type="number" value={form.otherCostJpy || ""} onChange={(v) => set("otherCostJpy", v)} />
-        <label>附件清单（PDF / Invoice / Packing List）<textarea value={form.attachmentsText || (form.attachments || []).join("\n") || ""} onChange={(e) => set("attachmentsText", e.target.value)} placeholder="一行一个附件名或URL" /></label>
+        <label className="file-upload-box">附件导入（PDF / Invoice / Packing List）
+          <input type="file" accept="application/pdf,image/*,.pdf,.jpg,.jpeg,.png,.webp" multiple onChange={(e) => handleBatchFiles(e.target.files)} />
+          <span>选择PDF或图片附件</span>
+        </label>
+        <label>附件清单 / URL<textarea value={form.attachmentsText || ""} onChange={(e) => set("attachmentsText", e.target.value)} placeholder="也可以一行一个附件名或URL" /></label>
+        {!!(form.attachments || []).length && (
+          <div className="attachment-list">
+            {(form.attachments || []).map((att, index) => (
+              <div key={index} className="attachment-row">
+                {(att.dataUrl || att.url) ? <a href={att.dataUrl || att.url} download={att.name || undefined} target="_blank" rel="noreferrer">{attachmentLabel(att)}</a> : <span>{attachmentLabel(att)}</span>}
+                <button type="button" className="ghost" onClick={() => removeBatchAttachment(index)}>移除</button>
+              </div>
+            ))}
+          </div>
+        )}
         <label>备注<textarea value={form.memo || ""} onChange={(e) => set("memo", e.target.value)} placeholder="例：7月报关单、Invoice、Packing List 对应保存" /></label>
       </div>
       <div className="action-row">
