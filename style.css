@@ -844,3 +844,13 @@ main { min-width: 0; max-width: 100%; overflow-x: hidden; }
 .tax-audit-summary .metric:nth-child(3) { border-color: #fed7aa; background: #fff7ed; }
 .tax-audit-summary .card:nth-child(4),
 .tax-audit-summary .metric:nth-child(4) { border-color: #bbf7d0; background: #f0fdf4; }
+
+
+.file-upload-box{display:flex;flex-direction:column;gap:8px;border:1px dashed #b8c7dc;border-radius:8px;padding:10px 12px;background:#f8fbff;cursor:pointer}
+.file-upload-box input{font-size:13px}
+.file-upload-box span{color:#43536b;font-size:13px}
+.attachment-list{grid-column:1/-1;display:flex;flex-direction:column;gap:8px;margin-top:-4px}
+.attachment-row{display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid #d9e2ef;border-radius:8px;padding:8px 10px;background:#fff}
+.attachment-row a,.attachment-mini-list a{color:#0f5fd7;text-decoration:none;font-weight:700}
+.attachment-row a:hover,.attachment-mini-list a:hover{text-decoration:underline}
+.attachment-mini-list{display:flex;flex-direction:column;gap:4px;max-width:180px;white-space:normal}
