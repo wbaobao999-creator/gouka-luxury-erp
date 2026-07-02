@@ -1166,6 +1166,29 @@ function moneyCell(value) {
   return <span className={cls}>{jpy(n)}</span>;
 }
 
+function consumptionTaxBalanceDisplay(value) {
+  const amount = Math.round(Number(value || 0));
+  if (amount > 0) {
+    return {
+      title: "预计应缴消费税",
+      value: jpy(amount),
+      note: "销项税大于进项税，正式申告交由税理士确认"
+    };
+  }
+  if (amount < 0) {
+    return {
+      title: "预计留抵消费税",
+      value: jpy(Math.abs(amount)),
+      note: "进项税大于销项税，作为留抵参考"
+    };
+  }
+  return {
+    title: "消费税差额",
+    value: jpy(0),
+    note: "销项税与进项税暂时相抵"
+  };
+}
+
 function expectedSaleCell(value) {
   return Number(value || 0) > 0 ? moneyCell(value) : <span className="muted-value">未定</span>;
 }
@@ -2700,6 +2723,7 @@ function Dashboard({ totals, items, setTab, exportBackup, customsBatches = [] })
   const cumulativeImportTax = normalizedImportBatches.reduce((a, b) => a + Number(b.totalImportConsumptionTaxJpy || 0), 0);
   const inventoryCapital = activeItems.reduce((a, x) => a + Number(calcTax(x).costJpy || 0), 0);
   const estimatedPayableConsumptionTax = totals.taxBalance;
+  const consumptionTaxDashboard = consumptionTaxBalanceDisplay(estimatedPayableConsumptionTax);
 
   const todoCustoms = items.filter((x) => x.status === "报关准备").length;
   const todoListing = items.filter((x) => x.status === "已入库" || x.status === "待出品").length;
@@ -2799,7 +2823,7 @@ function Dashboard({ totals, items, setTab, exportBackup, customsBatches = [] })
         <div className="v3-money-card"><p>今日采购额</p><h2>{jpy(todayPurchase)}</h2><small>今日新增 {todayIn.length} 件</small></div>
         <div className="v3-money-card"><p>今日销售额</p><h2>{jpy(todaySale)}</h2><small>今日售出 {todaySold.length} 件</small></div>
         <div className="v3-money-card"><p>今日净利润</p><h2>{jpy(todayProfit)}</h2><small>已扣真实成本</small></div>
-        <div className="v3-money-card highlight"><p>预计应缴消费税</p><h2>{jpy(estimatedPayableConsumptionTax)}</h2><small>正式申告交由税理士确认</small></div>
+        <div className="v3-money-card highlight"><p>{consumptionTaxDashboard.title}</p><h2>{consumptionTaxDashboard.value}</h2><small>{consumptionTaxDashboard.note}</small></div>
       </div>
 
       <div className="v3-money-grid">
@@ -4742,6 +4766,7 @@ function TaxReport({ items, totals, customsBatches, downloadCSV }) {
   const salesOutputTax = soldItems.reduce((sum, x) => sum + Number(x.soldPriceJpy || x.saleJpy || 0) * TAX_RATE / (1 + TAX_RATE), 0);
   const inputTaxTotal = auctionInputTax + importConsumptionTax;
   const taxDifference = salesOutputTax - inputTaxTotal;
+  const taxDifferenceDisplay = consumptionTaxBalanceDisplay(taxDifference);
 
   const taxAuditRows = [
     ...auctionItems.flatMap(({ item, auction }) => {
@@ -4886,7 +4911,7 @@ function TaxReport({ items, totals, customsBatches, downloadCSV }) {
         <Card icon={<Calculator />} title="日本拍卖进项税" value={jpy(auctionInputTax)} />
         <Card icon={<Calculator />} title="进口消费税" value={jpy(importConsumptionTax)} />
         <Card icon={<Calculator />} title="销售消费税" value={jpy(salesOutputTax)} />
-        <Card icon={<Calculator />} title="预计应缴消费税" value={jpy(taxDifference)} />
+        <Card icon={<Calculator />} title={taxDifferenceDisplay.title} value={taxDifferenceDisplay.value} />
       </div>
 
       <h3>税理士检查中心</h3>
@@ -4922,7 +4947,7 @@ function TaxReport({ items, totals, customsBatches, downloadCSV }) {
       <p className="note">销售消费税按含税销售额倒算：销售税込 × 10 / 110。</p>
       <Table headers={["图片", "商品编号", "品牌", "商品名", "销售日期", "销售平台", "销售凭证", "销售JPY（税込）", "税抜销售", "销售消费税"]} rows={salesRows} />
 
-      <h3>4. 预计应缴消费税</h3>
+      <h3>4. {taxDifferenceDisplay.title}</h3>
       <Table headers={["项目", "金额"]} rows={[
         ["销售消费税（销项税）", jpy(salesOutputTax)],
         ["日本拍卖进项税", jpy(auctionInputTax)],
@@ -4930,7 +4955,7 @@ function TaxReport({ items, totals, customsBatches, downloadCSV }) {
         ["  - 手续费消费税", jpy(auctionFeeTax)],
         ["进口消费税", jpy(importConsumptionTax)],
         ["进项税合计", jpy(inputTaxTotal)],
-        ["预计应缴消费税（销项税 - 进项税）", jpy(taxDifference)]
+        [taxDifferenceDisplay.title + "（销项税 - 进项税）", taxDifferenceDisplay.value]
       ]} />
 
       {auditDetailItem && (
