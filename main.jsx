@@ -340,8 +340,35 @@ function getDeclaredJpyForAllocation(x) {
   ).value;
 }
 
+function normalizeImportBatch(batch = {}) {
+  const internationalShippingJpy = Number(batch.internationalShippingJpy || batch.shippingJpy || 0);
+  const agencyFeeJpy = Number(batch.agencyFeeJpy || batch.customsFeeJpy || 0);
+  const importConsumptionTaxJpy = Number(batch.importConsumptionTaxJpy || 0);
+  const localConsumptionTaxJpy = Number(batch.localConsumptionTaxJpy || 0);
+  return {
+    ...batch,
+    id: batch.id || batch.importBatchId || batch.customsBatchId || "",
+    importBatchId: batch.importBatchId || batch.id || "",
+    emsNo: batch.emsNo || batch.emsTrackingNo || batch.ems || "",
+    customsDeclarationNo: batch.customsDeclarationNo || batch.declarationNo || batch.customsNo || "",
+    importDate: batch.importDate || batch.customsDate || batch.declarationDate || "",
+    goodsValueJpy: Number(batch.goodsValueJpy || batch.declaredTotalJpy || 0),
+    grossWeightKg: Number(batch.grossWeightKg || batch.weightKg || batch.weight || 0),
+    dutyJpy: Number(batch.dutyJpy || 0),
+    importConsumptionTaxJpy,
+    localConsumptionTaxJpy,
+    totalImportConsumptionTaxJpy: importConsumptionTaxJpy + localConsumptionTaxJpy,
+    agencyFeeJpy,
+    customsFeeJpy: agencyFeeJpy,
+    internationalShippingJpy,
+    shippingJpy: internationalShippingJpy,
+    otherCostJpy: Number(batch.otherCostJpy || 0),
+    attachments: Array.isArray(batch.attachments) ? batch.attachments : String(batch.attachmentsText || batch.attachmentMemo || "").split(/\n|,/).map((x) => x.trim()).filter(Boolean)
+  };
+}
+
 function applyBatchAllocations(items, batches) {
-  const batchMap = Object.fromEntries((batches || []).map((b) => [b.id, b]));
+  const batchMap = Object.fromEntries((batches || []).map((b) => normalizeImportBatch(b)).map((b) => [b.id, b]));
   const grouped = {};
   (items || []).forEach((x) => {
     if (!x.customsBatchId || !batchMap[x.customsBatchId]) return;
@@ -351,7 +378,7 @@ function applyBatchAllocations(items, batches) {
 
   const allocMap = {};
   Object.entries(grouped).forEach(([batchId, arr]) => {
-    const batch = batchMap[batchId];
+    const batch = normalizeImportBatch(batchMap[batchId]);
     const totalDeclared = arr.reduce((a, x) => a + getDeclaredJpyForAllocation(x), 0) || arr.length || 1;
     arr.forEach((x) => {
       const declared = getDeclaredJpyForAllocation(x);
@@ -359,11 +386,16 @@ function applyBatchAllocations(items, batches) {
       allocMap[x.id] = {
         customsBatchId: batchId,
         batchName: batch.name || batchId,
+        importBatch: batch,
+        importBatchId: batch.id,
+        importBatchEmsNo: batch.emsNo || "",
+        importBatchCustomsDeclarationNo: batch.customsDeclarationNo || "",
         batchAllocatedDutyJpy: Number(batch.dutyJpy || 0) * ratio,
-        batchAllocatedShippingJpy: Number(batch.shippingJpy || 0) * ratio,
-        batchAllocatedCustomsFeeJpy: Number(batch.customsFeeJpy || 0) * ratio,
+        batchAllocatedShippingJpy: Number(batch.internationalShippingJpy || batch.shippingJpy || 0) * ratio,
+        batchAllocatedCustomsFeeJpy: Number(batch.agencyFeeJpy || batch.customsFeeJpy || 0) * ratio,
         batchAllocatedOtherCostJpy: Number(batch.otherCostJpy || 0) * ratio,
-        batchImportConsumptionTaxJpy: Number(batch.importConsumptionTaxJpy || 0),
+        batchAllocatedImportTaxJpy: Number(batch.totalImportConsumptionTaxJpy || 0) * ratio,
+        batchImportConsumptionTaxJpy: Number(batch.totalImportConsumptionTaxJpy || 0),
         batchDeclaredTotalJpy: totalDeclared
       };
     });
@@ -1688,7 +1720,7 @@ function App() {
   }, [computedItems, query, statusFilter]);
 
   const totals = useMemo(() => {
-    const batchIdsWithActualTax = new Set((customsBatches || []).filter((b) => Number(b.importConsumptionTaxJpy || 0) > 0).map((b) => b.id));
+    const batchIdsWithActualTax = new Set((customsBatches || []).map(normalizeImportBatch).filter((b) => Number(b.totalImportConsumptionTaxJpy || 0) > 0).map((b) => b.id));
     const base = computedItems.reduce(
       (a, x) => {
         const t = calcTax(x);
@@ -1709,7 +1741,7 @@ function App() {
       },
       { qty: 0, declared: 0, cost: 0, sale: 0, profit: 0, inputTax: 0, outputTax: 0, taxBalance: 0, profitExTax: 0, soldCount: 0, soldAmount: 0, soldProfit: 0 }
     );
-    base.inputTax += (customsBatches || []).reduce((a, b) => a + Number(b.importConsumptionTaxJpy || 0), 0);
+    base.inputTax += (customsBatches || []).reduce((a, b) => a + Number(normalizeImportBatch(b).totalImportConsumptionTaxJpy || 0), 0);
     base.taxBalance = base.outputTax - base.inputTax;
     return base;
   }, [computedItems, customsBatches]);
@@ -2292,7 +2324,7 @@ function App() {
     const soldItems = (computedItems || []).filter((x) => isSoldStatus(x.status) && Number(x.soldPriceJpy || x.saleJpy || 0) > 0);
     const auctionItems = (computedItems || []).map((x) => ({ item: x, auction: normalizeAuction(x?.auction) })).filter((x) => x.auction);
     const auctionInputTax = auctionItems.reduce((sum, x) => sum + Number(x.auction.taxCredit || Number(x.auction.hammerTax || 0) + Number(x.auction.buyerFeeTax || 0)), 0);
-    const importConsumptionTax = (customsBatches || []).reduce((sum, b) => sum + Number(b.importConsumptionTaxJpy || 0), 0);
+    const importConsumptionTax = (customsBatches || []).reduce((sum, b) => sum + Number(normalizeImportBatch(b).totalImportConsumptionTaxJpy || 0), 0);
     const salesOutputTax = soldItems.reduce((sum, x) => sum + calcSalesBreakdown(x).salesOutputTax, 0);
     const taxDifference = salesOutputTax - auctionInputTax - importConsumptionTax;
     const auctionRows = auctionItems.map(({ item, auction }) => {
@@ -2304,7 +2336,7 @@ function App() {
       ].filter(Boolean).join(" / ");
       return `<tr><td>${pdfImageHtml(item, 40)}</td><td>${htmlEscape(item.id)}</td><td>${htmlEscape(item.brand)}</td><td>${htmlEscape(item.item)}</td><td>${htmlEscape(auction.auctionCode || "")}</td><td>${htmlEscape(sourceEvidence)}</td><td class="right">${jpy(auction.hammerTax)}</td><td class="right">${jpy(auction.buyerFeeTax)}</td><td class="right">${jpy(auction.taxCredit)}</td></tr>`;
     }).join("");
-    const importRows = (customsBatches || []).map((b) => `<tr><td>${htmlEscape(b.id)}</td><td>${htmlEscape(b.importDate || "")}</td><td class="right">${jpy(b.importConsumptionTaxJpy)}</td><td>${htmlEscape(b.memo || "")}</td></tr>`).join("");
+    const importRows = (customsBatches || []).map((rawBatch) => { const b = normalizeImportBatch(rawBatch); return `<tr><td>${htmlEscape(b.id)}</td><td>${htmlEscape(b.importDate || "")}</td><td class="right">${jpy(b.totalImportConsumptionTaxJpy)}</td><td>${htmlEscape(b.memo || "")}</td></tr>`; }).join("");
     const salesRows = soldItems.map((x) => {
       const sales = calcSalesBreakdown(x);
       const salesEvidence = [
@@ -2421,7 +2453,7 @@ function App() {
         </header>
         <RoleNotice role={role} />
 
-        {tab === "dashboard" && (canAccessTab("dashboard") ? <Dashboard totals={totals} items={computedItems} setTab={setTab} exportBackup={exportBackup} /> : <RestrictedPanel message={restrictedTabMessage} />)}
+        {tab === "dashboard" && (canAccessTab("dashboard") ? <Dashboard totals={totals} items={computedItems} setTab={setTab} exportBackup={exportBackup} customsBatches={customsBatches} /> : <RestrictedPanel message={restrictedTabMessage} />)}
         {tab === "ai" && <AiAssistant onApplyDraft={applyAiDraft} dictionaries={dictionaries} suppliers={suppliers} />}
         {tab === "aiChat" && <AiChatAssistant items={computedItems} suppliers={suppliers} dictionaries={dictionaries} setTab={setTab} />}
         {tab === "add" && (
@@ -2488,7 +2520,7 @@ function App() {
   );
 }
 
-function Dashboard({ totals, items, setTab, exportBackup }) {
+function Dashboard({ totals, items, setTab, exportBackup, customsBatches = [] }) {
   const withImages = items.filter((x) => x.images && x.images.length).length;
   const activeItems = items.filter((x) => !isSoldStatus(x.status) && x.status !== "退货");
   const activeStock = activeItems.length;
@@ -2510,6 +2542,12 @@ function Dashboard({ totals, items, setTab, exportBackup }) {
 
   const expectedNetProfit = totals.profit;
   const expectedMargin = totals.sale ? (expectedNetProfit / totals.sale) * 100 : 0;
+  const normalizedImportBatches = (customsBatches || []).map(normalizeImportBatch);
+  const cumulativeImportValue = normalizedImportBatches.reduce((a, b) => a + Number(b.goodsValueJpy || b.declaredTotalJpy || 0), 0);
+  const cumulativeDuty = normalizedImportBatches.reduce((a, b) => a + Number(b.dutyJpy || 0), 0);
+  const cumulativeImportTax = normalizedImportBatches.reduce((a, b) => a + Number(b.totalImportConsumptionTaxJpy || 0), 0);
+  const inventoryCapital = activeItems.reduce((a, x) => a + Number(calcTax(x).costJpy || 0), 0);
+  const estimatedPayableConsumptionTax = totals.taxBalance;
 
   const todoCustoms = items.filter((x) => x.status === "报关准备").length;
   const todoListing = items.filter((x) => x.status === "已入库" || x.status === "待出品").length;
@@ -2609,14 +2647,21 @@ function Dashboard({ totals, items, setTab, exportBackup }) {
         <div className="v3-money-card"><p>今日采购额</p><h2>{jpy(todayPurchase)}</h2><small>今日新增 {todayIn.length} 件</small></div>
         <div className="v3-money-card"><p>今日销售额</p><h2>{jpy(todaySale)}</h2><small>今日售出 {todaySold.length} 件</small></div>
         <div className="v3-money-card"><p>今日净利润</p><h2>{jpy(todayProfit)}</h2><small>已扣真实成本</small></div>
-        <div className="v3-money-card highlight"><p>消费税差额参考</p><h2>{jpy(totals.taxBalance)}</h2><small>正式申告交由税理士确认</small></div>
+        <div className="v3-money-card highlight"><p>预计应缴消费税</p><h2>{jpy(estimatedPayableConsumptionTax)}</h2><small>正式申告交由税理士确认</small></div>
       </div>
 
       <div className="v3-money-grid">
         <div className="v3-money-card"><p>本月入库</p><h2>{monthIn.length} 件</h2><small>{month}</small></div>
         <div className="v3-money-card"><p>本月销售额</p><h2>{jpy(monthSale)}</h2><small>按销售日期统计</small></div>
         <div className="v3-money-card"><p>本月净利润</p><h2>{jpy(monthProfit)}</h2><small>已扣真实成本</small></div>
-        <div className="v3-money-card highlight"><p>库存预警</p><h2>{longTerm} 件</h2><small>90天以上库存</small></div>
+        <div className="v3-money-card highlight"><p>库存预警</p><h2>{longTerm} 件</h2><small>365日以上库存</small></div>
+      </div>
+
+      <div className="v3-money-grid">
+        <div className="v3-money-card"><p>累计进口额</p><h2>{jpy(cumulativeImportValue)}</h2><small>Import Batch 货值</small></div>
+        <div className="v3-money-card"><p>累计关税</p><h2>{jpy(cumulativeDuty)}</h2><small>按批次汇总</small></div>
+        <div className="v3-money-card"><p>累计进口消费税</p><h2>{jpy(cumulativeImportTax)}</h2><small>不进入库存成本</small></div>
+        <div className="v3-money-card highlight"><p>库存资金占用</p><h2>{jpy(inventoryCapital)}</h2><small>未售库存成本</small></div>
       </div>
 
       <div className="v3-layout">
@@ -3182,8 +3227,9 @@ function NbaaProductRecordDetail({ item, onClose, exportItemPdf, isOwner = true 
   const inventoryCost = auction ? Number(auction.inventoryCost || 0) : Number(t.costJpy || 0);
   const taxCredit = auction ? Number(auction.taxCredit || 0) : Number(t.inputTax || 0);
   const finalReceipt = Number(sales.finalReceiptJpy || 0);
-  const importConsumptionTax = Number(item.importConsumptionTaxJpy || item.customsConsumptionTaxJpy || 0);
-  const customsDate = item.customsDate || item.customsDeclarationDate || item.customsBatchDate || "";
+  const importBatch = item.importBatch || normalizeImportBatch({ id: item.customsBatchId || "", importDate: item.customsDate || item.customsDeclarationDate || item.customsBatchDate || "", importConsumptionTaxJpy: item.batchAllocatedImportTaxJpy || item.importConsumptionTaxJpy || item.customsConsumptionTaxJpy || 0 });
+  const importConsumptionTax = Number(item.batchAllocatedImportTaxJpy || item.importConsumptionTaxJpy || item.customsConsumptionTaxJpy || 0);
+  const customsDate = item.customsDate || item.customsDeclarationDate || item.customsBatchDate || importBatch.importDate || "";
   const sizeText = item.size || item.sizeText || item.dimensions || "";
   const refundJpy = Number(item.refundJpy || item.returnJpy || 0);
   const buyerName = item.buyer || item.buyerName || item.customer || item.customerName || item.soldBuyer || "";
@@ -3387,6 +3433,23 @@ function NbaaProductRecordDetail({ item, onClose, exportItemPdf, isOwner = true 
           <RecordField label="消费税" value={jpy(taxRef)} />
           <RecordField label="实际利润" value={saleJpy ? jpy(actualProfit) : ""} />
           <RecordField label="利润率" value={saleJpy ? `${Number(t.margin || 0).toFixed(1)}%` : ""} />
+        </RecordCard>
+
+        <RecordCard title="资金流水" summary="采购 → 进口 → 销售 → 到账 → 利润" defaultOpen>
+          <RecordField label="采购/落札付款" value={jpy(paymentTotal)} />
+          <RecordField label="Import Batch" value={importBatch.id || item.customsBatchId || ""} />
+          <RecordField label="EMS单号" value={importBatch.emsNo || item.emsNo || ""} />
+          <RecordField label="报关编号" value={importBatch.customsDeclarationNo || item.customsDeclarationNo || ""} />
+          <RecordField label="分摊关税" value={jpy(Number(item.batchAllocatedDutyJpy || item.dutyJpy || 0))} />
+          <RecordField label="分摊代理费" value={jpy(Number(item.batchAllocatedCustomsFeeJpy || item.customsFeeJpy || 0))} />
+          <RecordField label="分摊国际运费" value={jpy(Number(item.batchAllocatedShippingJpy || item.shippingJpy || 0))} />
+          <RecordField label="进口消费税参考" value={jpy(importConsumptionTax)} />
+          <RecordField label="销售含税" value={saleJpy ? jpy(saleJpy) : ""} />
+          <RecordField label="销售未税收入" value={saleJpy ? jpy(sales.salesRevenueExTax) : ""} />
+          <RecordField label="平台手续费" value={jpy(Number(sales.platformFeeTaxIncluded || 0))} />
+          <RecordField label="最终到账" value={finalReceipt ? jpy(finalReceipt) : ""} />
+          <RecordField label="实际利润" value={saleJpy ? jpy(actualProfit) : ""} />
+          <RecordField label="利润率" value={saleJpy ? `${Number(sales.margin || 0).toFixed(1)}%` : ""} />
         </RecordCard>
 
         <RecordCard title="⑥ Timeline" className="timeline-card" summary="Product lifecycle" defaultOpen={false}>
@@ -3830,7 +3893,7 @@ function Ledger({ items, setItems, isOwner, downloadCSV, exportItemPdf }) {
 }
 
 function CustomsBatchPanel({ batches, setBatches, items, downloadCSV }) {
-  const emptyBatch = { id: "", name: "", importDate: localDateString(), declaredTotalJpy: "", dutyJpy: "", importConsumptionTaxJpy: "", shippingJpy: "", customsFeeJpy: "", otherCostJpy: "", memo: "" };
+  const emptyBatch = { id: "", name: "", emsNo: "", customsDeclarationNo: "", importDate: localDateString(), declaredTotalJpy: "", goodsValueJpy: "", grossWeightKg: "", dutyJpy: "", importConsumptionTaxJpy: "", localConsumptionTaxJpy: "", shippingJpy: "", internationalShippingJpy: "", customsFeeJpy: "", agencyFeeJpy: "", otherCostJpy: "", attachmentsText: "", memo: "" };
   const [form, setForm] = useState(emptyBatch);
   const [editingId, setEditingId] = useState(null);
   const set = (k, v) => setForm({ ...form, [k]: v });
@@ -3841,17 +3904,22 @@ function CustomsBatchPanel({ batches, setBatches, items, downloadCSV }) {
   }
 
   function saveBatch() {
-    const next = {
+    const next = normalizeImportBatch({
       ...form,
       id: editingId || form.id || makeCustomsBatchId(batches),
-      name: form.name || form.id || editingId || "报关批次",
-      declaredTotalJpy: Number(form.declaredTotalJpy || 0),
+      name: form.name || form.id || editingId || "进口批次",
+      declaredTotalJpy: Number(form.declaredTotalJpy || form.goodsValueJpy || 0),
+      goodsValueJpy: Number(form.goodsValueJpy || form.declaredTotalJpy || 0),
+      grossWeightKg: Number(form.grossWeightKg || 0),
       dutyJpy: Number(form.dutyJpy || 0),
       importConsumptionTaxJpy: Number(form.importConsumptionTaxJpy || 0),
-      shippingJpy: Number(form.shippingJpy || 0),
-      customsFeeJpy: Number(form.customsFeeJpy || 0),
+      localConsumptionTaxJpy: Number(form.localConsumptionTaxJpy || 0),
+      shippingJpy: Number(form.internationalShippingJpy || form.shippingJpy || 0),
+      internationalShippingJpy: Number(form.internationalShippingJpy || form.shippingJpy || 0),
+      customsFeeJpy: Number(form.agencyFeeJpy || form.customsFeeJpy || 0),
+      agencyFeeJpy: Number(form.agencyFeeJpy || form.customsFeeJpy || 0),
       otherCostJpy: Number(form.otherCostJpy || 0)
-    };
+    });
     if (editingId) {
       setBatches(batches.map((b) => b.id === editingId ? next : b));
       alert("报关批次已更新");
@@ -3879,20 +3947,25 @@ function CustomsBatchPanel({ batches, setBatches, items, downloadCSV }) {
     return { count: arr.length, declared, allocatedCost };
   }
 
-  const headers = ["批次号", "报关日期", "商品件数", "商品申报合计", "关税合计", "进口消费税合计", "运费", "报关费", "分摊成本", "备注", "操作"];
+  const headers = ["Import Batch", "EMS单号", "报关编号", "进口日期", "商品件数", "货值JPY", "重量kg", "关税", "进口消费税", "地方消费税", "代理费", "国际运费", "分摊成本", "附件", "操作"];
   const rows = batches.map((b) => {
-    const st = batchStats(b);
+    const batch = normalizeImportBatch(b);
+    const st = batchStats(batch);
     return [
-      b.id,
-      b.importDate || "",
+      batch.id,
+      batch.emsNo || "",
+      batch.customsDeclarationNo || "",
+      batch.importDate || "",
       `${st.count} 件`,
-      Math.round(st.declared),
-      Math.round(Number(b.dutyJpy || 0)),
-      Math.round(Number(b.importConsumptionTaxJpy || 0)),
-      Math.round(Number(b.shippingJpy || 0)),
-      Math.round(Number(b.customsFeeJpy || 0)),
+      Math.round(Number(batch.goodsValueJpy || batch.declaredTotalJpy || st.declared || 0)),
+      batch.grossWeightKg || "",
+      Math.round(Number(batch.dutyJpy || 0)),
+      Math.round(Number(batch.importConsumptionTaxJpy || 0)),
+      Math.round(Number(batch.localConsumptionTaxJpy || 0)),
+      Math.round(Number(batch.agencyFeeJpy || batch.customsFeeJpy || 0)),
+      Math.round(Number(batch.internationalShippingJpy || batch.shippingJpy || 0)),
       Math.round(st.allocatedCost),
-      b.memo || "",
+      (batch.attachments || []).length ? `${batch.attachments.length} 件` : "—",
       <div className="table-actions">
         <button className="edit" onClick={() => editBatch(b)}>编辑</button>
         <button className="danger" onClick={() => deleteBatch(b.id)}>删除</button>
@@ -3902,24 +3975,29 @@ function CustomsBatchPanel({ batches, setBatches, items, downloadCSV }) {
 
   return (
     <div className="panel">
-      <h2>报关批次管理</h2>
-      <p className="note">适合一批货统一报关：关税、运费、报关费按商品申报金额比例分摊到单件成本；进口消费税不进单件成本，只在消费税参考中汇总抵扣。</p>
+      <h2>进口批次（Import Batch）</h2>
+      <p className="note">一票报关对应一个 Import Batch。商品只关联批次，关税、代理费、国际运费按申报金额比例分摊到库存成本；进口消费税和地方消费税不进库存成本，只进入消费税管理中心。</p>
       <div className="formgrid">
-        <Input label="批次号" value={form.id} onChange={(v) => set("id", v)} placeholder="空白则自动生成 EMS-年月-001" />
-        <Input label="批次名称" value={form.name} onChange={(v) => set("name", v)} placeholder="例：2026年6月第1批EMS" />
-        <Input label="报关日期" type="date" value={form.importDate || ""} onChange={(v) => set("importDate", v)} />
-        <Input label="报关申报总额 JPY（可选）" type="number" value={form.declaredTotalJpy || ""} onChange={(v) => set("declaredTotalJpy", v)} />
-        <Input label="关税合计 JPY（进成本，按比例分摊）" type="number" value={form.dutyJpy || ""} onChange={(v) => set("dutyJpy", v)} />
-        <Input label="进口消费税合计 JPY（可抵扣，不进成本）" type="number" value={form.importConsumptionTaxJpy || ""} onChange={(v) => set("importConsumptionTaxJpy", v)} />
-        <Input label="本批国际运费 JPY（可分摊）" type="number" value={form.shippingJpy || ""} onChange={(v) => set("shippingJpy", v)} />
-        <Input label="报关代行费 JPY（可分摊）" type="number" value={form.customsFeeJpy || ""} onChange={(v) => set("customsFeeJpy", v)} />
-        <Input label="其他批次费用 JPY（可分摊）" type="number" value={form.otherCostJpy || ""} onChange={(v) => set("otherCostJpy", v)} />
-        <label>备注<textarea value={form.memo || ""} onChange={(e) => set("memo", e.target.value)} placeholder="例：海关合并计税，关税58万，消费税120万" /></label>
+        <Input label="Import Batch ID" value={form.id} onChange={(v) => set("id", v)} placeholder="空白则自动生成 EMS-年月-001" />
+        <Input label="批次名称" value={form.name} onChange={(v) => set("name", v)} placeholder="例：2026年7月进口第1批" />
+        <Input label="EMS单号" value={form.emsNo || ""} onChange={(v) => set("emsNo", v)} />
+        <Input label="报关编号" value={form.customsDeclarationNo || ""} onChange={(v) => set("customsDeclarationNo", v)} />
+        <Input label="进口日期" type="date" value={form.importDate || ""} onChange={(v) => set("importDate", v)} />
+        <Input label="货值 JPY" type="number" value={form.goodsValueJpy || form.declaredTotalJpy || ""} onChange={(v) => { set("goodsValueJpy", v); set("declaredTotalJpy", v); }} />
+        <Input label="重量 kg" type="number" value={form.grossWeightKg || ""} onChange={(v) => set("grossWeightKg", v)} />
+        <Input label="关税 JPY（进成本）" type="number" value={form.dutyJpy || ""} onChange={(v) => set("dutyJpy", v)} />
+        <Input label="进口消费税 JPY（不进成本）" type="number" value={form.importConsumptionTaxJpy || ""} onChange={(v) => set("importConsumptionTaxJpy", v)} />
+        <Input label="地方消费税 JPY（不进成本）" type="number" value={form.localConsumptionTaxJpy || ""} onChange={(v) => set("localConsumptionTaxJpy", v)} />
+        <Input label="代理费 JPY（进成本）" type="number" value={form.agencyFeeJpy || form.customsFeeJpy || ""} onChange={(v) => { set("agencyFeeJpy", v); set("customsFeeJpy", v); }} />
+        <Input label="国际运费 JPY（进成本）" type="number" value={form.internationalShippingJpy || form.shippingJpy || ""} onChange={(v) => { set("internationalShippingJpy", v); set("shippingJpy", v); }} />
+        <Input label="其他费用 JPY（进成本）" type="number" value={form.otherCostJpy || ""} onChange={(v) => set("otherCostJpy", v)} />
+        <label>附件清单（PDF / Invoice / Packing List）<textarea value={form.attachmentsText || (form.attachments || []).join("\n") || ""} onChange={(e) => set("attachmentsText", e.target.value)} placeholder="一行一个附件名或URL" /></label>
+        <label>备注<textarea value={form.memo || ""} onChange={(e) => set("memo", e.target.value)} placeholder="例：7月报关单、Invoice、Packing List 对应保存" /></label>
       </div>
       <div className="action-row">
         <button className="primary" onClick={saveBatch}>{editingId ? "保存批次" : "新增批次"}</button>
         {editingId && <button className="ghost" onClick={reset}>取消编辑</button>}
-        <button className="ghost" onClick={() => downloadCSV([headers, ...rows], "gouka_customs_batches.csv")}>CSV导出</button>
+        <button className="ghost" onClick={() => downloadCSV([headers, ...rows], "gouka_import_batches.csv")}>CSV导出</button>
       </div>
       <Table headers={headers} rows={rows} />
     </div>
@@ -4045,8 +4123,9 @@ function TaxReport({ items, totals, customsBatches, downloadCSV }) {
 
   const importRows = (customsBatches || []).map((b) => {
     const duty = Number(b.dutyJpy || 0);
-    const importTax = Number(b.importConsumptionTaxJpy || 0);
-    return [b.id, b.importDate || "", jpy(duty), jpy(importTax), b.memo || ""];
+    const batch = normalizeImportBatch(b);
+    const importTax = Number(batch.totalImportConsumptionTaxJpy || 0);
+    return [batch.id, batch.importDate || "", jpy(duty), jpy(importTax), b.memo || ""];
   });
 
   const salesRows = soldItems.map((x) => {
@@ -4073,7 +4152,7 @@ function TaxReport({ items, totals, customsBatches, downloadCSV }) {
   const auctionHammerTax = auctionItems.reduce((sum, x) => sum + Number(x.auction.hammerTax || 0), 0);
   const auctionFeeTax = auctionItems.reduce((sum, x) => sum + Number(x.auction.buyerFeeTax || 0), 0);
   const auctionInputTax = auctionItems.reduce((sum, x) => sum + Number(x.auction.taxCredit || Number(x.auction.hammerTax || 0) + Number(x.auction.buyerFeeTax || 0)), 0);
-  const importConsumptionTax = (customsBatches || []).reduce((sum, b) => sum + Number(b.importConsumptionTaxJpy || 0), 0);
+  const importConsumptionTax = (customsBatches || []).reduce((sum, b) => sum + Number(normalizeImportBatch(b).totalImportConsumptionTaxJpy || 0), 0);
   const salesOutputTax = soldItems.reduce((sum, x) => sum + Number(x.soldPriceJpy || x.saleJpy || 0) * TAX_RATE / (1 + TAX_RATE), 0);
   const inputTaxTotal = auctionInputTax + importConsumptionTax;
   const taxDifference = salesOutputTax - inputTaxTotal;
@@ -4106,10 +4185,11 @@ function TaxReport({ items, totals, customsBatches, downloadCSV }) {
       if (isSoldStatus(item.status) && saleAmount <= 0) rows.push(["HIGH", item.id, "销售", "已售状态但缺含税售价", "补录售价（含税），否则无法计算销项税"]);
       return rows;
     }),
-    ...(customsBatches || []).flatMap((batch) => {
+    ...(customsBatches || []).flatMap((rawBatch) => {
+      const batch = normalizeImportBatch(rawBatch);
       const rows = [];
-      if (Number(batch.importConsumptionTaxJpy || 0) > 0 && !batch.importDate) rows.push(["MEDIUM", batch.id || "未命名批次", "进口消费税", "有进口消费税但缺报关日期", "补录报关日期，便于期间归属"]);
-      if (Number(batch.importConsumptionTaxJpy || 0) > 0 && !batch.id) rows.push(["MEDIUM", "未命名批次", "进口消费税", "缺少报关批次号", "补录EMS或报关批次号"]);
+      if (Number(batch.totalImportConsumptionTaxJpy || 0) > 0 && !batch.importDate) rows.push(["MEDIUM", batch.id || "未命名批次", "进口消费税", "有进口消费税但缺进口日期", "补录进口日期，便于期间归属"]);
+      if (Number(batch.totalImportConsumptionTaxJpy || 0) > 0 && !batch.id) rows.push(["MEDIUM", "未命名批次", "进口消费税", "缺少Import Batch ID", "补录EMS或报关批次号"]);
       return rows;
     })
   ];
@@ -4202,7 +4282,7 @@ function TaxReport({ items, totals, customsBatches, downloadCSV }) {
       ].filter(Boolean).join(" / ");
       return ["日本拍卖进项税", item.id, item.brand || "", item.item || "", auction.auctionDate || item.purchaseDate || "", auction.platform || auction.auctionHouse || "", evidenceStatus, evidence, Math.round(hammerTax), Math.round(buyerFeeTax), "", "", "", "", Math.round(taxCredit)];
     }),
-    ...(customsBatches || []).map((b) => ["进口消费税", b.id, "", "", b.importDate || "", "EMS/报关批次", b.importConsumptionTaxJpy ? "报关税单参考" : "未录入税额", b.memo || "", "", "", Math.round(Number(b.importConsumptionTaxJpy || 0)), "", "", "", Math.round(Number(b.importConsumptionTaxJpy || 0))]),
+    ...(customsBatches || []).map((raw) => { const b = normalizeImportBatch(raw); return ["进口消费税", b.id, "", "", b.importDate || "", "Import Batch", b.totalImportConsumptionTaxJpy ? "报关税单参考" : "未录入税额", [b.emsNo ? "EMS:" + b.emsNo : "", b.customsDeclarationNo ? "报关编号:" + b.customsDeclarationNo : "", raw.memo || ""].filter(Boolean).join(" / "), "", "", Math.round(Number(b.totalImportConsumptionTaxJpy || 0)), "", "", "", Math.round(Number(b.totalImportConsumptionTaxJpy || 0))]; }),
     ...soldItems.map((x) => {
       const sales = calcSalesBreakdown(x);
       return ["销售消费税", x.id, x.brand || "", x.item || "", x.soldDate || "", x.soldPlatform || x.platform || "", x.soldDate ? "销售日期OK" : "缺销售日期", [(x.buyer || x.buyerName || x.customer || x.customerName || x.soldBuyer) ? "买家:" + (x.buyer || x.buyerName || x.customer || x.customerName || x.soldBuyer) : "", sales.finalReceiptJpy ? "最终到账:" + Math.round(sales.finalReceiptJpy) : "", x.soldMemo || ""].filter(Boolean).join(" / "), "", "", "", Math.round(sales.saleTaxIncluded), Math.round(sales.salesRevenueExTax), Math.round(sales.salesOutputTax), Math.round(sales.salesOutputTax)];
