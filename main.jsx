@@ -414,6 +414,106 @@ function applyBatchAllocations(items, batches) {
   return (items || []).map((x) => ({ ...x, ...(allocMap[x.id] || {}) }));
 }
 
+function getItemImportBatchId(item) {
+  return item?.importBatchId || item?.customsBatchId || "";
+}
+
+function calcImportBatchCostSummary(batch = {}) {
+  const b = normalizeImportBatch(batch);
+  const dutyJpy = Number(b.dutyJpy || 0);
+  const agencyFeeJpy = Number(b.agencyFeeJpy || b.customsFeeJpy || 0);
+  const internationalShippingJpy = Number(b.internationalShippingJpy || b.shippingJpy || 0);
+  const otherCostJpy = Number(b.otherCostJpy || 0);
+  const costInInventoryJpy = dutyJpy + agencyFeeJpy + internationalShippingJpy + otherCostJpy;
+  return { dutyJpy, agencyFeeJpy, internationalShippingJpy, otherCostJpy, costInInventoryJpy };
+}
+
+function calcImportBatchTaxSummary(batch = {}) {
+  const b = normalizeImportBatch(batch);
+  const importConsumptionTaxJpy = Number(b.importConsumptionTaxJpy || 0);
+  const localConsumptionTaxJpy = Number(b.localConsumptionTaxJpy || 0);
+  const taxCreditJpy = importConsumptionTaxJpy + localConsumptionTaxJpy;
+  return { importConsumptionTaxJpy, localConsumptionTaxJpy, taxCreditJpy, nonInventoryCostJpy: taxCreditJpy };
+}
+
+function getImportBatchLinkedProducts(batch, products = []) {
+  const id = normalizeImportBatch(batch).id;
+  return (products || []).filter((x) => getItemImportBatchId(x) === id);
+}
+
+function calcImportBatchProgress(batch, products = []) {
+  const b = normalizeImportBatch(batch);
+  const linkedProducts = getImportBatchLinkedProducts(b, products);
+  const targetCount = Number(b.goodsCount || b.itemCount || linkedProducts.length || 0);
+  const linkedCount = linkedProducts.length;
+  const remainingCount = Math.max(0, targetCount - linkedCount);
+  const progressPercent = targetCount ? Math.round(linkedCount / targetCount * 100) : 0;
+  const allocatedCount = linkedProducts.filter((x) => Number(x.allocatedDutyJpy || x.batchAllocatedDutyJpy || 0) || Number(x.allocatedInternationalShippingJpy || x.batchAllocatedShippingJpy || 0) || Number(x.allocatedAgentFeeJpy || x.batchAllocatedCustomsFeeJpy || 0)).length;
+  const allocationDone = linkedCount > 0 && allocatedCount === linkedCount;
+  const badges = [];
+  if (b.status) badges.push(b.status);
+  else if (Number(b.dutyJpy || 0) || Number(b.importConsumptionTaxJpy || 0) || Number(b.localConsumptionTaxJpy || 0)) badges.push("已缴税");
+  else if (b.customsDeclarationNo) badges.push("已申报");
+  else badges.push("报关准备");
+  if (targetCount && linkedCount < targetCount) badges.push("待关联商品");
+  if (!allocationDone) badges.push("待分摊");
+  if (targetCount && linkedCount >= targetCount && allocationDone) badges.push("已完成");
+  else if (allocationDone) badges.push("已分摊");
+  return { targetCount, linkedCount, remainingCount, progressPercent, allocatedCount, allocationDone, badges };
+}
+
+function calcImportBatchAllocation(batch, linkedProducts = []) {
+  const b = normalizeImportBatch(batch);
+  const cost = calcImportBatchCostSummary(b);
+  const tax = calcImportBatchTaxSummary(b);
+  const products = linkedProducts || [];
+  const totalDeclared = products.reduce((sum, x) => sum + Number(calcTax(x).declaredJpy || getDeclaredJpyForAllocation(x) || 0), 0) || products.length || 1;
+  const count = products.length || 1;
+  return products.map((x) => {
+    const declaredJpy = Number(calcTax(x).declaredJpy || getDeclaredJpyForAllocation(x) || 0);
+    const ratio = totalDeclared ? declaredJpy / totalDeclared : 1 / count;
+    const countShare = 1 / count;
+    const allocatedDutyJpy = Math.round(cost.dutyJpy * ratio);
+    const allocatedAgentFeeJpy = Math.round(cost.agencyFeeJpy * countShare);
+    const allocatedInternationalShippingJpy = Math.round(cost.internationalShippingJpy * ratio);
+    const allocatedOtherImportCostJpy = Math.round(cost.otherCostJpy * ratio);
+    const importTaxCreditJpy = Math.round(tax.taxCreditJpy * ratio);
+    return {
+      item: x,
+      declaredJpy,
+      ratio,
+      allocatedDutyJpy,
+      allocatedAgentFeeJpy,
+      allocatedInternationalShippingJpy,
+      allocatedOtherImportCostJpy,
+      allocatedCostJpy: allocatedDutyJpy + allocatedAgentFeeJpy + allocatedInternationalShippingJpy + allocatedOtherImportCostJpy,
+      importTaxCreditJpy
+    };
+  });
+}
+
+function calcImportBatchTradeSummary(batch, products = []) {
+  const b = normalizeImportBatch(batch);
+  const linkedProducts = getImportBatchLinkedProducts(b, products);
+  const cost = calcImportBatchCostSummary(b);
+  const tax = calcImportBatchTaxSummary(b);
+  const productCostJpy = linkedProducts.reduce((sum, x) => sum + Number(calcTax(x).costJpy || 0), 0);
+  const expectedSalesJpy = linkedProducts.reduce((sum, x) => sum + Number(calcSalesBreakdown(x).expectedSaleTaxIncluded || 0), 0);
+  const expectedRevenueExTax = linkedProducts.reduce((sum, x) => sum + Number(calcSalesBreakdown(x).expectedRevenueExTax || 0), 0);
+  const expectedProfitJpy = expectedRevenueExTax - productCostJpy;
+  const soldProducts = linkedProducts.filter((x) => isSoldStatus(x.status));
+  const soldCount = soldProducts.length;
+  const unsoldCount = linkedProducts.length - soldCount;
+  const receivedJpy = soldProducts.reduce((sum, x) => sum + Number(calcSalesBreakdown(x).finalReceiptJpy || 0), 0);
+  const soldTaxIncluded = soldProducts.reduce((sum, x) => sum + Number(calcSalesBreakdown(x).saleTaxIncluded || 0), 0);
+  const unreceivedJpy = Math.max(0, soldTaxIncluded - receivedJpy);
+  const actualProfitJpy = soldProducts.reduce((sum, x) => sum + Number(calcSalesBreakdown(x).actualProfitJpy || 0), 0);
+  const margin = expectedRevenueExTax ? expectedProfitJpy / expectedRevenueExTax * 100 : 0;
+  const totalInvestmentJpy = productCostJpy || (Number(b.goodsValueJpy || b.declaredTotalJpy || 0) + cost.costInInventoryJpy);
+  return { linkedProducts, productCostJpy, totalInvestmentJpy, expectedSalesJpy, expectedRevenueExTax, expectedProfitJpy, margin, soldCount, unsoldCount, receivedJpy, unreceivedJpy, actualProfitJpy, cost, tax };
+}
+
+
 function loadDictionaries() {
   try {
     const saved = localStorage.getItem(DICTIONARY_KEY);
@@ -2501,7 +2601,7 @@ function App() {
           />
         )}
         {tab === "ledger" && (canAccessTab("ledger") ? <Ledger items={filtered} setItems={canEditBusiness ? setItems : (() => {})} isOwner={isOwner} downloadCSV={downloadCSV} exportItemPdf={canExportBusinessPdf ? exportItemPdf : null} /> : <RestrictedPanel message={restrictedTabMessage} />)}
-        {tab === "customsBatch" && (canAccessTab("customsBatch") ? <CustomsBatchPanel batches={customsBatches} setBatches={isOwner ? setCustomsBatches : (() => {})} items={computedItems} downloadCSV={downloadCSV} /> : <RestrictedPanel message={restrictedTabMessage} />)}
+        {tab === "customsBatch" && (canAccessTab("customsBatch") ? <CustomsBatchPanel batches={customsBatches} setBatches={isOwner ? setCustomsBatches : (() => {})} items={computedItems} setItems={isOwner ? setItems : null} downloadCSV={downloadCSV} /> : <RestrictedPanel message={restrictedTabMessage} />)}
         {tab === "customs" && (canAccessTab("customs") ? <Customs items={filtered} customsBatches={customsBatches} downloadCSV={downloadCSV} /> : <RestrictedPanel message={restrictedTabMessage} />)}
         {tab === "profit" && (canAccessTab("profit") ? <Profit items={filtered} /> : <RestrictedPanel message={restrictedTabMessage} />)}
         {tab === "tax" && (canAccessTab("tax") ? <TaxReport items={filtered} totals={totals} customsBatches={customsBatches} downloadCSV={downloadCSV} /> : <RestrictedPanel message={restrictedTabMessage} />)}
@@ -3902,11 +4002,12 @@ function Ledger({ items, setItems, isOwner, downloadCSV, exportItemPdf }) {
   );
 }
 
-function CustomsBatchPanel({ batches, setBatches, items, downloadCSV }) {
+function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downloadCSV }) {
   const emptyBatch = { id: "", name: "", emsNo: "", customsDeclarationNo: "", importDate: localDateString(), declaredTotalJpy: "", goodsValueJpy: "", goodsCount: "", grossWeightKg: "", dutyJpy: "", importConsumptionTaxJpy: "", localConsumptionTaxJpy: "", shippingJpy: "", internationalShippingAmount: "", internationalShippingCurrency: "JPY", internationalShippingRateToJpy: "1", internationalShippingJpy: "", customsFeeJpy: "", agencyFeeJpy: "", otherCostJpy: "", attachments: [], attachmentsText: "", memo: "" };
   const [form, setForm] = useState(emptyBatch);
   const [editingId, setEditingId] = useState(null);
   const [attachmentType, setAttachmentType] = useState("报关库存表");
+  const [selectedLinkItemId, setSelectedLinkItemId] = useState("");
   const attachmentTypes = ["报关库存表", "輸入許可通知書 / 报关单", "Invoice", "Packing List", "EMS凭证", "其他"];
   const set = (k, v) => setForm((prev) => ({ ...prev, [k]: v }));
   const shippingAmount = Number(form.internationalShippingAmount || form.shippingAmount || form.internationalShippingJpy || form.shippingJpy || 0);
@@ -3977,8 +4078,8 @@ function CustomsBatchPanel({ batches, setBatches, items, downloadCSV }) {
       importDate: "2026-07-02",
       goodsValueJpy: "15522668",
       declaredTotalJpy: "15522668",
-      goodsCount: "10",
-      itemCount: "10",
+      goodsCount: "40",
+      itemCount: "40",
       grossWeightKg: "33.90",
       dutyJpy: "1252000",
       importConsumptionTaxJpy: "1308000",
@@ -4002,7 +4103,7 @@ function CustomsBatchPanel({ batches, setBatches, items, downloadCSV }) {
         "报关代理费：12,000 JPY",
         "国际运费：5,400 CNY / 128,250 JPY",
         "重量：33.90kg",
-        "商品数量：10件"
+        "商品数量：40件"
       ].join("\n")
     });
     setEditingId(null);
@@ -4071,6 +4172,70 @@ function CustomsBatchPanel({ batches, setBatches, items, downloadCSV }) {
     setBatches(batches.filter((b) => b.id !== id));
   }
 
+  function getActiveBatch() {
+    const source = editingId ? normalizedBatches.find((b) => b.id === editingId) : (normalizedBatches[0] || normalizeImportBatch(form));
+    return normalizeImportBatch(source || {});
+  }
+
+  function linkSelectedProduct(batchId) {
+    if (!setItems) return alert("当前账号不能关联商品");
+    if (!selectedLinkItemId) return alert("请选择要加入批次的商品");
+    setItems((prev) => (prev || []).map((x) => x.id === selectedLinkItemId ? { ...x, customsBatchId: batchId, importBatchId: batchId } : x));
+    setSelectedLinkItemId("");
+    alert("商品已关联到 Import Batch");
+  }
+
+  function unlinkProductFromBatch(itemId) {
+    if (!setItems) return alert("当前账号不能移出商品");
+    if (!window.confirm("确认把这个商品移出当前 Import Batch 吗？")) return;
+    setItems((prev) => (prev || []).map((x) => x.id === itemId ? {
+      ...x,
+      customsBatchId: "",
+      importBatchId: "",
+      allocatedDutyJpy: 0,
+      allocatedAgentFeeJpy: 0,
+      allocatedInternationalShippingJpy: 0,
+      allocatedOtherImportCostJpy: 0,
+      importTaxCreditJpy: 0,
+      batchAllocatedDutyJpy: 0,
+      batchAllocatedShippingJpy: 0,
+      batchAllocatedCustomsFeeJpy: 0,
+      batchAllocatedOtherCostJpy: 0,
+      batchAllocatedImportTaxJpy: 0
+    } : x));
+  }
+
+  function allocateActiveBatch(batch) {
+    if (!setItems) return alert("当前账号不能执行成本分摊");
+    const b = normalizeImportBatch(batch);
+    const linked = getImportBatchLinkedProducts(b, items);
+    if (!linked.length) return alert("请先关联商品，再开始分摊。");
+    const allocations = calcImportBatchAllocation(b, linked);
+    const map = Object.fromEntries(allocations.map((x) => [x.item.id, x]));
+    setItems((prev) => (prev || []).map((x) => {
+      const a = map[x.id];
+      if (!a) return x;
+      return {
+        ...x,
+        customsBatchId: b.id,
+        importBatchId: b.id,
+        allocatedDutyJpy: a.allocatedDutyJpy,
+        allocatedAgentFeeJpy: a.allocatedAgentFeeJpy,
+        allocatedInternationalShippingJpy: a.allocatedInternationalShippingJpy,
+        allocatedOtherImportCostJpy: a.allocatedOtherImportCostJpy,
+        importTaxCreditJpy: a.importTaxCreditJpy,
+        batchAllocatedDutyJpy: a.allocatedDutyJpy,
+        batchAllocatedShippingJpy: a.allocatedInternationalShippingJpy,
+        batchAllocatedCustomsFeeJpy: a.allocatedAgentFeeJpy,
+        batchAllocatedOtherCostJpy: a.allocatedOtherImportCostJpy,
+        batchAllocatedImportTaxJpy: a.importTaxCreditJpy,
+        batchAllocatedAt: new Date().toISOString()
+      };
+    }));
+    setBatches((batches || []).map((x) => x.id === b.id ? { ...x, status: "已分摊", allocatedAt: new Date().toISOString() } : x));
+    alert("Import Batch 成本分摊完成。进口消费税和地方消费税未进入库存成本，只记录到消费税参考。");
+  }
+
   function batchStats(batch) {
     const normalized = normalizeImportBatch(batch);
     const arr = items.filter((x) => x.customsBatchId === normalized.id);
@@ -4097,11 +4262,48 @@ function CustomsBatchPanel({ batches, setBatches, items, downloadCSV }) {
     return a;
   }, { batchCount: 0, goodsCount: 0, goodsValueJpy: 0, dutyJpy: 0, importConsumptionTaxJpy: 0, localConsumptionTaxJpy: 0, agencyFeeJpy: 0, internationalShippingJpy: 0, costTotal: 0, nonCostTaxTotal: 0 });
 
-  const headers = ["Import Batch", "EMS单号", "报关编号", "进口日期", "商品件数", "货值JPY", "重量kg", "关税", "进口消费税", "地方消费税", "代理费", "国际运费", "分摊成本", "附件", "操作"];
+  const activeBatch = getActiveBatch();
+  const activeProgress = activeBatch.id ? calcImportBatchProgress(activeBatch, items) : null;
+  const activeTrade = activeBatch.id ? calcImportBatchTradeSummary(activeBatch, items) : null;
+  const activeAllocations = activeBatch.id ? calcImportBatchAllocation(activeBatch, activeTrade?.linkedProducts || []) : [];
+  const activeAllocationMap = Object.fromEntries(activeAllocations.map((x) => [x.item.id, x]));
+  const unlinkedItems = (items || []).filter((x) => !getItemImportBatchId(x));
+  const activeTimeline = activeBatch.id ? [
+    ["EMS发货", !!activeBatch.emsNo],
+    ["抵达日本", !!activeBatch.importDate],
+    ["进口申报", !!activeBatch.customsDeclarationNo],
+    ["缴税完成", Number(activeBatch.dutyJpy || 0) || Number(activeBatch.importConsumptionTaxJpy || 0) || Number(activeBatch.localConsumptionTaxJpy || 0)],
+    ["Import Batch 创建", !!activeBatch.id],
+    ["商品关联", !!activeProgress?.linkedCount],
+    ["成本分摊", !!activeProgress?.allocationDone],
+    ["完成", activeProgress?.badges?.includes("已完成")]
+  ] : [];
+  const linkedHeaders = ["图片", "商品编号", "品牌", "商品名", "申报金额", "当前库存成本", "分摊关税", "分摊代理费", "分摊国际运费", "分摊其他费用", "进口消费税参考", "操作"];
+  const linkedRows = (activeTrade?.linkedProducts || []).map((x) => {
+    const a = activeAllocationMap[x.id] || {};
+    const currentCost = calcTax(x).costJpy;
+    return [
+      <ProductThumb item={x} />,
+      x.id,
+      x.brand || "—",
+      productNameCell(x.item),
+      moneyCell(a.declaredJpy || calcTax(x).declaredJpy || 0),
+      moneyCell(currentCost),
+      moneyCell(a.allocatedDutyJpy || x.allocatedDutyJpy || x.batchAllocatedDutyJpy || 0),
+      moneyCell(a.allocatedAgentFeeJpy || x.allocatedAgentFeeJpy || x.batchAllocatedCustomsFeeJpy || 0),
+      moneyCell(a.allocatedInternationalShippingJpy || x.allocatedInternationalShippingJpy || x.batchAllocatedShippingJpy || 0),
+      moneyCell(a.allocatedOtherImportCostJpy || x.allocatedOtherImportCostJpy || x.batchAllocatedOtherCostJpy || 0),
+      moneyCell(a.importTaxCreditJpy || x.importTaxCreditJpy || x.batchAllocatedImportTaxJpy || 0),
+      <div className="table-actions"><button className="ghost" onClick={() => unlinkProductFromBatch(x.id)}>移出批次</button></div>
+    ];
+  });
+
+  const headers = ["Import Batch", "状态", "EMS单号", "报关编号", "进口日期", "商品件数", "货值JPY", "重量kg", "关税", "进口消费税", "地方消费税", "代理费", "国际运费", "分摊成本", "附件", "操作"];
   const rows = normalizedBatches.map((batch) => {
     const st = batchStats(batch);
     return [
       batch.id,
+      <div className="status-row">{calcImportBatchProgress(batch, items).badges.map((x) => <StatusBadge key={x} status={x} />)}</div>,
       batch.emsNo || "",
       batch.customsDeclarationNo || "",
       batch.importDate || "",
@@ -4137,6 +4339,84 @@ function CustomsBatchPanel({ batches, setBatches, items, downloadCSV }) {
         <Card title="进入成本合计" value={jpy(summary.costTotal)} />
         <Card title="不进成本消费税合计" value={jpy(summary.nonCostTaxTotal)} />
       </div>
+      {activeBatch.id && activeTrade && activeProgress && (
+        <div className="import-batch-center">
+          <div className="record-card-head">
+            <div>
+              <h3>贸易批次中心</h3>
+              <p className="note">当前批次：{activeBatch.id} / {activeBatch.name || "未命名批次"}</p>
+            </div>
+            <div className="status-row">
+              {activeProgress.badges.map((x) => <StatusBadge key={x} status={x} />)}
+            </div>
+          </div>
+
+          <div className="import-summary-grid compact">
+            <Card title="本票总投入" value={jpy(activeTrade.totalInvestmentJpy)} />
+            <Card title="预计销售" value={jpy(activeTrade.expectedSalesJpy)} />
+            <Card title="预计利润" value={jpy(activeTrade.expectedProfitJpy)} />
+            <Card title="利润率" value={(activeTrade.margin || 0).toFixed(1) + "%"} />
+            <Card title="已售件数" value={activeTrade.soldCount + " 件"} />
+            <Card title="未售件数" value={activeTrade.unsoldCount + " 件"} />
+            <Card title="已回款金额" value={jpy(activeTrade.receivedJpy)} />
+            <Card title="未回款金额" value={jpy(activeTrade.unreceivedJpy)} />
+          </div>
+
+          <div className="batch-progress-card">
+            <div><b>商品关联进度</b><span>已关联 {activeProgress.linkedCount} / {activeProgress.targetCount || 0} 件，未关联 {activeProgress.remainingCount} 件</span></div>
+            <div className="progressbar"><i style={{ width: activeProgress.progressPercent + "%" }} /></div>
+            <strong>{activeProgress.progressPercent}%</strong>
+          </div>
+
+          <div className="batch-timeline">
+            {activeTimeline.map(([label, done]) => (
+              <div key={label} className={"timeline-step " + (done ? "done" : "") }>
+                <div className="timeline-dot" />
+                {label}
+              </div>
+            ))}
+          </div>
+
+          <div className="import-analysis-grid">
+            <div className="record-card">
+              <h3>Financial Analysis（资金流）</h3>
+              <div className="record-field-grid">
+                <Field label="申报货值" value={jpy(activeBatch.goodsValueJpy || activeBatch.declaredTotalJpy || 0)} />
+                <Field label="进入库存成本" value={jpy(activeTrade.cost.costInInventoryJpy)} />
+                <Field label="商品库存成本合计" value={jpy(activeTrade.productCostJpy)} />
+                <Field label="预计销售（含税）" value={jpy(activeTrade.expectedSalesJpy)} />
+                <Field label="已回款" value={jpy(activeTrade.receivedJpy)} />
+                <Field label="实际利润" value={jpy(activeTrade.actualProfitJpy)} />
+              </div>
+            </div>
+            <div className="record-card">
+              <h3>Tax Summary（消费税抵扣）</h3>
+              <div className="record-field-grid">
+                <Field label="进口消费税" value={jpy(activeTrade.tax.importConsumptionTaxJpy)} />
+                <Field label="地方消费税" value={jpy(activeTrade.tax.localConsumptionTaxJpy)} />
+                <Field label="可抵扣进项税参考" value={jpy(activeTrade.tax.taxCreditJpy)} />
+                <Field label="库存成本处理" value="不进入库存成本" />
+              </div>
+            </div>
+          </div>
+
+          <div className="record-card">
+            <div className="record-card-head">
+              <h3>商品关联列表</h3>
+              <div className="table-actions">
+                <select value={selectedLinkItemId} onChange={(e) => setSelectedLinkItemId(e.target.value)}>
+                  <option value="">选择商品加入批次</option>
+                  {unlinkedItems.map((x) => <option key={x.id} value={x.id}>{x.id} / {x.brand || ""} {x.item || ""}</option>)}
+                </select>
+                <button className="ghost" onClick={() => linkSelectedProduct(activeBatch.id)}>加入批次</button>
+                <button className="primary" onClick={() => allocateActiveBatch(activeBatch)}>开始分摊</button>
+              </div>
+            </div>
+            <Table headers={linkedHeaders} rows={linkedRows} />
+          </div>
+        </div>
+      )}
+
       <div className="formgrid">
         <Input label="Import Batch ID" value={form.id} onChange={(v) => set("id", v)} placeholder="空白则自动生成 EMS-年月-001" />
         <Input label="批次名称" value={form.name} onChange={(v) => set("name", v)} placeholder="例：2026年7月进口第1批" />
@@ -4168,7 +4448,7 @@ function CustomsBatchPanel({ batches, setBatches, items, downloadCSV }) {
                 <div className="attachment-main">
                   <strong>{att.documentType || "附件"}</strong>
                   <span>{att.name || att.url || attachmentLabel(att)}</span>
-                  <small>{attachmentSize(att)} / {att.storageMode === "supabase-storage" ? "云端保存" : (att.storageMode === "metadata-only" ? "仅登记" : "可查看")}</small>
+                  <small>{form.customsDeclarationNo || "无报关编号"} / {form.importDate || "无日期"} / {attachmentSize(att)} / {att.storageMode === "supabase-storage" ? "云端保存" : (att.storageMode === "metadata-only" ? "仅登记" : "可查看")}</small>
                 </div>
                 <div className="table-actions">
                   {(att.dataUrl || att.url) ? <a className="ghost button-link" href={att.dataUrl || att.url} download={att.name || undefined} target="_blank" rel="noreferrer">查看</a> : <span className="muted small-text">未上传云端</span>}
