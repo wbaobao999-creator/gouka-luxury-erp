@@ -246,9 +246,13 @@ export async function uploadImportBatchAttachments(batchId, files = [], document
   const selected = Array.from(files || []).filter(Boolean);
   const result = [];
   const safeBatchId = safeStorageSegment(batchId || "import_batch");
+  const maxBytes = 100 * 1024 * 1024;
 
   for (let i = 0; i < selected.length; i++) {
     const file = selected[i];
+    if (file.size && file.size > maxBytes) {
+      throw new Error("附件超过100MB，请先压缩或拆分后上传：" + (file.name || "attachment"));
+    }
     const originalName = safeOriginalFileName(file.name || "attachment");
     const storagePath = safeBatchId + "/" + Date.now() + "_" + i + "_" + originalName;
 
