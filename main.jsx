@@ -1303,6 +1303,10 @@ function cny(n) {
   return "CNY " + money(Number(n || 0));
 }
 
+function pct(n) {
+  return (Number(n || 0)).toFixed(1) + "%";
+}
+
 function moneyCell(value) {
   const n = Number(value || 0);
   const cls = n < 0 ? "money-negative" : n > 0 ? "money-positive" : "";
@@ -1402,51 +1406,191 @@ function calcTax(x) {
 }
 
 
+function calcSalesTaxBreakdown(priceTaxIncludedJpy) {
+  const taxIncluded = Number(priceTaxIncludedJpy || 0);
+  const revenueExTax = taxIncluded > 0 ? taxIncluded / (1 + TAX_RATE) : 0;
+  const outputConsumptionTaxJpy = taxIncluded - revenueExTax;
+  return { taxIncluded, revenueExTax, outputConsumptionTaxJpy };
+}
+
+function calcPlatformFeeBreakdown(platformFeeTaxIncludedJpy) {
+  const feeTaxIncluded = Number(platformFeeTaxIncludedJpy || 0);
+  const feeExTax = feeTaxIncluded > 0 ? feeTaxIncluded / (1 + TAX_RATE) : 0;
+  const feeTaxJpy = feeTaxIncluded - feeExTax;
+  return { feeTaxIncluded, feeExTax, feeTaxJpy };
+}
+
+function makeSalesNo(item) {
+  const date = String(item?.soldDate || item?.salesRecord?.saleDate || localDateString()).replaceAll("-", "");
+  const code = String(item?.id || "SALE").replace(/[^a-zA-Z0-9]/g, "").slice(-8) || "00000000";
+  return "SALE-" + date + "-" + code;
+}
+
+function parseSalesRecordMemo(memo = "") {
+  const text = String(memo || "");
+  const block = text.match(/GOUKA_SALES_RECORD_START\n([\s\S]*?)\nGOUKA_SALES_RECORD_END/);
+  if (!block) return {};
+  return block[1].split("\n").reduce((acc, line) => {
+    const idx = line.indexOf(":");
+    if (idx <= 0) return acc;
+    const key = line.slice(0, idx).trim();
+    const value = line.slice(idx + 1).trim();
+    if (["salePriceTaxIncludedJpy", "platformFeeJpy", "shippingFeeJpy", "refundJpy", "adjustmentJpy", "finalDepositJpy"].includes(key)) acc[key] = Number(value || 0);
+    else acc[key] = value;
+    return acc;
+  }, {});
+}
+
+function stripSalesRecordMemo(memo = "") {
+  return String(memo || "").replace(/\n?GOUKA_SALES_RECORD_START\n[\s\S]*?\nGOUKA_SALES_RECORD_END/g, "").trim();
+}
+
+function buildSalesRecordMemo(record = {}, originalMemo = "") {
+  const cleanMemo = stripSalesRecordMemo(originalMemo);
+  const keys = ["salesNo", "buyerName", "buyerContact", "paymentMethod", "depositDate", "salesStatus", "platform", "salePriceTaxIncludedJpy", "platformFeeJpy", "shippingFeeJpy", "refundJpy", "adjustmentJpy", "finalDepositJpy", "memo"];
+  const block = keys.map((key) => key + ": " + (record[key] ?? "")).join("\n");
+  return [cleanMemo, "GOUKA_SALES_RECORD_START", block, "GOUKA_SALES_RECORD_END"].filter(Boolean).join("\n");
+}
+function calcSalesStatus(record = {}) {
+  const status = record.salesStatus || "";
+  if (status) return status;
+  if (Number(record.refundJpy || 0) > 0) return "已退款";
+  if (record.finalDepositJpy || record.depositDate) return "已回款";
+  if (record.shippingFeeJpy || String(record.memo || "").includes("発送済")) return "已发货";
+  if (record.salePriceTaxIncludedJpy) return "已成交";
+  return "销售准备";
+}
+
+function calcSalesProfit(record = {}, item = {}) {
+  const sale = calcSalesTaxBreakdown(record.salePriceTaxIncludedJpy);
+  const fee = calcPlatformFeeBreakdown(record.platformFeeJpy);
+  const inventoryCostJpy = Number(record.inventoryCostJpy || calcTax(item).costJpy || 0);
+  const shippingFeeJpy = Number(record.shippingFeeJpy || 0);
+  const refundJpy = Number(record.refundJpy || 0);
+  const adjustmentJpy = Number(record.adjustmentJpy || 0);
+  const actualProfitJpy = sale.revenueExTax - inventoryCostJpy - fee.feeExTax - shippingFeeJpy - refundJpy + adjustmentJpy;
+  const margin = sale.revenueExTax > 0 ? actualProfitJpy / sale.revenueExTax * 100 : 0;
+  return { inventoryCostJpy, actualProfitJpy, margin };
+}
+
+function calcSalesSettlement(record = {}, item = {}) {
+  const sale = calcSalesTaxBreakdown(record.salePriceTaxIncludedJpy);
+  const fee = calcPlatformFeeBreakdown(record.platformFeeJpy);
+  const refundJpy = Number(record.refundJpy || 0);
+  const adjustmentJpy = Number(record.adjustmentJpy || 0);
+  const shippingFeeJpy = Number(record.shippingFeeJpy || 0);
+  const finalDepositJpy = Number(record.finalDepositJpy || 0) || (sale.taxIncluded ? sale.taxIncluded - fee.feeTaxIncluded - shippingFeeJpy - refundJpy + adjustmentJpy : 0);
+  const profit = calcSalesProfit({ ...record, finalDepositJpy }, item);
+  return { ...sale, ...fee, refundJpy, adjustmentJpy, shippingFeeJpy, finalDepositJpy, ...profit };
+}
+
+function getSalesRecordFromProduct(item = {}) {
+  const saved = { ...parseSalesRecordMemo(item.soldMemo), ...(item.salesRecord || {}) };
+  const salePriceTaxIncludedJpy = Number(saved.salePriceTaxIncludedJpy || item.soldPriceJpy || item.saleJpy || 0);
+  const platformFeeJpy = Number(saved.platformFeeJpy || item.platformFeeJpy || item.platformFee || 0);
+  const record = {
+    salesNo: saved.salesNo || item.salesNo || makeSalesNo(item),
+    productId: saved.productId || item.id || "",
+    productCode: saved.productCode || item.id || "",
+    saleDate: saved.saleDate || item.soldDate || "",
+    platform: saved.platform || item.soldPlatform || item.platform || "",
+    buyerName: saved.buyerName || item.buyerName || "",
+    buyerContact: saved.buyerContact || item.buyerContact || "",
+    salePriceTaxIncludedJpy,
+    platformFeeJpy,
+    shippingFeeJpy: Number(saved.shippingFeeJpy || item.salesShippingFeeJpy || 0),
+    refundJpy: Number(saved.refundJpy || item.refundJpy || item.returnJpy || item.refundAmountJpy || 0),
+    adjustmentJpy: Number(saved.adjustmentJpy || item.adjustmentJpy || item.adjustJpy || item.adjustmentAmountJpy || 0),
+    finalDepositJpy: Number(saved.finalDepositJpy || item.finalReceiptJpy || item.netReceiptJpy || 0),
+    depositDate: saved.depositDate || item.depositDate || "",
+    paymentMethod: saved.paymentMethod || item.paymentMethod || "",
+    salesStatus: saved.salesStatus || item.salesStatus || "",
+    memo: saved.memo || item.soldMemo || "",
+    createdAt: saved.createdAt || item.soldCreatedAt || "",
+    updatedAt: saved.updatedAt || item.soldUpdatedAt || ""
+  };
+  const settlement = calcSalesSettlement(record, item);
+  return {
+    ...record,
+    saleRevenueExTaxJpy: settlement.revenueExTax,
+    outputConsumptionTaxJpy: settlement.outputConsumptionTaxJpy,
+    platformFeeTaxJpy: settlement.feeTaxJpy,
+    finalDepositJpy: settlement.finalDepositJpy,
+    inventoryCostJpy: settlement.inventoryCostJpy,
+    actualProfitJpy: settlement.actualProfitJpy,
+    margin: settlement.margin,
+    salesStatus: calcSalesStatus({ ...record, finalDepositJpy: settlement.finalDepositJpy })
+  };
+}
+
+function buildSalesRecordPatch(item, draft, user = "gouka") {
+  const now = new Date().toISOString();
+  const baseRecord = getSalesRecordFromProduct(item);
+  const rawRecord = {
+    ...baseRecord,
+    ...draft,
+    productId: item.id,
+    productCode: item.id,
+    salesNo: draft.salesNo || baseRecord.salesNo || makeSalesNo({ ...item, soldDate: draft.saleDate }),
+    salePriceTaxIncludedJpy: Number(draft.salePriceTaxIncludedJpy || 0),
+    platformFeeJpy: Number(draft.platformFeeJpy || 0),
+    shippingFeeJpy: Number(draft.shippingFeeJpy || 0),
+    refundJpy: Number(draft.refundJpy || 0),
+    adjustmentJpy: Number(draft.adjustmentJpy || 0),
+    finalDepositJpy: Number(draft.finalDepositJpy || 0),
+    createdAt: baseRecord.createdAt || now,
+    updatedAt: now
+  };
+  const record = getSalesRecordFromProduct({ ...item, salesRecord: rawRecord, soldPriceJpy: rawRecord.salePriceTaxIncludedJpy });
+  const nextStatus = ["已取消", "已退款"].includes(record.salesStatus)
+    ? item.status
+    : (["已发货", "已签收", "已回款", "已完成"].includes(record.salesStatus) ? "已发货" : "已售出");
+  return {
+    status: nextStatus,
+    soldDate: record.saleDate,
+    soldPlatform: record.platform,
+    soldPriceJpy: Math.round(record.salePriceTaxIncludedJpy || 0),
+    platformFeeJpy: Math.round(record.platformFeeJpy || 0),
+    salesShippingFeeJpy: Math.round(record.shippingFeeJpy || 0),
+    refundJpy: Math.round(record.refundJpy || 0),
+    adjustmentJpy: Math.round(record.adjustmentJpy || 0),
+    finalReceiptJpy: Math.round(record.finalDepositJpy || 0),
+    buyerName: record.buyerName || "",
+    buyerContact: record.buyerContact || "",
+    depositDate: record.depositDate || "",
+    paymentMethod: record.paymentMethod || "",
+    salesStatus: record.salesStatus,
+    salesNo: record.salesNo,
+    salesRecord: record,
+    soldMemo: buildSalesRecordMemo(record, draft.memo || item.soldMemo || "")
+  };
+}
+
 function calcSalesBreakdown(item) {
   const t = calcTax(item);
   const auction = getAuction(item);
   const sold = isSoldStatus(item.status);
-  const saleTaxIncluded = Number(item.soldPriceJpy || item.saleJpy || 0);
+  const record = getSalesRecordFromProduct(item);
+  const saleTaxIncluded = Number(record.salePriceTaxIncludedJpy || item.soldPriceJpy || item.saleJpy || 0);
   const expectedSaleTaxIncluded = Number(item.saleJpy || item.expectedSaleJpy || item.listingPriceJpy || 0);
-  const salesRevenueExTax = saleTaxIncluded > 0 ? saleTaxIncluded / (1 + TAX_RATE) : 0;
-  const salesOutputTax = saleTaxIncluded - salesRevenueExTax;
+  const salesRevenueExTax = Number(record.saleRevenueExTaxJpy || 0);
+  const salesOutputTax = Number(record.outputConsumptionTaxJpy || 0);
   const expectedRevenueExTax = expectedSaleTaxIncluded > 0 ? expectedSaleTaxIncluded / (1 + TAX_RATE) : 0;
-  const platformFeeTaxIncluded = Number(item.platformFeeJpy || item.platformFee || 0);
+  const platformFeeTaxIncluded = Number(record.platformFeeJpy || 0);
   const platformFeeExTax = platformFeeTaxIncluded > 0 ? platformFeeTaxIncluded / (1 + TAX_RATE) : 0;
-  const platformFeeTax = platformFeeTaxIncluded - platformFeeExTax;
-  const refundJpy = Number(item.refundJpy || item.returnJpy || item.refundAmountJpy || 0);
-  const adjustmentJpy = Number(item.adjustmentJpy || item.adjustJpy || item.adjustmentAmountJpy || 0);
-  const finalReceiptJpy = Number(item.finalReceiptJpy || item.netReceiptJpy || 0) || (saleTaxIncluded ? saleTaxIncluded - platformFeeTaxIncluded - refundJpy + adjustmentJpy : 0);
+  const platformFeeTax = Number(record.platformFeeTaxJpy || 0);
+  const refundJpy = Number(record.refundJpy || 0);
+  const adjustmentJpy = Number(record.adjustmentJpy || 0);
+  const shippingFeeJpy = Number(record.shippingFeeJpy || 0);
+  const finalReceiptJpy = Number(record.finalDepositJpy || 0);
   const inventoryCostJpy = Number(t.costJpy || 0);
-  const inputConsumptionTaxJpy = auction ? Number(auction.taxCredit || 0) : 0;
+  const inputConsumptionTaxJpy = auction ? Number(auction.taxCredit || 0) : Number(item.importTaxCreditJpy || item.batchAllocatedImportTaxJpy || 0);
   const grossProfitJpy = saleTaxIncluded > 0 ? salesRevenueExTax - inventoryCostJpy : 0;
   const expectedProfitJpy = expectedSaleTaxIncluded > 0 ? expectedRevenueExTax - inventoryCostJpy : 0;
-  const actualProfitJpy = sold && saleTaxIncluded > 0 ? grossProfitJpy : 0;
+  const actualProfitJpy = sold && saleTaxIncluded > 0 ? Number(record.actualProfitJpy || 0) : 0;
   const payableConsumptionTaxJpy = salesOutputTax - inputConsumptionTaxJpy;
-  const margin = salesRevenueExTax > 0 ? grossProfitJpy / salesRevenueExTax * 100 : 0;
-
-  return {
-    ...t,
-    sold,
-    saleTaxIncluded,
-    expectedSaleTaxIncluded,
-    salesRevenueExTax,
-    salesOutputTax,
-    expectedRevenueExTax,
-    platformFeeTaxIncluded,
-    platformFeeExTax,
-    platformFeeTax,
-    refundJpy,
-    adjustmentJpy,
-    finalReceiptJpy,
-    inventoryCostJpy,
-    inputConsumptionTaxJpy,
-    grossProfitJpy,
-    expectedProfitJpy,
-    actualProfitJpy,
-    payableConsumptionTaxJpy,
-    margin
-  };
+  const margin = salesRevenueExTax > 0 ? actualProfitJpy / salesRevenueExTax * 100 : 0;
+  return { ...t, sold, salesRecord: record, saleTaxIncluded, expectedSaleTaxIncluded, salesRevenueExTax, salesOutputTax, expectedRevenueExTax, platformFeeTaxIncluded, platformFeeExTax, platformFeeTax, shippingFeeJpy, refundJpy, adjustmentJpy, finalReceiptJpy, inventoryCostJpy, inputConsumptionTaxJpy, grossProfitJpy, expectedProfitJpy, actualProfitJpy, payableConsumptionTaxJpy, margin };
 }
 
 
@@ -2857,7 +3001,7 @@ function App() {
         {tab === "profit" && (canAccessTab("profit") ? <Profit items={filtered} /> : <RestrictedPanel message={restrictedTabMessage} />)}
         {tab === "tax" && (canAccessTab("tax") ? <TaxReport items={filtered} totals={totals} customsBatches={customsBatches} downloadCSV={downloadCSV} /> : <RestrictedPanel message={restrictedTabMessage} />)}
         {tab === "listing" && (canAccessTab("listing") ? <ListingManagement items={computedItems} updateListingItem={canEditBusiness ? updateListingItem : (() => {})} editItem={canEditBusiness ? editItem : null} setPreviewImage={setPreviewImage} setPreviewScale={setPreviewScale} /> : <RestrictedPanel message={restrictedTabMessage} />)}
-        {tab === "sales" && (canAccessTab("sales") ? <SalesReport items={computedItems} downloadCSV={downloadCSV} /> : <RestrictedPanel message={restrictedTabMessage} />)}
+        {tab === "sales" && (canAccessTab("sales") ? <SalesReport items={computedItems} updateListingItem={canEditBusiness ? updateListingItem : null} downloadCSV={downloadCSV} /> : <RestrictedPanel message={restrictedTabMessage} />)}
         {tab === "pdf" && (canAccessTab("pdf") && canExportBusinessPdf ? <PdfExportPanel items={computedItems} totals={totals} exportInventoryPdf={exportInventoryPdf} exportLedgerPdf={exportLedgerPdf} exportCustomsPdf={exportCustomsPdf} exportItemPdf={exportItemPdf} exportAuctionPdf={exportAuctionPdf} exportTaxPdf={exportTaxPdf} /> : <RestrictedPanel message={restrictedTabMessage} />)}
         {tab === "suppliers" && (canAccessTab("suppliers") ? <SupplierPanel suppliers={suppliers} setSuppliers={setSuppliers} downloadCSV={downloadCSV} /> : <RestrictedPanel message={restrictedTabMessage} />)}
         {tab === "dictionary" && (canAccessTab("dictionary") ? <DictionaryPanel dictionaries={dictionaries} setDictionaries={setDictionaries} /> : <RestrictedPanel message={restrictedTabMessage} />)}
@@ -3578,6 +3722,7 @@ function NbaaProductRecordDetail({ item, onClose, exportItemPdf, isOwner = true 
   const images = Array.isArray(item.images) ? item.images.filter(Boolean) : [];
   const mainImage = images[0] || "";
   const sales = calcSalesBreakdown(item);
+  const salesRecord = sales.salesRecord || getSalesRecordFromProduct(item);
   const sellerSettlement = getNbaaSellerSettlement(item);
   const saleJpy = Number(sales.saleTaxIncluded || 0);
   const expectedSaleJpy = Number(sales.expectedSaleTaxIncluded || 0);
@@ -3797,14 +3942,20 @@ function NbaaProductRecordDetail({ item, onClose, exportItemPdf, isOwner = true 
           <RecordField label="报关日期" value={customsDate} />
         </RecordCard>
 
-        <RecordCard title="④ 销售" summary={saleJpy ? [(item.soldPlatform || item.platform), jpy(saleJpy)].filter(Boolean).join(" / ") : ""} defaultOpen={saleJpy > 0}>
-          <RecordField label="买家" value={buyerName} />
-          <RecordField label="平台" value={item.soldPlatform || item.platform} />
-          <RecordField label="售价" value={saleJpy ? jpy(saleJpy) : ""} />
-          <RecordField label="销售日期" value={item.soldDate} />
-          <RecordField label="平台手续费" value={jpy(item.platformFeeJpy)} />
-          <RecordField label="退款" value={refundJpy ? jpy(refundJpy) : ""} />
-          <RecordField label="最终到账" value={finalReceipt ? jpy(finalReceipt) : ""} />
+        <RecordCard title="④ 销售" summary={salesRecord.salePriceTaxIncludedJpy ? [salesRecord.salesNo, salesRecord.platform, jpy(salesRecord.salePriceTaxIncludedJpy)].filter(Boolean).join(" / ") : ""} defaultOpen={salesRecord.salePriceTaxIncludedJpy > 0}>
+          <RecordField label="销售编号" value={salesRecord.salesNo} />
+          <RecordField label="买家" value={salesRecord.buyerName || buyerName} />
+          <RecordField label="平台" value={salesRecord.platform} />
+          <RecordField label="销售日期" value={salesRecord.saleDate} />
+          <RecordField label="售价（含税）" value={salesRecord.salePriceTaxIncludedJpy ? jpy(salesRecord.salePriceTaxIncludedJpy) : ""} />
+          <RecordField label="销售收入（未税）" value={salesRecord.saleRevenueExTaxJpy ? jpy(salesRecord.saleRevenueExTaxJpy) : ""} />
+          <RecordField label="销项消费税" value={salesRecord.outputConsumptionTaxJpy ? jpy(salesRecord.outputConsumptionTaxJpy) : ""} />
+          <RecordField label="平台手续费" value={salesRecord.platformFeeJpy ? jpy(salesRecord.platformFeeJpy) : ""} />
+          <RecordField label="手续费消费税" value={salesRecord.platformFeeTaxJpy ? jpy(salesRecord.platformFeeTaxJpy) : ""} />
+          <RecordField label="退款" value={salesRecord.refundJpy ? jpy(salesRecord.refundJpy) : ""} />
+          <RecordField label="最终到账" value={salesRecord.finalDepositJpy ? jpy(salesRecord.finalDepositJpy) : ""} />
+          <RecordField label="实际利润" value={salesRecord.actualProfitJpy ? jpy(salesRecord.actualProfitJpy) : ""} />
+          <RecordField label="销售状态" value={salesRecord.salesStatus} />
         </RecordCard>
 
         {sellerSettlement.hasData && (
@@ -5428,123 +5579,134 @@ function ListingManagement({ items, updateListingItem, editItem, setPreviewImage
   );
 }
 
-function SalesReport({ items, downloadCSV }) {
+function SalesReport({ items, updateListingItem, downloadCSV }) {
   const [salesQuery, setSalesQuery] = useState("");
   const [salesMonth, setSalesMonth] = useState("");
+  const [editingSalesId, setEditingSalesId] = useState(null);
+  const [salesDraft, setSalesDraft] = useState(null);
+  const [detailSales, setDetailSales] = useState(null);
 
-  const soldItems = items.filter((x) => isSoldStatus(x.status));
+  const salesStatuses = ["销售准备", "已成交", "已发货", "已签收", "已回款", "已完成", "已取消", "已退款"];
+  const platformOptions = LISTING_PLATFORMS || ["Mercari", "Yahoo", "楽天", "NBAA", "ECO Ring", "OBA", "店铺", "其他"];
 
-  const filteredSold = soldItems.filter((x) => {
+  function makeDraft(product = {}) {
+    const record = getSalesRecordFromProduct(product);
+    return {
+      productId: product.id || record.productId || "",
+      salesNo: record.salesNo || "",
+      saleDate: record.saleDate || localDateString(),
+      platform: record.platform || "",
+      buyerName: record.buyerName || "",
+      buyerContact: record.buyerContact || "",
+      salePriceTaxIncludedJpy: Math.round(record.salePriceTaxIncludedJpy || 0) || "",
+      platformFeeJpy: Math.round(record.platformFeeJpy || 0) || "",
+      shippingFeeJpy: Math.round(record.shippingFeeJpy || 0) || "",
+      refundJpy: Math.round(record.refundJpy || 0) || "",
+      adjustmentJpy: Math.round(record.adjustmentJpy || 0) || "",
+      finalDepositJpy: Math.round(record.finalDepositJpy || 0) || "",
+      depositDate: record.depositDate || "",
+      paymentMethod: record.paymentMethod || "",
+      salesStatus: record.salesStatus || "已成交",
+      memo: stripSalesRecordMemo(record.memo || product.soldMemo || "")
+    };
+  }
+
+  function selectedDraftItem() {
+    return items.find((x) => x.id === salesDraft?.productId) || items[0] || {};
+  }
+
+  const salesRows = items
+    .map((item) => ({ item, record: getSalesRecordFromProduct(item), sales: calcSalesBreakdown(item) }))
+    .filter((row) => Number(row.record.salePriceTaxIncludedJpy || 0) > 0 || isSoldStatus(row.item.status) || row.item.salesRecord || row.item.soldDate);
+
+  const filteredSalesRows = salesRows.filter(({ item, record }) => {
     const q = salesQuery.toLowerCase();
-    const matchText = !q || Object.values(x).join(" ").toLowerCase().includes(q);
-    const matchMonth = !salesMonth || (x.soldDate || "").startsWith(salesMonth);
+    const text = [record.salesNo, item.id, item.brand, item.item, record.platform, record.buyerName, record.memo, item.soldMemo].join(" ").toLowerCase();
+    const matchText = !q || text.includes(q);
+    const matchMonth = !salesMonth || String(record.saleDate || "").startsWith(salesMonth);
     return matchText && matchMonth;
   });
 
-  const headers = ["图片", "商品编号", "品牌", "商品名", "采购来源", "销售日期", "销售平台", "出品コード", "指値", "金額（税抜）", "NBAA合计", "售价（含税）", "销售收入（未税）", "销项消费税", "平台手续费", "手续费消费税", "退款", "调整金额", "最终到账", "库存成本", "实际利润", "备注"];
-  const csvHeaders = ["商品编号", "品牌", "商品名", "采购类型", "仕入先", "供应商地址", "本人确认", "报关批次", "资料状态", "缺失资料", "销售日期", "销售平台", "出品コード", "指値", "金額（税抜）", "NBAA合计", "售价（含税）", "销售收入（未税）", "销项消费税", "平台手续费", "手续费消费税", "退款", "调整金额", "最终到账", "库存成本", "实际利润", "备注"];
-  const rows = filteredSold.map((x) => {
-    const sales = calcSalesBreakdown(x);
-    const trace = buildSourceTrace(x);
-    const sellerSettlement = getNbaaSellerSettlement(x);
-    return [
-      <ProductThumb item={x} />,
-      x.id,
-      x.brand,
-      productNameCell(x.item),
-      trace.supplier || trace.kind || "—",
-      x.soldDate || "",
-      x.soldPlatform || x.platform || "",
-      sellerSettlement.listingCode || "",
-      sellerSettlement.reservePriceJpy ? jpy(sellerSettlement.reservePriceJpy) : "",
-      sellerSettlement.saleAmountExTax ? jpy(sellerSettlement.saleAmountExTax) : "",
-      sellerSettlement.settlementTotalJpy ? jpy(sellerSettlement.settlementTotalJpy) : "",
-      jpy(sales.saleTaxIncluded),
-      jpy(sales.salesRevenueExTax),
-      jpy(sales.salesOutputTax),
-      jpy(sales.platformFeeTaxIncluded),
-      jpy(sales.platformFeeTax),
-      jpy(sales.refundJpy),
-      jpy(sales.adjustmentJpy),
-      jpy(sales.finalReceiptJpy),
-      jpy(sales.inventoryCostJpy),
-      moneyCell(sales.actualProfitJpy),
-      x.soldMemo || ""
-    ];
-  });
-  const csvRows = filteredSold.map((x) => {
-    const sales = calcSalesBreakdown(x);
-    const trace = buildSourceTrace(x);
-    const evidence = buildEvidenceCheck(x);
-    const sellerSettlement = getNbaaSellerSettlement(x);
-    return [
-      x.id,
-      x.brand,
-      x.item,
-      trace.kind,
-      trace.supplier,
-      trace.address,
-      trace.idCheck,
-      trace.customsBatch,
-      evidence.status,
-      evidence.text,
-      x.soldDate || "",
-      x.soldPlatform || x.platform || "",
-      sellerSettlement.listingCode || "",
-      Math.round(sellerSettlement.reservePriceJpy || 0),
-      Math.round(sellerSettlement.saleAmountExTax || 0),
-      Math.round(sellerSettlement.settlementTotalJpy || 0),
-      Math.round(sales.saleTaxIncluded),
-      Math.round(sales.salesRevenueExTax),
-      Math.round(sales.salesOutputTax),
-      Math.round(sales.platformFeeTaxIncluded),
-      Math.round(sales.platformFeeTax),
-      Math.round(sales.refundJpy),
-      Math.round(sales.adjustmentJpy),
-      Math.round(sales.finalReceiptJpy),
-      Math.round(sales.inventoryCostJpy),
-      Math.round(sales.actualProfitJpy),
-      x.soldMemo || ""
-    ];
-  });
+  const draftPreview = salesDraft ? getSalesRecordFromProduct({ ...selectedDraftItem(), salesRecord: salesDraft, soldPriceJpy: salesDraft.salePriceTaxIncludedJpy }) : null;
 
-  const totalSale = filteredSold.reduce((a, x) => a + calcSalesBreakdown(x).saleTaxIncluded, 0);
-  const totalRevenue = filteredSold.reduce((a, x) => a + calcSalesBreakdown(x).salesRevenueExTax, 0);
-  const totalOutputTax = filteredSold.reduce((a, x) => a + calcSalesBreakdown(x).salesOutputTax, 0);
-  const totalCost = filteredSold.reduce((a, x) => a + calcSalesBreakdown(x).inventoryCostJpy, 0);
-  const totalProfit = filteredSold.reduce((a, x) => a + calcSalesBreakdown(x).actualProfitJpy, 0);
-  const totalReceipt = filteredSold.reduce((a, x) => a + calcSalesBreakdown(x).finalReceiptJpy, 0);
-  const salesCheck = filteredSold.reduce((a, x) => {
-    const sales = calcSalesBreakdown(x);
-    if (!x.soldDate) a.missingDate += 1;
-    if (!(x.soldPlatform || x.platform)) a.missingPlatform += 1;
-    if (Number(sales.saleTaxIncluded || 0) <= 0) a.missingSale += 1;
-    if (Number(sales.finalReceiptJpy || 0) <= 0) a.missingReceipt += 1;
-    return a;
-  }, { missingDate: 0, missingPlatform: 0, missingSale: 0, missingReceipt: 0 });
+  async function saveSalesDraft() {
+    if (!updateListingItem) return alert("当前账号没有销售编辑权限。");
+    const product = selectedDraftItem();
+    if (!product?.id) return alert("请选择商品。");
+    if (Number(salesDraft.salePriceTaxIncludedJpy || 0) <= 0) return alert("请输入售价（含税）。");
+    const patch = buildSalesRecordPatch(product, salesDraft);
+    await updateListingItem(product.id, patch, "Sales Record更新");
+    setEditingSalesId(null);
+    setSalesDraft(null);
+    alert("销售记录已保存。");
+  }
+
+  const headers = ["销售编号", "商品图片", "商品编号", "品牌", "商品名", "销售日期", "平台", "售价（含税）", "销售收入（未税）", "销项消费税", "库存成本", "实际利润", "回款状态", "销售状态", "操作"];
+  const csvHeaders = ["销售编号", "商品编号", "品牌", "商品名", "销售日期", "平台", "买家", "联系方式", "售价（含税）", "销售收入（未税）", "销项消费税", "平台手续费", "手续费消费税", "发货费", "退款", "调整金额", "最终到账", "到账日期", "支付方式", "库存成本", "实际利润", "利润率", "回款状态", "销售状态", "备注"];
+
+  const rows = filteredSalesRows.map(({ item, record }) => [
+    record.salesNo,
+    <ProductThumb item={item} />,
+    item.id,
+    item.brand,
+    productNameCell(item.item),
+    record.saleDate || "—",
+    record.platform || "—",
+    jpy(record.salePriceTaxIncludedJpy),
+    jpy(record.saleRevenueExTaxJpy),
+    jpy(record.outputConsumptionTaxJpy),
+    jpy(record.inventoryCostJpy),
+    moneyCell(record.actualProfitJpy),
+    <span className={record.finalDepositJpy || record.depositDate ? "status ok" : "status warn"}>{record.finalDepositJpy || record.depositDate ? "已回款" : "未回款"}</span>,
+    <span className="status">{record.salesStatus}</span>,
+    <div className="table-actions">
+      <button onClick={() => setDetailSales({ item, record })}>详情</button>
+      <button className="edit" onClick={() => { setEditingSalesId(item.id); setSalesDraft(makeDraft(item)); }}>编辑</button>
+    </div>
+  ]);
+
+  const csvRows = filteredSalesRows.map(({ item, record }) => [
+    record.salesNo,
+    item.id,
+    item.brand,
+    item.item,
+    record.saleDate || "",
+    record.platform || "",
+    record.buyerName || "",
+    record.buyerContact || "",
+    Math.round(record.salePriceTaxIncludedJpy || 0),
+    Math.round(record.saleRevenueExTaxJpy || 0),
+    Math.round(record.outputConsumptionTaxJpy || 0),
+    Math.round(record.platformFeeJpy || 0),
+    Math.round(record.platformFeeTaxJpy || 0),
+    Math.round(record.shippingFeeJpy || 0),
+    Math.round(record.refundJpy || 0),
+    Math.round(record.adjustmentJpy || 0),
+    Math.round(record.finalDepositJpy || 0),
+    record.depositDate || "",
+    record.paymentMethod || "",
+    Math.round(record.inventoryCostJpy || 0),
+    Math.round(record.actualProfitJpy || 0),
+    pct(record.margin || 0),
+    record.finalDepositJpy || record.depositDate ? "已回款" : "未回款",
+    record.salesStatus || "",
+    stripSalesRecordMemo(record.memo || "")
+  ]);
+
+  const totalSale = filteredSalesRows.reduce((a, x) => a + Number(x.record.salePriceTaxIncludedJpy || 0), 0);
+  const totalRevenue = filteredSalesRows.reduce((a, x) => a + Number(x.record.saleRevenueExTaxJpy || 0), 0);
+  const totalOutputTax = filteredSalesRows.reduce((a, x) => a + Number(x.record.outputConsumptionTaxJpy || 0), 0);
+  const totalDeposit = filteredSalesRows.reduce((a, x) => a + Number(x.record.finalDepositJpy || 0), 0);
+  const totalProfit = filteredSalesRows.reduce((a, x) => a + Number(x.record.actualProfitJpy || 0), 0);
+  const missingDeposit = filteredSalesRows.filter((x) => !x.record.finalDepositJpy && !x.record.depositDate).length;
 
   return (
-    <div className="panel">
-      <Toolbar title="销售记录" onDownload={() => downloadCSV([csvHeaders, ...csvRows], "gouka_sales_report.csv")} />
-
-      <div className="filter-row">
-        <input
-          placeholder="搜索品牌 / 商品 / 平台 / 备注"
-          value={salesQuery}
-          onChange={(e) => setSalesQuery(e.target.value)}
-        />
-        <input
-          type="month"
-          value={salesMonth}
-          onChange={(e) => setSalesMonth(e.target.value)}
-        />
-        <button onClick={() => { setSalesQuery(""); setSalesMonth(""); }}>清除筛选</button>
-      </div>
-
-      <p className="note">销售页按日本消费税逻辑拆分：售价为税込，系统自动倒算销售收入（未税）和销项消费税。最终到账用于现金流，销售收入用于利润。</p>
+    <div className="panel sales-center">
+      <Toolbar title="销售中心" onDownload={() => downloadCSV([csvHeaders, ...csvRows], "gouka_sales_records.csv")} />
+      <p className="note">销售中心以 Sales Record 管理每笔销售：售价为税込，系统自动拆分未税销售收入和销项消费税，利润不混入消费税。</p>
 
       <div className="grid4" style={{marginBottom:"16px"}}>
-        <Card icon={<Calculator />} title="筛选已售件数" value={filteredSold.length + " 件"} />
+        <Card icon={<Calculator />} title="销售记录" value={filteredSalesRows.length + " 件"} />
         <Card icon={<Calculator />} title="售价（含税）" value={jpy(totalSale)} />
         <Card icon={<Calculator />} title="销售收入（未税）" value={jpy(totalRevenue)} />
         <Card icon={<Calculator />} title="实际利润" value={jpy(totalProfit)} />
@@ -5552,18 +5714,83 @@ function SalesReport({ items, downloadCSV }) {
 
       <div className="sales-check-strip">
         <div><span>销项消费税</span><b>{jpy(totalOutputTax)}</b></div>
-        <div><span>库存成本</span><b>{jpy(totalCost)}</b></div>
-        <div><span>最终到账</span><b>{jpy(totalReceipt)}</b></div>
-        <div className={salesCheck.missingDate ? "warn" : "ok"}><span>缺销售日</span><b>{salesCheck.missingDate} 件</b></div>
-        <div className={salesCheck.missingPlatform ? "warn" : "ok"}><span>缺平台</span><b>{salesCheck.missingPlatform} 件</b></div>
-        <div className={salesCheck.missingSale ? "warn" : "ok"}><span>缺售价</span><b>{salesCheck.missingSale} 件</b></div>
-        <div className={salesCheck.missingReceipt ? "warn" : "ok"}><span>缺到账</span><b>{salesCheck.missingReceipt} 件</b></div>
+        <div><span>最终到账</span><b>{jpy(totalDeposit)}</b></div>
+        <div className={missingDeposit ? "warn" : "ok"}><span>未回款</span><b>{missingDeposit} 件</b></div>
+        <div><span>利润率</span><b>{pct(totalRevenue ? totalProfit / totalRevenue * 100 : 0)}</b></div>
       </div>
+
+      <div className="sales-center-form">
+        <div className="sales-form-head">
+          <h3>{editingSalesId ? "编辑 Sales Record" : "新增 Sales Record"}</h3>
+          <button className="primary" onClick={() => { setEditingSalesId("new"); setSalesDraft(makeDraft(items.find((x) => !isSoldStatus(x.status)) || items[0] || {})); }}>新增销售</button>
+        </div>
+        {salesDraft && (
+          <div className="sales-draft-grid">
+            <label>商品<select value={salesDraft.productId} onChange={(e) => setSalesDraft(makeDraft(items.find((x) => x.id === e.target.value) || {}))}>{items.map((x) => <option key={x.id} value={x.id}>{x.id} / {x.brand} {x.item}</option>)}</select></label>
+            <label>销售编号<input value={salesDraft.salesNo} onChange={(e) => setSalesDraft({ ...salesDraft, salesNo: e.target.value })} /></label>
+            <label>销售日期<input type="date" value={salesDraft.saleDate} onChange={(e) => setSalesDraft({ ...salesDraft, saleDate: e.target.value })} /></label>
+            <label>平台<select value={salesDraft.platform} onChange={(e) => setSalesDraft({ ...salesDraft, platform: e.target.value })}><option value="">选择平台</option>{platformOptions.map((x) => <option key={x} value={x}>{x}</option>)}</select></label>
+            <label>买家<input value={salesDraft.buyerName} onChange={(e) => setSalesDraft({ ...salesDraft, buyerName: e.target.value })} /></label>
+            <label>联系方式<input value={salesDraft.buyerContact} onChange={(e) => setSalesDraft({ ...salesDraft, buyerContact: e.target.value })} /></label>
+            <label>售价（含税）<input type="number" value={salesDraft.salePriceTaxIncludedJpy} onChange={(e) => setSalesDraft({ ...salesDraft, salePriceTaxIncludedJpy: e.target.value })} /></label>
+            <label>平台手续费（含税）<input type="number" value={salesDraft.platformFeeJpy} onChange={(e) => setSalesDraft({ ...salesDraft, platformFeeJpy: e.target.value })} /></label>
+            <label>发货费<input type="number" value={salesDraft.shippingFeeJpy} onChange={(e) => setSalesDraft({ ...salesDraft, shippingFeeJpy: e.target.value })} /></label>
+            <label>退款<input type="number" value={salesDraft.refundJpy} onChange={(e) => setSalesDraft({ ...salesDraft, refundJpy: e.target.value })} /></label>
+            <label>调整金额<input type="number" value={salesDraft.adjustmentJpy} onChange={(e) => setSalesDraft({ ...salesDraft, adjustmentJpy: e.target.value })} /></label>
+            <label>最终到账<input type="number" value={salesDraft.finalDepositJpy} onChange={(e) => setSalesDraft({ ...salesDraft, finalDepositJpy: e.target.value })} /></label>
+            <label>到账日期<input type="date" value={salesDraft.depositDate} onChange={(e) => setSalesDraft({ ...salesDraft, depositDate: e.target.value })} /></label>
+            <label>支付方式<input value={salesDraft.paymentMethod} onChange={(e) => setSalesDraft({ ...salesDraft, paymentMethod: e.target.value })} /></label>
+            <label>销售状态<select value={salesDraft.salesStatus} onChange={(e) => setSalesDraft({ ...salesDraft, salesStatus: e.target.value })}>{salesStatuses.map((x) => <option key={x} value={x}>{x}</option>)}</select></label>
+            <label className="span-2">备注<textarea value={salesDraft.memo} onChange={(e) => setSalesDraft({ ...salesDraft, memo: e.target.value })} /></label>
+            <div className="sales-derived span-3">
+              <div><span>销售收入（未税）</span><b>{jpy(draftPreview?.saleRevenueExTaxJpy || 0)}</b></div>
+              <div><span>销项消费税</span><b>{jpy(draftPreview?.outputConsumptionTaxJpy || 0)}</b></div>
+              <div><span>手续费消费税</span><b>{jpy(draftPreview?.platformFeeTaxJpy || 0)}</b></div>
+              <div><span>库存成本</span><b>{jpy(draftPreview?.inventoryCostJpy || 0)}</b></div>
+              <div><span>实际利润</span><b>{jpy(draftPreview?.actualProfitJpy || 0)}</b></div>
+              <div><span>利润率</span><b>{pct(draftPreview?.margin || 0)}</b></div>
+            </div>
+            <div className="action-row span-3">
+              <button className="primary" onClick={saveSalesDraft}>保存销售记录</button>
+              <button onClick={() => { setEditingSalesId(null); setSalesDraft(null); }}>取消</button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="filter-row">
+        <input placeholder="搜索销售编号 / 商品 / 平台 / 买家" value={salesQuery} onChange={(e) => setSalesQuery(e.target.value)} />
+        <input type="month" value={salesMonth} onChange={(e) => setSalesMonth(e.target.value)} />
+        <button onClick={() => { setSalesQuery(""); setSalesMonth(""); }}>清除筛选</button>
+      </div>
+
       <Table headers={headers} rows={rows} />
+
+      {detailSales && (
+        <div className="modal-backdrop" onClick={() => setDetailSales(null)}>
+          <div className="modal sales-detail-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-head"><h2>Sales Record Detail</h2><button onClick={() => setDetailSales(null)}>关闭</button></div>
+            <div className="sales-detail-grid">
+              <div><span>销售编号</span><b>{detailSales.record.salesNo}</b></div>
+              <div><span>商品编号</span><b>{detailSales.item.id}</b></div>
+              <div><span>平台</span><b>{detailSales.record.platform || "—"}</b></div>
+              <div><span>买家</span><b>{detailSales.record.buyerName || "—"}</b></div>
+              <div><span>售价（含税）</span><b>{jpy(detailSales.record.salePriceTaxIncludedJpy)}</b></div>
+              <div><span>销售收入（未税）</span><b>{jpy(detailSales.record.saleRevenueExTaxJpy)}</b></div>
+              <div><span>销项消费税</span><b>{jpy(detailSales.record.outputConsumptionTaxJpy)}</b></div>
+              <div><span>平台手续费</span><b>{jpy(detailSales.record.platformFeeJpy)}</b></div>
+              <div><span>最终到账</span><b>{jpy(detailSales.record.finalDepositJpy)}</b></div>
+              <div><span>实际利润</span><b>{jpy(detailSales.record.actualProfitJpy)}</b></div>
+              <div><span>利润率</span><b>{pct(detailSales.record.margin || 0)}</b></div>
+              <div><span>销售状态</span><b>{detailSales.record.salesStatus}</b></div>
+            </div>
+            <p className="note">{stripSalesRecordMemo(detailSales.record.memo || "") || "无备注"}</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-
 
 function PdfExportPanel({ items, totals, exportInventoryPdf, exportLedgerPdf, exportCustomsPdf, exportItemPdf, exportAuctionPdf, exportTaxPdf }) {
   const [pdfQuery, setPdfQuery] = useState("");
