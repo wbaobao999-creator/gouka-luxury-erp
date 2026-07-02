@@ -5232,6 +5232,13 @@ function ListingManagement({ items, updateListingItem, editItem, setPreviewImage
 
   const q = query.toLowerCase();
   const kanbanStatuses = ["已入库", "待出品", "已出品", "已售出", "已发货"];
+  const kanbanMeta = {
+    "已入库": "入库后尚未安排出品",
+    "待出品": "平台和价格准备中",
+    "已出品": "已公开，等待成交",
+    "已售出": "已成交，等待发货",
+    "已发货": "发货完成，进入销售归档"
+  };
   const platforms = ["全部", ...LISTING_PLATFORMS];
 
   const filteredItems = (items || []).filter((x) => {
@@ -5317,7 +5324,7 @@ function ListingManagement({ items, updateListingItem, editItem, setPreviewImage
   return (
     <div className="panel">
       <h2><Package size={20} /> 出品管理</h2>
-      <p className="note">Enterprise 3.0：出品管理优先优化。平台支持 NBAA / OBA / ECO Ring / JBA / AUCNET / Star Buyers / Mercari / Yahoo / 楽天 / 店铺，也可以手动输入。可快速把已入库商品加入待出品。</p>
+      <p className="note">出品管理用于把库存商品推进到平台出品、成交、发货。已入库列只做候选商品，平台和价格在卡片内处理。</p>
 
       <div className="grid4" style={{marginBottom:"16px"}}>
         <Card icon={<Package />} title="已入库" value={`${counts["已入库"] || 0} 件`} />
@@ -5343,8 +5350,11 @@ function ListingManagement({ items, updateListingItem, editItem, setPreviewImage
       <div style={{display:"grid", gridTemplateColumns:"repeat(5, minmax(220px, 1fr))", gap:"12px", alignItems:"start", overflowX:"auto", paddingBottom:"8px"}}>
         {kanbanStatuses.map((status, idx) => (
           <div key={status} style={{background:"#f8fafc", border:"1px solid #e5e7eb", borderRadius:"16px", padding:"12px", minHeight:"420px"}}>
-            <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"10px"}}>
-              <b>{idx + 1}. {status}</b>
+            <div className="listing-column-head">
+              <div>
+                <b>{idx + 1}. {status}</b>
+                <small>{kanbanMeta[status]}</small>
+              </div>
               <span className="pill">{itemsByStatus(status).length} 件</span>
             </div>
             {status === "已入库" ? (
