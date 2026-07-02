@@ -810,3 +810,28 @@ main { min-width: 0; max-width: 100%; overflow-x: hidden; }
 @media (max-width: 640px) {
   .login-role-select { grid-template-columns: 1fr; }
 }
+
+
+/* Role notice and restricted panel */
+.role-notice {
+  margin: -8px 0 14px;
+  padding: 10px 12px;
+  border: 1px solid #bfdbfe;
+  background: #eff6ff;
+  color: #1e3a8a;
+  border-radius: 10px;
+  font-weight: 700;
+}
+.restricted-panel {
+  border-color: #fecaca;
+  background: #fff7f7;
+}
+.restricted-panel h2 {
+  margin: 0 0 8px;
+  color: #991b1b;
+}
+.restricted-panel p {
+  margin: 0;
+  color: #7f1d1d;
+  font-weight: 700;
+}
