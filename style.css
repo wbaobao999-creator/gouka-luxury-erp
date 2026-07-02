@@ -862,3 +862,10 @@ main { min-width: 0; max-width: 100%; overflow-x: hidden; }
 .import-summary-grid .card h2{font-size:20px;margin:0;white-space:nowrap}
 @media(max-width:1100px){.import-summary-grid{grid-template-columns:repeat(2,minmax(160px,1fr))}}
 @media(max-width:720px){.import-summary-grid{grid-template-columns:1fr}}
+
+.attachment-row-detail{align-items:center}
+.attachment-main{display:flex;flex-direction:column;gap:3px;min-width:0}
+.attachment-main strong{font-size:13px;color:#0b5f3a}
+.attachment-main span{font-weight:700;color:#10233f;word-break:break-all}
+.attachment-main small{color:#66758a}
+.button-link{display:inline-flex;align-items:center;justify-content:center;text-decoration:none}
