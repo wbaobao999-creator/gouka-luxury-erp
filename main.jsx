@@ -418,6 +418,28 @@ function getItemImportBatchId(item) {
   return item?.importBatchId || item?.customsBatchId || "";
 }
 
+function getProductImportBatchRecord(item = {}) {
+  const batch = normalizeImportBatch(item.importBatch || {
+    id: getItemImportBatchId(item),
+    emsNo: item.emsNo || item.emsTrackingNo || item.shippingNo || "",
+    customsDeclarationNo: item.customsDeclarationNo || item.declarationNo || item.customsNo || "",
+    importDate: item.customsDate || item.customsDeclarationDate || item.customsBatchDate || item.importDate || "",
+    importConsumptionTaxJpy: item.importTaxCreditJpy || item.batchAllocatedImportTaxJpy || item.importConsumptionTaxJpy || item.customsConsumptionTaxJpy || 0
+  });
+  const allocatedDutyJpy = Number(item.allocatedDutyJpy || item.batchAllocatedDutyJpy || item.dutyJpy || 0);
+  const allocatedAgentFeeJpy = Number(item.allocatedAgentFeeJpy || item.batchAllocatedCustomsFeeJpy || item.customsFeeJpy || 0);
+  const allocatedInternationalShippingJpy = Number(item.allocatedInternationalShippingJpy || item.batchAllocatedShippingJpy || item.shippingJpy || 0);
+  const allocatedOtherImportCostJpy = Number(item.allocatedOtherImportCostJpy || item.batchAllocatedOtherCostJpy || item.otherImportCostJpy || 0);
+  const importTaxCreditJpy = Number(item.importTaxCreditJpy || item.batchAllocatedImportTaxJpy || item.importConsumptionTaxJpy || item.customsConsumptionTaxJpy || 0);
+  return { ...batch, allocatedDutyJpy, allocatedAgentFeeJpy, allocatedInternationalShippingJpy, allocatedOtherImportCostJpy, importTaxCreditJpy };
+}
+
+function isChinaPurchaseProductRecord(item = {}, auction = null) {
+  if (auction) return false;
+  const text = [item.source, item.supplier, item.supplierName, item.soldPlatform, item.platform, item.purchaseCurrency, item.declaredCurrency, item.customsBatchId, item.importBatchId].filter(Boolean).join(" ").toLowerCase();
+  return !!getItemImportBatchId(item) || text.includes("china") || text.includes("cny") || text.includes("ems") || text.includes("中国");
+}
+
 function calcImportBatchCostSummary(batch = {}) {
   const b = normalizeImportBatch(batch);
   const dutyJpy = Number(b.dutyJpy || 0);
@@ -3404,6 +3426,9 @@ function NbaaProductRecordDetail({ item, onClose, exportItemPdf, isOwner = true 
   const taxCredit = auction ? Number(auction.taxCredit || 0) : Number(t.inputTax || 0);
   const finalReceipt = Number(sales.finalReceiptJpy || 0);
   const importBatch = item.importBatch || normalizeImportBatch({ id: item.customsBatchId || "", importDate: item.customsDate || item.customsDeclarationDate || item.customsBatchDate || "", importConsumptionTaxJpy: item.batchAllocatedImportTaxJpy || item.importConsumptionTaxJpy || item.customsConsumptionTaxJpy || 0 });
+  const productImportBatch = getProductImportBatchRecord(item);
+  const isJapanAuctionRecord = !!auction;
+  const isChinaPurchaseRecord = isChinaPurchaseProductRecord(item, auction);
   const importConsumptionTax = Number(item.batchAllocatedImportTaxJpy || item.importConsumptionTaxJpy || item.customsConsumptionTaxJpy || 0);
   const customsDate = item.customsDate || item.customsDeclarationDate || item.customsBatchDate || importBatch.importDate || "";
   const sizeText = item.size || item.sizeText || item.dimensions || "";
@@ -3531,27 +3556,34 @@ function NbaaProductRecordDetail({ item, onClose, exportItemPdf, isOwner = true 
           ))}
         </RecordCard>
 
-        <RecordCard title="② 日本拍卖" summary={auction ? [auction.platform || auction.auctionHouse, auction.auctionCode, jpy(paymentTotal)].filter(Boolean).join(" / ") : ""} defaultOpen={!!auction}>
-          <div className="record-subtitle">基础信息</div>
-          <RecordField label="拍卖公司" value={auction?.platform || auction?.auctionHouse} />
-          <RecordField label="落札コード" value={auction?.auctionCode} />
-          <RecordField label="Lot" value={auction?.lotNo} />
-          <RecordField label="箱番" value={auction?.boxNo} />
-          <RecordField label="枝番" value={auction?.branchNo} />
-          <RecordField label="Invoice" value={auction?.invoiceNo || auction?.invoice} />
-          <RecordField label="拍卖日" value={auction?.auctionDate} />
-          <RecordField label="付款日期" value={auction?.paymentDate} />
-          <div className="record-subtitle">落札金额</div>
-          <RecordField label="落札金额" value={auction ? jpy(auction.hammerPrice) : ""} />
-          <RecordField label="落札消费税" value={auction ? jpy(auction.hammerTax) : ""} />
-          <RecordField label="手续费" value={auction ? jpy(auction.buyerFee) : ""} />
-          <RecordField label="手续费消费税" value={auction ? jpy(auction.buyerFeeTax) : ""} />
-          <RecordField label="国内运费" value={auction ? jpy(auction.domesticShipping) : ""} />
-          <div className="record-subtitle">精算金额</div>
-          <RecordField label="付款总额" value={auction ? jpy(auction.invoiceTotal) : ""} />
-          <RecordField label="库存成本" value={auction ? jpy(auction.inventoryCost) : ""} />
-          <RecordField label="消费税控除" value={auction ? jpy(auction.taxCredit) : ""} />
-        </RecordCard>
+        {isChinaPurchaseRecord && (
+          <RecordCard title="Import Batch" summary={[productImportBatch.id, productImportBatch.emsNo, productImportBatch.customsDeclarationNo].filter(Boolean).join(" / ")} defaultOpen>
+            <RecordField label="Import Batch ID" value={productImportBatch.id || item.customsBatchId || item.importBatchId} />
+            <RecordField label="EMS单号" value={productImportBatch.emsNo || item.emsNo || item.emsTrackingNo} />
+            <RecordField label="报关编号" value={productImportBatch.customsDeclarationNo || item.customsDeclarationNo} />
+            <RecordField label="进口日期" value={productImportBatch.importDate || customsDate} />
+            <RecordField label="分摊关税" value={jpy(productImportBatch.allocatedDutyJpy)} />
+            <RecordField label="分摊代理费" value={jpy(productImportBatch.allocatedAgentFeeJpy)} />
+            <RecordField label="分摊国际运费" value={jpy(productImportBatch.allocatedInternationalShippingJpy)} />
+            <RecordField label="分摊其他费用" value={jpy(productImportBatch.allocatedOtherImportCostJpy)} />
+            <RecordField label="进口消费税参考" value={jpy(productImportBatch.importTaxCreditJpy)} />
+          </RecordCard>
+        )}
+
+        {isJapanAuctionRecord && (
+          <RecordCard title="Auction Record" summary={auction ? [auction.platform || auction.auctionHouse, auction.auctionCode, jpy(paymentTotal)].filter(Boolean).join(" / ") : ""} defaultOpen>
+            <RecordField label="拍卖会" value={auction?.platform || auction?.auctionHouse} />
+            <RecordField label="Lot" value={auction?.lotNo} />
+            <RecordField label="箱番" value={auction?.boxNo} />
+            <RecordField label="枝番" value={auction?.branchNo} />
+            <RecordField label="落札金额" value={auction ? jpy(auction.hammerPrice) : ""} />
+            <RecordField label="落札消费税" value={auction ? jpy(auction.hammerTax) : ""} />
+            <RecordField label="手续费" value={auction ? jpy(auction.buyerFee) : ""} />
+            <RecordField label="付款总额" value={auction ? jpy(auction.invoiceTotal) : ""} />
+            <RecordField label="库存成本" value={auction ? jpy(auction.inventoryCost) : ""} />
+            <RecordField label="消费税控除" value={auction ? jpy(auction.taxCredit) : ""} />
+          </RecordCard>
+        )}
 
         <RecordCard title="③ EMS" summary={[item.customsBatchId, importConsumptionTax ? jpy(importConsumptionTax) : ""].filter(Boolean).join(" / ")} defaultOpen={!!item.customsBatchId}>
           <RecordField label="批次" value={item.customsBatchId} />
