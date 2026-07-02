@@ -1328,6 +1328,23 @@ function LoginPage({ onLogin }) {
   );
 }
 
+function RestrictedPanel({ message }) {
+  return (
+    <div className="panel restricted-panel">
+      <h2>权限受限</h2>
+      <p>{message || "当前账号没有此模块权限。"}</p>
+    </div>
+  );
+}
+
+function RoleNotice({ role }) {
+  if (role === "owner") return null;
+  const text = role === "tax"
+    ? "税理士窗口：只读审查模式，可查看税务、利润、古物台账和PDF，不允许编辑或删除。"
+    : "员工入口：日常业务模式，可处理录入、库存、出品、销售、EMS和古物台账，不显示财务与系统管理。";
+  return <div className="role-notice">{text}</div>;
+}
+
 function App() {
   const [session, setSession] = useState(() => {
     try {
@@ -1429,6 +1446,7 @@ function App() {
   const defaultTabForRole = isTaxViewer ? "tax" : "inventory";
   const canEditBusiness = isOwner || isStaff;
   const canExportBusinessPdf = isOwner || isTaxViewer;
+  const restrictedTabMessage = isTaxViewer ? "税理士窗口为只读审查模式。" : "员工入口没有此模块权限。";
   const computedItems = useMemo(() => applyBatchAllocations(items, customsBatches), [items, customsBatches]);
 
   React.useEffect(() => {
@@ -2401,8 +2419,9 @@ function App() {
             <span className="pill">Auto Save · {isOwner ? "管理者" : isTaxViewer ? "税理士" : "员工"}</span>
           </div>
         </header>
+        <RoleNotice role={role} />
 
-        {tab === "dashboard" && <Dashboard totals={totals} items={computedItems} setTab={setTab} exportBackup={exportBackup} />}
+        {tab === "dashboard" && (canAccessTab("dashboard") ? <Dashboard totals={totals} items={computedItems} setTab={setTab} exportBackup={exportBackup} /> : <RestrictedPanel message={restrictedTabMessage} />)}
         {tab === "ai" && <AiAssistant onApplyDraft={applyAiDraft} dictionaries={dictionaries} suppliers={suppliers} />}
         {tab === "aiChat" && <AiChatAssistant items={computedItems} suppliers={suppliers} dictionaries={dictionaries} setTab={setTab} />}
         {tab === "add" && (
@@ -2419,7 +2438,7 @@ function App() {
             customsBatches={customsBatches}
           />
         )}
-        {tab === "auction" && <JapaneseAuctionPanel items={computedItems} downloadCSV={downloadCSV} setPreviewImage={setPreviewImage} setPreviewScale={setPreviewScale} exportItemPdf={canExportBusinessPdf ? exportItemPdf : null} />}
+        {tab === "auction" && (canAccessTab("auction") ? <JapaneseAuctionPanel items={computedItems} downloadCSV={downloadCSV} setPreviewImage={setPreviewImage} setPreviewScale={setPreviewScale} exportItemPdf={canExportBusinessPdf ? exportItemPdf : null} /> : <RestrictedPanel message={restrictedTabMessage} />)}
         {tab === "inventory" && (
           <Inventory
             items={filtered}
@@ -2439,18 +2458,18 @@ function App() {
             exportItemPdf={canExportBusinessPdf ? exportItemPdf : null}
           />
         )}
-        {tab === "ledger" && <Ledger items={filtered} setItems={setItems} isOwner={isOwner} downloadCSV={downloadCSV} exportItemPdf={canExportBusinessPdf ? exportItemPdf : null} />}
-        {tab === "customsBatch" && <CustomsBatchPanel batches={customsBatches} setBatches={isOwner ? setCustomsBatches : (() => {})} items={computedItems} downloadCSV={downloadCSV} />}
-        {tab === "customs" && <Customs items={filtered} customsBatches={customsBatches} downloadCSV={downloadCSV} />}
-        {tab === "profit" && <Profit items={filtered} />}
-        {tab === "tax" && <TaxReport items={filtered} totals={totals} customsBatches={customsBatches} downloadCSV={downloadCSV} />}
-        {tab === "listing" && <ListingManagement items={computedItems} updateListingItem={updateListingItem} editItem={editItem} setPreviewImage={setPreviewImage} setPreviewScale={setPreviewScale} />}
-        {tab === "sales" && <SalesReport items={computedItems} downloadCSV={downloadCSV} />}
-        {tab === "pdf" && canExportBusinessPdf && <PdfExportPanel items={computedItems} totals={totals} exportInventoryPdf={exportInventoryPdf} exportLedgerPdf={exportLedgerPdf} exportCustomsPdf={exportCustomsPdf} exportItemPdf={exportItemPdf} exportAuctionPdf={exportAuctionPdf} exportTaxPdf={exportTaxPdf} />}
-        {tab === "suppliers" && <SupplierPanel suppliers={suppliers} setSuppliers={setSuppliers} downloadCSV={downloadCSV} />}
-        {tab === "dictionary" && <DictionaryPanel dictionaries={dictionaries} setDictionaries={setDictionaries} />}
-        {tab === "deleteLogs" && <DeleteLogPanel deleteLogs={deleteLogs} downloadCSV={downloadCSV} restoreDeletedItem={restoreDeletedItem} />}
-        {tab === "backup" && <BackupPanel items={items} exportBackup={exportBackup} importBackup={importBackup} downloadCSV={downloadCSV} />}
+        {tab === "ledger" && (canAccessTab("ledger") ? <Ledger items={filtered} setItems={canEditBusiness ? setItems : (() => {})} isOwner={isOwner} downloadCSV={downloadCSV} exportItemPdf={canExportBusinessPdf ? exportItemPdf : null} /> : <RestrictedPanel message={restrictedTabMessage} />)}
+        {tab === "customsBatch" && (canAccessTab("customsBatch") ? <CustomsBatchPanel batches={customsBatches} setBatches={isOwner ? setCustomsBatches : (() => {})} items={computedItems} downloadCSV={downloadCSV} /> : <RestrictedPanel message={restrictedTabMessage} />)}
+        {tab === "customs" && (canAccessTab("customs") ? <Customs items={filtered} customsBatches={customsBatches} downloadCSV={downloadCSV} /> : <RestrictedPanel message={restrictedTabMessage} />)}
+        {tab === "profit" && (canAccessTab("profit") ? <Profit items={filtered} /> : <RestrictedPanel message={restrictedTabMessage} />)}
+        {tab === "tax" && (canAccessTab("tax") ? <TaxReport items={filtered} totals={totals} customsBatches={customsBatches} downloadCSV={downloadCSV} /> : <RestrictedPanel message={restrictedTabMessage} />)}
+        {tab === "listing" && (canAccessTab("listing") ? <ListingManagement items={computedItems} updateListingItem={canEditBusiness ? updateListingItem : (() => {})} editItem={canEditBusiness ? editItem : null} setPreviewImage={setPreviewImage} setPreviewScale={setPreviewScale} /> : <RestrictedPanel message={restrictedTabMessage} />)}
+        {tab === "sales" && (canAccessTab("sales") ? <SalesReport items={computedItems} downloadCSV={downloadCSV} /> : <RestrictedPanel message={restrictedTabMessage} />)}
+        {tab === "pdf" && (canAccessTab("pdf") && canExportBusinessPdf ? <PdfExportPanel items={computedItems} totals={totals} exportInventoryPdf={exportInventoryPdf} exportLedgerPdf={exportLedgerPdf} exportCustomsPdf={exportCustomsPdf} exportItemPdf={exportItemPdf} exportAuctionPdf={exportAuctionPdf} exportTaxPdf={exportTaxPdf} /> : <RestrictedPanel message={restrictedTabMessage} />)}
+        {tab === "suppliers" && (canAccessTab("suppliers") ? <SupplierPanel suppliers={suppliers} setSuppliers={setSuppliers} downloadCSV={downloadCSV} /> : <RestrictedPanel message={restrictedTabMessage} />)}
+        {tab === "dictionary" && (canAccessTab("dictionary") ? <DictionaryPanel dictionaries={dictionaries} setDictionaries={setDictionaries} /> : <RestrictedPanel message={restrictedTabMessage} />)}
+        {tab === "deleteLogs" && (canAccessTab("deleteLogs") ? <DeleteLogPanel deleteLogs={deleteLogs} downloadCSV={downloadCSV} restoreDeletedItem={restoreDeletedItem} /> : <RestrictedPanel message={restrictedTabMessage} />)}
+        {tab === "backup" && (canAccessTab("backup") ? <BackupPanel items={items} exportBackup={exportBackup} importBackup={importBackup} downloadCSV={downloadCSV} /> : <RestrictedPanel message={restrictedTabMessage} />)}
 
         {previewImage && (
           <div className="image-modal" onClick={() => setPreviewImage(null)}>
