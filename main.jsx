@@ -2,7 +2,7 @@ import React, { useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Package, FileText, Calculator, Search, Plus, Building2, Download, Edit3, Trash2, ImagePlus, Save, X, Lock, Database, Upload } from "lucide-react";
 import "./style.css";
-import { getCloudItems, upsertCloudItem, deleteItemCloud, uploadItemImages, deleteProductImages } from "./itemService.js";
+import { getCloudItems, upsertCloudItem, deleteItemCloud, uploadItemImages, deleteProductImages, uploadImportBatchAttachments } from "./itemService.js";
 
 const nbaaStyle = document.createElement("style");
 nbaaStyle.textContent = ".nbaa-sheet{background:#eef4ed;border:1px solid #b7d7bd;border-radius:4px;padding:12px}.nbaa-main{display:grid;grid-template-columns:minmax(0,1fr) 190px;gap:12px}.nbaa-grid{display:grid;grid-template-columns:140px minmax(0,1fr);border-top:1px solid #d7d7d7;border-left:1px solid #d7d7d7;background:#fff}.nbaa-section{grid-column:1/-1;background:#e9f8ec;color:#10852f;font-weight:800;padding:9px 10px;border-right:1px solid #d7d7d7;border-bottom:1px solid #d7d7d7}.nbaa-label{background:#19a83d;color:#fff;font-weight:800;text-align:center;padding:9px 8px;border-right:1px solid #d7d7d7;border-bottom:1px solid #d7d7d7;min-height:38px}.nbaa-value{background:#fff;color:#0f172a;padding:9px 10px;border-bottom:1px solid #d7d7d7;min-height:38px;word-break:break-word}.nbaa-image-pane{background:#fff;border:1px solid #d7d7d7;padding:8px;align-self:start}.nbaa-main-image,.nbaa-no-image{width:160px;height:160px;object-fit:cover;border:1px solid #e5e7eb;background:#f8fafc;display:grid;place-items:center;color:#64748b}.nbaa-thumbs{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.nbaa-thumbs img{width:72px;height:72px;object-fit:cover;border:1px solid #e5e7eb}.nbaa-record .toolbar{margin-bottom:12px}@media(max-width:760px){.nbaa-main{grid-template-columns:1fr}.nbaa-grid{grid-template-columns:116px minmax(0,1fr)}.nbaa-image-pane{width:max-content;max-width:100%}}";
@@ -4021,24 +4021,25 @@ function CustomsBatchPanel({ batches, setBatches, items, downloadCSV }) {
     });
   }
 
-  function handleBatchFiles(files) {
+  async function handleBatchFiles(files) {
     const selected = Array.from(files || []);
     if (!selected.length) return;
-    const nextAttachments = selected.map((file) => ({
-      name: file.name,
-      type: "metadata",
-      mimeType: file.type || "application/octet-stream",
-      documentType: attachmentType || "报关库存表",
-      size: file.size,
-      uploadedAt: new Date().toISOString(),
-      storageMode: "metadata-only",
-      storageNote: "文件本体未保存到ERP，请保存到公司云盘或本地报关档案。"
-    }));
-    setForm((prev) => ({
-      ...prev,
-      attachments: [...(Array.isArray(prev.attachments) ? prev.attachments : []), ...nextAttachments]
-    }));
-    alert("已登记附件信息。为避免系统变大，ERP不保存文件本体，请将原件保存到公司云盘或本地报关档案。");
+    const batchId = String(form.id || editingId || "").trim();
+    if (!batchId) {
+      alert("请先填写 Import Batch ID，再上传附件。这样云端档案才能按批次长期保存。");
+      return;
+    }
+    try {
+      const uploaded = await uploadImportBatchAttachments(batchId, selected, attachmentType || "报关库存表");
+      setForm((prev) => ({
+        ...prev,
+        attachments: [...(Array.isArray(prev.attachments) ? prev.attachments : []), ...uploaded]
+      }));
+      alert("附件已上传到云端档案库，并登记到当前报关批次。");
+    } catch (e) {
+      console.error(e);
+      alert("附件上传云端失败。请确认 Supabase 已建立 import-batch-files 存储桶和访问策略。文件没有写入ERP，避免系统变大。");
+    }
   }
 
   function removeBatchAttachment(index) {
@@ -4155,8 +4156,8 @@ function CustomsBatchPanel({ batches, setBatches, items, downloadCSV }) {
         <Input label="其他费用 JPY（进成本）" type="number" value={form.otherCostJpy || ""} onChange={(v) => set("otherCostJpy", v)} />
         <label>附件类型<select value={attachmentType} onChange={(e) => setAttachmentType(e.target.value)}>{attachmentTypes.map((x) => <option key={x} value={x}>{x}</option>)}</select></label>
         <label className="file-upload-box">附件导入（PDF / 图片 / 报关库存表）
-          <input type="file" accept="application/pdf,image/*,.pdf,.jpg,.jpeg,.png,.webp" multiple onChange={(e) => handleBatchFiles(e.target.files)} />
-          <span>只登记文件名、类型和大小，不保存文件本体。原件请放公司云盘或报关档案。</span>
+          <input type="file" accept="application/pdf,image/*,.pdf,.jpg,.jpeg,.png,.webp,.xls,.xlsx,.csv" multiple onChange={(e) => handleBatchFiles(e.target.files)} />
+          <span>文件会上传到云端附件库，ERP只保存链接和档案信息。适合长期保存和跨电脑查看。</span>
         </label>
         <label>附件清单 / URL<textarea value={form.attachmentsText || ""} onChange={(e) => set("attachmentsText", e.target.value)} placeholder="也可以一行一个附件名或URL" /></label>
         {!!(form.attachments || []).length && (
@@ -4166,10 +4167,10 @@ function CustomsBatchPanel({ batches, setBatches, items, downloadCSV }) {
                 <div className="attachment-main">
                   <strong>{att.documentType || "附件"}</strong>
                   <span>{att.name || att.url || attachmentLabel(att)}</span>
-                  <small>{attachmentSize(att)} / {att.storageMode === "metadata-only" ? "仅登记" : "可查看"}</small>
+                  <small>{attachmentSize(att)} / {att.storageMode === "supabase-storage" ? "云端保存" : (att.storageMode === "metadata-only" ? "仅登记" : "可查看")}</small>
                 </div>
                 <div className="table-actions">
-                  {(att.dataUrl || att.url) ? <a className="ghost button-link" href={att.dataUrl || att.url} download={att.name || undefined} target="_blank" rel="noreferrer">查看</a> : <span className="muted small-text">原件外部保存</span>}
+                  {(att.dataUrl || att.url) ? <a className="ghost button-link" href={att.dataUrl || att.url} download={att.name || undefined} target="_blank" rel="noreferrer">查看</a> : <span className="muted small-text">未上传云端</span>}
                   <button type="button" className="ghost" onClick={() => removeBatchAttachment(index)}>删除</button>
                 </div>
               </div>
