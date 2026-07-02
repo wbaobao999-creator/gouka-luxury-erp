@@ -3988,17 +3988,19 @@ function CustomsBatchPanel({ batches, setBatches, items, downloadCSV }) {
       internationalShippingJpy: "128250",
       shippingJpy: "128250",
       otherCostJpy: "0",
-      memo: "2026-07-02 EMS进口批次
-EMS：EB861106815CN
-进口申告：41566568140
-报关货值：15,522,668 JPY
-关税：1,252,000 JPY
-进口消费税：1,308,000 JPY
-地方消费税：368,800 JPY
-报关代理费：12,000 JPY
-国际运费：5,400 CNY / 128,250 JPY
-重量：33.90kg
-商品数量：10件"
+      memo: [
+        "2026-07-02 EMS进口批次",
+        "EMS：EB861106815CN",
+        "进口申告：41566568140",
+        "报关货值：15,522,668 JPY",
+        "关税：1,252,000 JPY",
+        "进口消费税：1,308,000 JPY",
+        "地方消费税：368,800 JPY",
+        "报关代理费：12,000 JPY",
+        "国际运费：5,400 CNY / 128,250 JPY",
+        "重量：33.90kg",
+        "商品数量：10件"
+      ].join("\n")
     });
     setEditingId(null);
   }
