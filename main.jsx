@@ -4039,9 +4039,7 @@ function CustomsBatchPanel({ batches, setBatches, items, downloadCSV }) {
     } catch (e) {
       console.error(e);
       const msg = String(e?.message || e?.error_description || e?.details || e || "未知错误");
-      alert("附件上传云端失败：" + msg + "
-
-请确认已在 Supabase SQL Editor 运行 supabase-import-batch-files.sql。文件没有写入ERP，避免系统变大。");
+      alert("附件上传云端失败：" + msg + "\n\n请确认已在 Supabase SQL Editor 运行 supabase-import-batch-files.sql。文件没有写入ERP，避免系统变大。");
     }
   }
 
