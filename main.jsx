@@ -4007,8 +4007,7 @@ function CustomsBatchPanel({ batches, setBatches, items, downloadCSV }) {
 
   function normalizeBatchAttachments(batchForm) {
     const saved = Array.isArray(batchForm.attachments) ? batchForm.attachments : [];
-    const textItems = String(batchForm.attachmentsText || "").split(/
-|,/).map((x) => x.trim()).filter(Boolean);
+    const textItems = String(batchForm.attachmentsText || "").split(new RegExp("\\n|," )).map((x) => x.trim()).filter(Boolean);
     const textObjects = textItems.map((name) => ({ name, url: name, type: "link", uploadedAt: new Date().toISOString() }));
     const seen = new Set();
     return [...saved, ...textObjects].filter((att) => {
