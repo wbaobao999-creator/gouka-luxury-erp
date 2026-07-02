@@ -341,7 +341,11 @@ function getDeclaredJpyForAllocation(x) {
 }
 
 function normalizeImportBatch(batch = {}) {
-  const internationalShippingJpy = Number(batch.internationalShippingJpy || batch.shippingJpy || 0);
+  const shippingCurrency = batch.internationalShippingCurrency || batch.shippingCurrency || batch.freightCurrency || "JPY";
+  const shippingAmount = Number(batch.internationalShippingAmount || batch.shippingAmount || batch.freightAmount || 0);
+  const shippingRateToJpy = Number(batch.internationalShippingRateToJpy || batch.shippingRateToJpy || batch.freightRateToJpy || (shippingCurrency === "JPY" ? 1 : defaultRateFor(shippingCurrency)) || 1);
+  const explicitShippingJpy = Number(batch.internationalShippingJpy || batch.shippingJpy || 0);
+  const internationalShippingJpy = explicitShippingJpy || Math.round(shippingAmount * shippingRateToJpy);
   const agencyFeeJpy = Number(batch.agencyFeeJpy || batch.customsFeeJpy || 0);
   const importConsumptionTaxJpy = Number(batch.importConsumptionTaxJpy || 0);
   const localConsumptionTaxJpy = Number(batch.localConsumptionTaxJpy || 0);
@@ -356,6 +360,9 @@ function normalizeImportBatch(batch = {}) {
     goodsCount: Number(batch.goodsCount || batch.itemCount || 0),
     itemCount: Number(batch.itemCount || batch.goodsCount || 0),
     grossWeightKg: Number(batch.grossWeightKg || batch.weightKg || batch.weight || 0),
+    internationalShippingAmount: shippingAmount || internationalShippingJpy,
+    internationalShippingCurrency: shippingCurrency,
+    internationalShippingRateToJpy: shippingRateToJpy,
     dutyJpy: Number(batch.dutyJpy || 0),
     importConsumptionTaxJpy,
     localConsumptionTaxJpy,
@@ -382,9 +389,10 @@ function applyBatchAllocations(items, batches) {
   Object.entries(grouped).forEach(([batchId, arr]) => {
     const batch = normalizeImportBatch(batchMap[batchId]);
     const totalDeclared = arr.reduce((a, x) => a + getDeclaredJpyForAllocation(x), 0) || arr.length || 1;
+    const countRatio = arr.length ? 1 / arr.length : 0;
     arr.forEach((x) => {
       const declared = getDeclaredJpyForAllocation(x);
-      const ratio = totalDeclared ? declared / totalDeclared : 1 / arr.length;
+      const ratio = totalDeclared ? declared / totalDeclared : countRatio;
       allocMap[x.id] = {
         customsBatchId: batchId,
         batchName: batch.name || batchId,
@@ -394,7 +402,7 @@ function applyBatchAllocations(items, batches) {
         importBatchCustomsDeclarationNo: batch.customsDeclarationNo || "",
         batchAllocatedDutyJpy: Number(batch.dutyJpy || 0) * ratio,
         batchAllocatedShippingJpy: Number(batch.internationalShippingJpy || batch.shippingJpy || 0) * ratio,
-        batchAllocatedCustomsFeeJpy: Number(batch.agencyFeeJpy || batch.customsFeeJpy || 0) * ratio,
+        batchAllocatedCustomsFeeJpy: Number(batch.agencyFeeJpy || batch.customsFeeJpy || 0) * countRatio,
         batchAllocatedOtherCostJpy: Number(batch.otherCostJpy || 0) * ratio,
         batchAllocatedImportTaxJpy: Number(batch.totalImportConsumptionTaxJpy || 0) * ratio,
         batchImportConsumptionTaxJpy: Number(batch.totalImportConsumptionTaxJpy || 0),
@@ -3895,10 +3903,14 @@ function Ledger({ items, setItems, isOwner, downloadCSV, exportItemPdf }) {
 }
 
 function CustomsBatchPanel({ batches, setBatches, items, downloadCSV }) {
-  const emptyBatch = { id: "", name: "", emsNo: "", customsDeclarationNo: "", importDate: localDateString(), declaredTotalJpy: "", goodsValueJpy: "", goodsCount: "", grossWeightKg: "", dutyJpy: "", importConsumptionTaxJpy: "", localConsumptionTaxJpy: "", shippingJpy: "", internationalShippingJpy: "", customsFeeJpy: "", agencyFeeJpy: "", otherCostJpy: "", attachments: [], attachmentsText: "", memo: "" };
+  const emptyBatch = { id: "", name: "", emsNo: "", customsDeclarationNo: "", importDate: localDateString(), declaredTotalJpy: "", goodsValueJpy: "", goodsCount: "", grossWeightKg: "", dutyJpy: "", importConsumptionTaxJpy: "", localConsumptionTaxJpy: "", shippingJpy: "", internationalShippingAmount: "", internationalShippingCurrency: "JPY", internationalShippingRateToJpy: "1", internationalShippingJpy: "", customsFeeJpy: "", agencyFeeJpy: "", otherCostJpy: "", attachments: [], attachmentsText: "", memo: "" };
   const [form, setForm] = useState(emptyBatch);
   const [editingId, setEditingId] = useState(null);
-  const set = (k, v) => setForm({ ...form, [k]: v });
+  const set = (k, v) => setForm((prev) => ({ ...prev, [k]: v }));
+  const shippingAmount = Number(form.internationalShippingAmount || form.shippingAmount || form.internationalShippingJpy || form.shippingJpy || 0);
+  const shippingCurrency = form.internationalShippingCurrency || form.shippingCurrency || "JPY";
+  const shippingRateToJpy = Number(form.internationalShippingRateToJpy || form.shippingRateToJpy || (shippingCurrency === "JPY" ? 1 : defaultRateFor(shippingCurrency)) || 1);
+  const shippingJpyPreview = Math.round(Number(form.internationalShippingJpy || form.shippingJpy || 0) || shippingAmount * shippingRateToJpy);
 
   function reset() {
     setForm(emptyBatch);
@@ -3906,6 +3918,7 @@ function CustomsBatchPanel({ batches, setBatches, items, downloadCSV }) {
   }
 
   function saveBatch() {
+    const shippingJpy = Math.round(Number(form.internationalShippingJpy || form.shippingJpy || 0) || Number(form.internationalShippingAmount || 0) * Number(form.internationalShippingRateToJpy || 1));
     const next = normalizeImportBatch({
       ...form,
       id: editingId || form.id || makeCustomsBatchId(batches),
@@ -3916,10 +3929,13 @@ function CustomsBatchPanel({ batches, setBatches, items, downloadCSV }) {
       itemCount: Number(form.goodsCount || form.itemCount || 0),
       grossWeightKg: Number(form.grossWeightKg || 0),
       dutyJpy: Number(form.dutyJpy || 0),
-      importConsumptionTaxJpy: Number(form.importConsumptionTaxJpy || 0) + Number(form.localConsumptionTaxJpy || 0),
-      localConsumptionTaxJpy: 0,
-      shippingJpy: Number(form.internationalShippingJpy || form.shippingJpy || 0),
-      internationalShippingJpy: Number(form.internationalShippingJpy || form.shippingJpy || 0),
+      importConsumptionTaxJpy: Number(form.importConsumptionTaxJpy || 0),
+      localConsumptionTaxJpy: Number(form.localConsumptionTaxJpy || 0),
+      internationalShippingAmount: Number(form.internationalShippingAmount || 0),
+      internationalShippingCurrency: form.internationalShippingCurrency || "JPY",
+      internationalShippingRateToJpy: Number(form.internationalShippingRateToJpy || 1),
+      shippingJpy,
+      internationalShippingJpy: shippingJpy,
       customsFeeJpy: Number(form.agencyFeeJpy || form.customsFeeJpy || 0),
       agencyFeeJpy: Number(form.agencyFeeJpy || form.customsFeeJpy || 0),
       otherCostJpy: Number(form.otherCostJpy || 0),
@@ -3939,16 +3955,59 @@ function CustomsBatchPanel({ batches, setBatches, items, downloadCSV }) {
     const batch = normalizeImportBatch(b);
     setForm({
       ...batch,
-      importConsumptionTaxJpy: Number(batch.totalImportConsumptionTaxJpy || 0),
-      localConsumptionTaxJpy: 0,
-      attachmentsText: (batch.attachments || []).filter((x) => typeof x === "string").join("\n")
+      internationalShippingAmount: batch.internationalShippingAmount || batch.internationalShippingJpy || "",
+      internationalShippingCurrency: batch.internationalShippingCurrency || "JPY",
+      internationalShippingRateToJpy: batch.internationalShippingRateToJpy || (batch.internationalShippingCurrency === "JPY" ? 1 : defaultRateFor(batch.internationalShippingCurrency || "JPY")),
+      internationalShippingJpy: batch.internationalShippingJpy || batch.shippingJpy || "",
+      attachmentsText: (batch.attachments || []).filter((x) => typeof x === "string").join("
+")
     });
     setEditingId(batch.id);
   }
 
+  function fillSampleBatch() {
+    setForm({
+      ...emptyBatch,
+      id: "EMS-20260702-001",
+      name: "2026年7月第1批EMS报关",
+      emsNo: "EB861106815CN",
+      customsDeclarationNo: "41566568140",
+      importDate: "2026-07-02",
+      goodsValueJpy: "15522668",
+      declaredTotalJpy: "15522668",
+      goodsCount: "10",
+      itemCount: "10",
+      grossWeightKg: "33.90",
+      dutyJpy: "1252000",
+      importConsumptionTaxJpy: "1308000",
+      localConsumptionTaxJpy: "368800",
+      agencyFeeJpy: "12000",
+      customsFeeJpy: "12000",
+      internationalShippingAmount: "5400",
+      internationalShippingCurrency: "CNY",
+      internationalShippingRateToJpy: "23.75",
+      internationalShippingJpy: "128250",
+      shippingJpy: "128250",
+      otherCostJpy: "0",
+      memo: "2026-07-02 EMS进口批次
+EMS：EB861106815CN
+进口申告：41566568140
+报关货值：15,522,668 JPY
+关税：1,252,000 JPY
+进口消费税：1,308,000 JPY
+地方消费税：368,800 JPY
+报关代理费：12,000 JPY
+国际运费：5,400 CNY / 128,250 JPY
+重量：33.90kg
+商品数量：10件"
+    });
+    setEditingId(null);
+  }
+
   function normalizeBatchAttachments(batchForm) {
     const saved = Array.isArray(batchForm.attachments) ? batchForm.attachments : [];
-    const textItems = String(batchForm.attachmentsText || "").split(/\n|,/).map((x) => x.trim()).filter(Boolean);
+    const textItems = String(batchForm.attachmentsText || "").split(/
+|,/).map((x) => x.trim()).filter(Boolean);
     const textObjects = textItems.map((name) => ({ name, url: name, type: "link", uploadedAt: new Date().toISOString() }));
     const seen = new Set();
     return [...saved, ...textObjects].filter((att) => {
@@ -3969,17 +4028,8 @@ function CustomsBatchPanel({ batches, setBatches, items, downloadCSV }) {
       }
       const reader = new FileReader();
       reader.onload = () => {
-        const attachment = {
-          name: file.name,
-          type: file.type || "application/octet-stream",
-          size: file.size,
-          uploadedAt: new Date().toISOString(),
-          dataUrl: reader.result
-        };
-        setForm((prev) => ({
-          ...prev,
-          attachments: [...(Array.isArray(prev.attachments) ? prev.attachments : []), attachment]
-        }));
+        const attachment = { name: file.name, type: file.type || "application/octet-stream", size: file.size, uploadedAt: new Date().toISOString(), dataUrl: reader.result };
+        setForm((prev) => ({ ...prev, attachments: [...(Array.isArray(prev.attachments) ? prev.attachments : []), attachment] }));
       };
       reader.readAsDataURL(file);
     });
@@ -4001,33 +4051,52 @@ function CustomsBatchPanel({ batches, setBatches, items, downloadCSV }) {
   }
 
   function batchStats(batch) {
-    const arr = items.filter((x) => x.customsBatchId === batch.id);
+    const normalized = normalizeImportBatch(batch);
+    const arr = items.filter((x) => x.customsBatchId === normalized.id);
     const declared = arr.reduce((a, x) => a + calcTax(x).declaredJpy, 0);
     const allocatedCost = arr.reduce((a, x) => a + Number(x.batchAllocatedDutyJpy || 0) + Number(x.batchAllocatedShippingJpy || 0) + Number(x.batchAllocatedCustomsFeeJpy || 0) + Number(x.batchAllocatedOtherCostJpy || 0), 0);
-    return { count: arr.length, declared, allocatedCost };
+    const costTotal = Number(normalized.dutyJpy || 0) + Number(normalized.agencyFeeJpy || normalized.customsFeeJpy || 0) + Number(normalized.internationalShippingJpy || normalized.shippingJpy || 0) + Number(normalized.otherCostJpy || 0);
+    const nonCostTaxTotal = Number(normalized.importConsumptionTaxJpy || 0) + Number(normalized.localConsumptionTaxJpy || 0);
+    return { count: arr.length, declared, allocatedCost, costTotal, nonCostTaxTotal, declaredCount: Number(normalized.goodsCount || normalized.itemCount || arr.length || 0) };
   }
 
-  const headers = ["Import Batch", "EMS单号", "报关编号", "进口日期", "商品件数", "货值JPY", "重量kg", "关税", "消费・地方消费税", "代理费", "国际运费", "分摊成本", "附件", "操作"];
-  const rows = batches.map((b) => {
-    const batch = normalizeImportBatch(b);
+  const normalizedBatches = (batches || []).map(normalizeImportBatch);
+  const summary = normalizedBatches.reduce((a, b) => {
+    const st = batchStats(b);
+    a.batchCount += 1;
+    a.goodsCount += Number(b.goodsCount || b.itemCount || st.count || 0);
+    a.goodsValueJpy += Number(b.goodsValueJpy || b.declaredTotalJpy || st.declared || 0);
+    a.dutyJpy += Number(b.dutyJpy || 0);
+    a.importConsumptionTaxJpy += Number(b.importConsumptionTaxJpy || 0);
+    a.localConsumptionTaxJpy += Number(b.localConsumptionTaxJpy || 0);
+    a.agencyFeeJpy += Number(b.agencyFeeJpy || b.customsFeeJpy || 0);
+    a.internationalShippingJpy += Number(b.internationalShippingJpy || b.shippingJpy || 0);
+    a.costTotal += st.costTotal;
+    a.nonCostTaxTotal += st.nonCostTaxTotal;
+    return a;
+  }, { batchCount: 0, goodsCount: 0, goodsValueJpy: 0, dutyJpy: 0, importConsumptionTaxJpy: 0, localConsumptionTaxJpy: 0, agencyFeeJpy: 0, internationalShippingJpy: 0, costTotal: 0, nonCostTaxTotal: 0 });
+
+  const headers = ["Import Batch", "EMS单号", "报关编号", "进口日期", "商品件数", "货值JPY", "重量kg", "关税", "进口消费税", "地方消费税", "代理费", "国际运费", "分摊成本", "附件", "操作"];
+  const rows = normalizedBatches.map((batch) => {
     const st = batchStats(batch);
     return [
       batch.id,
       batch.emsNo || "",
       batch.customsDeclarationNo || "",
       batch.importDate || "",
-      `${st.count} / ${Number(batch.goodsCount || batch.itemCount || st.count || 0)} 件`,
+      st.count + " / " + st.declaredCount + " 件",
       Math.round(Number(batch.goodsValueJpy || batch.declaredTotalJpy || st.declared || 0)),
       batch.grossWeightKg || "",
       Math.round(Number(batch.dutyJpy || 0)),
-      Math.round(Number(batch.totalImportConsumptionTaxJpy || 0)),
+      Math.round(Number(batch.importConsumptionTaxJpy || 0)),
+      Math.round(Number(batch.localConsumptionTaxJpy || 0)),
       Math.round(Number(batch.agencyFeeJpy || batch.customsFeeJpy || 0)),
       Math.round(Number(batch.internationalShippingJpy || batch.shippingJpy || 0)),
       Math.round(st.allocatedCost),
       (batch.attachments || []).length ? <div className="attachment-mini-list">{batch.attachments.map((att, i) => (att.dataUrl || att.url) ? <a key={i} href={att.dataUrl || att.url} download={att.name || undefined} target="_blank" rel="noreferrer">{att.name || "附件" + (i + 1)}</a> : <span key={i}>{attachmentLabel(att)}</span>)}</div> : "—",
       <div className="table-actions">
-        <button className="edit" onClick={() => editBatch(b)}>编辑</button>
-        <button className="danger" onClick={() => deleteBatch(b.id)}>删除</button>
+        <button className="edit" onClick={() => editBatch(batch)}>编辑</button>
+        <button className="danger" onClick={() => deleteBatch(batch.id)}>删除</button>
       </div>
     ];
   });
@@ -4035,7 +4104,18 @@ function CustomsBatchPanel({ batches, setBatches, items, downloadCSV }) {
   return (
     <div className="panel">
       <h2>进口批次（Import Batch）</h2>
-      <p className="note">一票报关对应一个 Import Batch。商品只关联批次，关税、代理费、国际运费按申报金额比例分摊到库存成本；海关单上的「消费・地方消费税」合并录入，不进库存成本，只进入消费税管理中心。</p>
+      <p className="note">一票报关对应一个 Import Batch。商品只关联批次；关税、代理费、国际运费按规则分摊到库存成本；进口消费税、地方消费税不进库存成本，只进入消费税管理中心。</p>
+      <div className="import-summary-grid">
+        <Card title="商品数量" value={summary.goodsCount + " 件"} />
+        <Card title="货值合计" value={jpy(summary.goodsValueJpy)} />
+        <Card title="关税合计" value={jpy(summary.dutyJpy)} />
+        <Card title="进口消费税合计" value={jpy(summary.importConsumptionTaxJpy)} />
+        <Card title="地方消费税合计" value={jpy(summary.localConsumptionTaxJpy)} />
+        <Card title="代理费" value={jpy(summary.agencyFeeJpy)} />
+        <Card title="国际运费JPY" value={jpy(summary.internationalShippingJpy)} />
+        <Card title="进入成本合计" value={jpy(summary.costTotal)} />
+        <Card title="不进成本消费税合计" value={jpy(summary.nonCostTaxTotal)} />
+      </div>
       <div className="formgrid">
         <Input label="Import Batch ID" value={form.id} onChange={(v) => set("id", v)} placeholder="空白则自动生成 EMS-年月-001" />
         <Input label="批次名称" value={form.name} onChange={(v) => set("name", v)} placeholder="例：2026年7月进口第1批" />
@@ -4046,9 +4126,13 @@ function CustomsBatchPanel({ batches, setBatches, items, downloadCSV }) {
         <Input label="商品件数" type="number" value={form.goodsCount || form.itemCount || ""} onChange={(v) => { set("goodsCount", v); set("itemCount", v); }} />
         <Input label="重量 kg" type="number" value={form.grossWeightKg || ""} onChange={(v) => set("grossWeightKg", v)} />
         <Input label="关税 JPY（进成本）" type="number" value={form.dutyJpy || ""} onChange={(v) => set("dutyJpy", v)} />
-        <Input label="消费・地方消费税 JPY（不进成本）" type="number" value={form.importConsumptionTaxJpy || ""} onChange={(v) => { set("importConsumptionTaxJpy", v); set("localConsumptionTaxJpy", ""); }} />
+        <Input label="进口消费税 JPY（不进成本）" type="number" value={form.importConsumptionTaxJpy || ""} onChange={(v) => set("importConsumptionTaxJpy", v)} />
+        <Input label="地方消费税 JPY（不进成本）" type="number" value={form.localConsumptionTaxJpy || ""} onChange={(v) => set("localConsumptionTaxJpy", v)} />
         <Input label="代理费 JPY（进成本）" type="number" value={form.agencyFeeJpy || form.customsFeeJpy || ""} onChange={(v) => { set("agencyFeeJpy", v); set("customsFeeJpy", v); }} />
-        <Input label="国际运费 JPY（进成本）" type="number" value={form.internationalShippingJpy || form.shippingJpy || ""} onChange={(v) => { set("internationalShippingJpy", v); set("shippingJpy", v); }} />
+        <Input label="国际运费金额" type="number" value={form.internationalShippingAmount || ""} onChange={(v) => { set("internationalShippingAmount", v); set("internationalShippingJpy", Math.round(Number(v || 0) * shippingRateToJpy)); set("shippingJpy", Math.round(Number(v || 0) * shippingRateToJpy)); }} />
+        <label>国际运费币种<select value={shippingCurrency} onChange={(e) => { const cur = e.target.value; const rate = cur === "JPY" ? 1 : defaultRateFor(cur); setForm((prev) => ({ ...prev, internationalShippingCurrency: cur, internationalShippingRateToJpy: rate, internationalShippingJpy: Math.round(Number(prev.internationalShippingAmount || 0) * rate), shippingJpy: Math.round(Number(prev.internationalShippingAmount || 0) * rate) })); }}><option value="CNY">CNY</option><option value="JPY">JPY</option><option value="USD">USD</option></select></label>
+        <Input label="国际运费汇率" type="number" value={form.internationalShippingRateToJpy || ""} onChange={(v) => { set("internationalShippingRateToJpy", v); set("internationalShippingJpy", Math.round(shippingAmount * Number(v || 0))); set("shippingJpy", Math.round(shippingAmount * Number(v || 0))); }} />
+        <Input label="国际运费 JPY（自动）" type="number" value={shippingJpyPreview || ""} onChange={(v) => { set("internationalShippingJpy", v); set("shippingJpy", v); }} />
         <Input label="其他费用 JPY（进成本）" type="number" value={form.otherCostJpy || ""} onChange={(v) => set("otherCostJpy", v)} />
         <label className="file-upload-box">附件导入（PDF / Invoice / Packing List）
           <input type="file" accept="application/pdf,image/*,.pdf,.jpg,.jpeg,.png,.webp" multiple onChange={(e) => handleBatchFiles(e.target.files)} />
@@ -4070,6 +4154,7 @@ function CustomsBatchPanel({ batches, setBatches, items, downloadCSV }) {
       <div className="action-row">
         <button className="primary" onClick={saveBatch}>{editingId ? "保存批次" : "新增批次"}</button>
         {editingId && <button className="ghost" onClick={reset}>取消编辑</button>}
+        <button className="ghost" onClick={fillSampleBatch}>填入7月样例</button>
         <button className="ghost" onClick={() => downloadCSV([headers, ...rows], "gouka_import_batches.csv")}>CSV导出</button>
       </div>
       <Table headers={headers} rows={rows} />
