@@ -1261,9 +1261,20 @@ function buildTaxAuditRows(items) {
 }
 
 function LoginPage({ onLogin }) {
+  const loginOptions = [
+    { key: "gouka", label: "管理者入口", note: "全权限" },
+    { key: "staff", label: "员工入口", note: "日常操作" },
+    { key: "zeirishi", label: "税理士窗口", note: "只读审查" }
+  ];
   const [username, setUsername] = useState("gouka");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+
+  function chooseLogin(key) {
+    setUsername(key);
+    setPassword("");
+    setError("");
+  }
 
   function submit(e) {
     if (e) e.preventDefault();
@@ -1283,7 +1294,21 @@ function LoginPage({ onLogin }) {
         <div className="login-logo"><Lock size={28} /></div>
         <h1>豪嘉ERP V7.0</h1>
         <p>豪嘉株式会社内部管理系统</p>
-        <p className="note">请输入公司内部账号登录。账号可向管理员确认，密码不在页面显示。</p>
+        <p className="note">请选择入口后输入密码。密码不在页面显示。</p>
+
+        <div className="login-role-select">
+          {loginOptions.map((option) => (
+            <button
+              key={option.key}
+              type="button"
+              className={username === option.key ? "active" : ""}
+              onClick={() => chooseLogin(option.key)}
+            >
+              <b>{option.label}</b>
+              <span>{option.note}</span>
+            </button>
+          ))}
+        </div>
 
         <label>
           账号
