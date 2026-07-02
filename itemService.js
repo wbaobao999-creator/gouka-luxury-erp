@@ -1,6 +1,7 @@
 import { supabase } from "./supabase.js";
 
 const IMAGE_BUCKET = "product-images";
+const IMPORT_BATCH_BUCKET = "import-batch-files";
 
 function isHttpUrl(value) {
   return typeof value === "string" && value.startsWith("http");
@@ -226,6 +227,60 @@ export async function getCloudMeta(key) {
   }
 
   return data || null;
+}
+
+/* ===========================
+   Import Batch 附件上传
+=========================== */
+
+function safeStorageSegment(value) {
+  return String(value || "file").replace(/[^a-zA-Z0-9_.-]/g, "_").slice(0, 120) || "file";
+}
+
+function safeOriginalFileName(value) {
+  const name = String(value || "attachment").replace(/[\/]/g, "_").replace(/[^a-zA-Z0-9_.-一-龥ぁ-んァ-ヶー]/g, "_");
+  return name.slice(0, 160) || "attachment";
+}
+
+export async function uploadImportBatchAttachments(batchId, files = [], documentType = "报关库存表") {
+  const selected = Array.from(files || []).filter(Boolean);
+  const result = [];
+  const safeBatchId = safeStorageSegment(batchId || "import_batch");
+
+  for (let i = 0; i < selected.length; i++) {
+    const file = selected[i];
+    const originalName = safeOriginalFileName(file.name || "attachment");
+    const storagePath = safeBatchId + "/" + Date.now() + "_" + i + "_" + originalName;
+
+    const { error } = await supabase.storage
+      .from(IMPORT_BATCH_BUCKET)
+      .upload(storagePath, file, {
+        cacheControl: "31536000",
+        upsert: false,
+        contentType: file.type || "application/octet-stream"
+      });
+
+    if (error) throw error;
+
+    const { data } = supabase.storage
+      .from(IMPORT_BATCH_BUCKET)
+      .getPublicUrl(storagePath);
+
+    result.push({
+      name: file.name || originalName,
+      type: "cloud-file",
+      mimeType: file.type || "application/octet-stream",
+      documentType: documentType || "报关库存表",
+      size: file.size || 0,
+      uploadedAt: new Date().toISOString(),
+      storageMode: "supabase-storage",
+      bucket: IMPORT_BATCH_BUCKET,
+      path: storagePath,
+      url: data?.publicUrl || ""
+    });
+  }
+
+  return result;
 }
 
 /* ===========================
