@@ -3916,7 +3916,7 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
     return a;
   }, { count: 0, qty: 0, cost: 0, sale: 0, profit: 0, toList: 0, toCustoms: 0, longTerm: 0, evidenceMissing: 0, evidencePartial: 0, evidenceComplete: 0 });
 
-  const headers = ["图片", "商品编号", "入库日", "库龄", "品牌", "商品名", "来源", "资料", "状态", "库位", "平台", "库存成本", "售价（含税）", "利润", "操作"];
+  const headers = ["图片", "商品编号", "入库日", "库龄", "品牌", "商品名", "来源", "资料", "状态", "库位", "平台", "库存成本", "售价/成交价（含税）", "预计/实际利润", "操作"];
   const csvHeaders = ["商品编号", "入库日期", "库龄", "库位", "品类", "品牌", "商品名", "材质", "颜色", "产地", "采购类型", "仕入先", "供应商地址", "本人确认", "资料状态", "缺失资料", "数量", "采购币种", "采购金额", "采购汇率", "申报币种", "申报金额", "申报汇率", "采购JPY", "附加成本JPY", "库存成本JPY", "报关批次", "进项消费税估算", "预计/成交销售JPY税込", "销售消费税", "税抜售价", "预计/实际利润", "状态"];
   const csvRows = [csvHeaders];
 
@@ -3936,8 +3936,8 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
     const sold = sales.sold;
     const displaySale = sold ? sales.saleTaxIncluded : sales.expectedSaleTaxIncluded;
     const displayProfit = sold ? sales.actualProfitJpy : sales.expectedProfitJpy;
-    const profitDisplay = displaySale > 0 ? moneyCell(displayProfit) : "未定";
-    const saleDisplay = displaySale > 0 ? expectedSaleCell(displaySale) : "未定";
+    const saleDisplay = displaySale > 0 ? expectedSaleCell(displaySale) : <span className="inventory-pending">待填写售价</span>;
+    const profitDisplay = displaySale > 0 ? moneyCell(displayProfit) : <span className="inventory-pending">待填写售价</span>;
     const evidence = buildEvidenceCheck(x);
     const days = stockDays(x);
     return [
@@ -3948,7 +3948,7 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
       x.brand,
       productNameCell(x.item),
       buildSourceTrace(x).supplier || buildSourceTrace(x).kind || "—",
-      <span className={evidence.status === "完整" ? "money-positive" : evidence.status === "需补充" ? "muted-value" : "money-negative"} title={evidence.text}>{evidence.status}</span>,
+      <span className={"evidence-badge " + (evidence.status === "完整" ? "ok" : evidence.status === "需补充" ? "partial" : "missing")} title={evidence.text}>{evidence.status}</span>,
       <StatusBadge status={x.status} />,
       <span className="inventory-location">{storageLocation(x)}</span>,
       x.platform || "—",
