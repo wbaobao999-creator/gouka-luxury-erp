@@ -4045,13 +4045,14 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
       otherCostJpy: Number(form.otherCostJpy || 0),
       attachments: normalizeBatchAttachments(form)
     });
-    if (editingId) {
-      setBatches(batches.map((b) => b.id === editingId ? next : b));
-      alert("报关批次已更新");
-    } else {
-      setBatches([next, ...batches]);
-      alert("报关批次已新增");
-    }
+    setBatches((prev) => {
+      const list = Array.isArray(prev) ? prev : (Array.isArray(batches) ? batches : []);
+      const exists = list.some((b) => normalizeImportBatch(b).id === next.id);
+      return exists
+        ? list.map((b) => normalizeImportBatch(b).id === next.id ? next : b)
+        : [next, ...list];
+    });
+    alert(editingId ? "报关批次已更新" : "报关批次已保存");
     reset();
   }
 
@@ -4178,7 +4179,7 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
 
   function deleteBatch(id) {
     if (!window.confirm("确认删除这个报关批次吗？商品不会删除，但会失去批次分摊关系。")) return;
-    setBatches(batches.filter((b) => b.id !== id));
+    setBatches((prev) => (Array.isArray(prev) ? prev : batches).filter((b) => normalizeImportBatch(b).id !== id));
   }
 
   function getActiveBatch() {
@@ -4241,21 +4242,34 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
         batchAllocatedAt: new Date().toISOString()
       };
     }));
-    setBatches((batches || []).map((x) => x.id === b.id ? { ...x, status: "已分摊", allocatedAt: new Date().toISOString() } : x));
+    const allocatedAt = new Date().toISOString();
+    setBatches((prev) => {
+      const list = Array.isArray(prev) && prev.length ? prev : (Array.isArray(batches) ? batches : []);
+      const next = list.map((x) => normalizeImportBatch(x).id === b.id ? { ...x, status: "已分摊", allocatedAt } : x);
+      return next.length ? next : [{ ...b, status: "已分摊", allocatedAt }];
+    });
     alert("Import Batch 成本分摊完成。进口消费税和地方消费税未进入库存成本，只记录到消费税参考。");
   }
 
   function batchStats(batch) {
     const normalized = normalizeImportBatch(batch);
-    const arr = items.filter((x) => x.customsBatchId === normalized.id);
+    const arr = items.filter((x) => getItemImportBatchId(x) === normalized.id);
     const declared = arr.reduce((a, x) => a + calcTax(x).declaredJpy, 0);
-    const allocatedCost = arr.reduce((a, x) => a + Number(x.batchAllocatedDutyJpy || 0) + Number(x.batchAllocatedShippingJpy || 0) + Number(x.batchAllocatedCustomsFeeJpy || 0) + Number(x.batchAllocatedOtherCostJpy || 0), 0);
+    const allocatedCost = arr.reduce((a, x) => a + Number(x.batchAllocatedDutyJpy || x.allocatedDutyJpy || 0) + Number(x.batchAllocatedShippingJpy || x.allocatedInternationalShippingJpy || 0) + Number(x.batchAllocatedCustomsFeeJpy || x.allocatedAgentFeeJpy || 0) + Number(x.batchAllocatedOtherCostJpy || x.allocatedOtherImportCostJpy || 0), 0);
     const costTotal = Number(normalized.dutyJpy || 0) + Number(normalized.agencyFeeJpy || normalized.customsFeeJpy || 0) + Number(normalized.internationalShippingJpy || normalized.shippingJpy || 0) + Number(normalized.otherCostJpy || 0);
     const nonCostTaxTotal = Number(normalized.importConsumptionTaxJpy || 0) + Number(normalized.localConsumptionTaxJpy || 0);
-    return { count: arr.length, declared, allocatedCost, costTotal, nonCostTaxTotal, declaredCount: Number(normalized.goodsCount || normalized.itemCount || arr.length || 0) };
+    const declaredCount = Number(normalized.goodsCount || normalized.itemCount || 0) || arr.length;
+    return { count: arr.length, declared, allocatedCost, costTotal, nonCostTaxTotal, declaredCount };
   }
 
-  const normalizedBatches = (batches || []).map(normalizeImportBatch);
+  const normalizedBatches = [];
+  const seenBatchIds = new Set();
+  (batches || []).map(normalizeImportBatch).forEach((batch) => {
+    const key = batch.id || batch.importBatchId || batch.customsBatchId;
+    if (!key || seenBatchIds.has(key)) return;
+    seenBatchIds.add(key);
+    normalizedBatches.push(batch);
+  });
   const summary = normalizedBatches.reduce((a, b) => {
     const st = batchStats(b);
     a.batchCount += 1;
@@ -4272,6 +4286,28 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
   }, { batchCount: 0, goodsCount: 0, goodsValueJpy: 0, dutyJpy: 0, importConsumptionTaxJpy: 0, localConsumptionTaxJpy: 0, agencyFeeJpy: 0, internationalShippingJpy: 0, costTotal: 0, nonCostTaxTotal: 0 });
 
   const activeBatch = getActiveBatch();
+  const pageSummary = activeBatch.id ? (() => {
+    const st = batchStats(activeBatch);
+    const goodsCount = st.declaredCount;
+    const goodsValueJpy = Number(activeBatch.goodsValueJpy || activeBatch.declaredTotalJpy || 0) || st.declared;
+    const dutyJpy = Number(activeBatch.dutyJpy || 0);
+    const importConsumptionTaxJpy = Number(activeBatch.importConsumptionTaxJpy || 0);
+    const localConsumptionTaxJpy = Number(activeBatch.localConsumptionTaxJpy || 0);
+    const agencyFeeJpy = Number(activeBatch.agencyFeeJpy || activeBatch.customsFeeJpy || 0);
+    const internationalShippingJpy = Number(activeBatch.internationalShippingJpy || activeBatch.shippingJpy || 0);
+    return {
+      batchCount: 1,
+      goodsCount,
+      goodsValueJpy,
+      dutyJpy,
+      importConsumptionTaxJpy,
+      localConsumptionTaxJpy,
+      agencyFeeJpy,
+      internationalShippingJpy,
+      costTotal: st.costTotal,
+      nonCostTaxTotal: st.nonCostTaxTotal
+    };
+  })() : summary;
   const activeProgress = activeBatch.id ? calcImportBatchProgress(activeBatch, items) : null;
   const activeTrade = activeBatch.id ? calcImportBatchTradeSummary(activeBatch, items) : null;
   const activeAllocations = activeBatch.id ? calcImportBatchAllocation(activeBatch, activeTrade?.linkedProducts || []) : [];
@@ -4307,11 +4343,15 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
     ];
   });
 
-  const headers = ["Import Batch", "状态", "EMS单号", "报关编号", "进口日期", "商品件数", "货值JPY", "重量kg", "关税", "进口消费税", "地方消费税", "代理费", "国际运费", "分摊成本", "附件", "操作"];
+  const headers = ["Import Batch", "操作", "状态", "EMS单号", "报关编号", "进口日期", "商品件数", "货值JPY", "重量kg", "关税", "进口消费税", "地方消费税", "代理费", "国际运费", "分摊成本", "附件"];
   const rows = normalizedBatches.map((batch) => {
     const st = batchStats(batch);
     return [
       batch.id,
+      <div className="table-actions">
+        <button className="edit" onClick={() => editBatch(batch)}>编辑</button>
+        <button className="danger" onClick={() => deleteBatch(batch.id)}>删除</button>
+      </div>,
       <div className="status-row">{calcImportBatchProgress(batch, items).badges.map((x) => <StatusBadge key={x} status={x} />)}</div>,
       batch.emsNo || "",
       batch.customsDeclarationNo || "",
@@ -4325,11 +4365,7 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
       Math.round(Number(batch.agencyFeeJpy || batch.customsFeeJpy || 0)),
       Math.round(Number(batch.internationalShippingJpy || batch.shippingJpy || 0)),
       Math.round(st.allocatedCost),
-      (batch.attachments || []).length ? <div className="attachment-mini-list">{batch.attachments.map((att, i) => (att.dataUrl || att.url) ? <a key={i} href={att.dataUrl || att.url} download={att.name || undefined} target="_blank" rel="noreferrer">{att.documentType || "附件"}：{att.name || "附件" + (i + 1)}</a> : <span key={i}>{attachmentLabel(att)}</span>)}</div> : "—",
-      <div className="table-actions">
-        <button className="edit" onClick={() => editBatch(batch)}>编辑</button>
-        <button className="danger" onClick={() => deleteBatch(batch.id)}>删除</button>
-      </div>
+      (batch.attachments || []).length ? <div className="attachment-mini-list">{batch.attachments.map((att, i) => (att.dataUrl || att.url) ? <a key={i} href={att.dataUrl || att.url} download={att.name || undefined} target="_blank" rel="noreferrer">{att.documentType || "附件"}：{att.name || "附件" + (i + 1)}</a> : <span key={i}>{attachmentLabel(att)}</span>)}</div> : "—"
     ];
   });
 
@@ -4338,15 +4374,15 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
       <h2>进口批次（Import Batch）</h2>
       <p className="note">一票报关对应一个 Import Batch。商品只关联批次；关税、代理费、国际运费按规则分摊到库存成本；进口消费税、地方消费税不进库存成本，只进入消费税管理中心。</p>
       <div className="import-summary-grid">
-        <Card title="商品数量" value={summary.goodsCount + " 件"} />
-        <Card title="货值合计" value={jpy(summary.goodsValueJpy)} />
-        <Card title="关税合计" value={jpy(summary.dutyJpy)} />
-        <Card title="进口消费税合计" value={jpy(summary.importConsumptionTaxJpy)} />
-        <Card title="地方消费税合计" value={jpy(summary.localConsumptionTaxJpy)} />
-        <Card title="代理费" value={jpy(summary.agencyFeeJpy)} />
-        <Card title="国际运费JPY" value={jpy(summary.internationalShippingJpy)} />
-        <Card title="进入成本合计" value={jpy(summary.costTotal)} />
-        <Card title="不进成本消费税合计" value={jpy(summary.nonCostTaxTotal)} />
+        <Card title="商品数量" value={pageSummary.goodsCount + " 件"} />
+        <Card title="货值合计" value={jpy(pageSummary.goodsValueJpy)} />
+        <Card title="关税合计" value={jpy(pageSummary.dutyJpy)} />
+        <Card title="进口消费税合计" value={jpy(pageSummary.importConsumptionTaxJpy)} />
+        <Card title="地方消费税合计" value={jpy(pageSummary.localConsumptionTaxJpy)} />
+        <Card title="代理费" value={jpy(pageSummary.agencyFeeJpy)} />
+        <Card title="国际运费JPY" value={jpy(pageSummary.internationalShippingJpy)} />
+        <Card title="进入成本合计" value={jpy(pageSummary.costTotal)} />
+        <Card title="不进成本消费税合计" value={jpy(pageSummary.nonCostTaxTotal)} />
       </div>
       {activeBatch.id && activeTrade && activeProgress && (
         <div className="import-batch-center">
