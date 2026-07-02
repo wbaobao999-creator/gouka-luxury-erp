@@ -3959,8 +3959,7 @@ function CustomsBatchPanel({ batches, setBatches, items, downloadCSV }) {
       internationalShippingCurrency: batch.internationalShippingCurrency || "JPY",
       internationalShippingRateToJpy: batch.internationalShippingRateToJpy || (batch.internationalShippingCurrency === "JPY" ? 1 : defaultRateFor(batch.internationalShippingCurrency || "JPY")),
       internationalShippingJpy: batch.internationalShippingJpy || batch.shippingJpy || "",
-      attachmentsText: (batch.attachments || []).filter((x) => typeof x === "string").join("
-")
+      attachmentsText: (batch.attachments || []).filter((x) => typeof x === "string").join("\n")
     });
     setEditingId(batch.id);
   }
