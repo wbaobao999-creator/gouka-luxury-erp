@@ -4038,7 +4038,10 @@ function CustomsBatchPanel({ batches, setBatches, items, downloadCSV }) {
       alert("附件已上传到云端档案库，并登记到当前报关批次。");
     } catch (e) {
       console.error(e);
-      alert("附件上传云端失败。请确认 Supabase 已建立 import-batch-files 存储桶和访问策略。文件没有写入ERP，避免系统变大。");
+      const msg = String(e?.message || e?.error_description || e?.details || e || "未知错误");
+      alert("附件上传云端失败：" + msg + "
+
+请确认已在 Supabase SQL Editor 运行 supabase-import-batch-files.sql。文件没有写入ERP，避免系统变大。");
     }
   }
 
