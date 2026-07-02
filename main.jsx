@@ -5468,7 +5468,7 @@ function SalesReport({ items, downloadCSV }) {
       jpy(sales.adjustmentJpy),
       jpy(sales.finalReceiptJpy),
       jpy(sales.inventoryCostJpy),
-      jpy(sales.actualProfitJpy),
+      moneyCell(sales.actualProfitJpy),
       x.soldMemo || ""
     ];
   });
@@ -5514,6 +5514,14 @@ function SalesReport({ items, downloadCSV }) {
   const totalCost = filteredSold.reduce((a, x) => a + calcSalesBreakdown(x).inventoryCostJpy, 0);
   const totalProfit = filteredSold.reduce((a, x) => a + calcSalesBreakdown(x).actualProfitJpy, 0);
   const totalReceipt = filteredSold.reduce((a, x) => a + calcSalesBreakdown(x).finalReceiptJpy, 0);
+  const salesCheck = filteredSold.reduce((a, x) => {
+    const sales = calcSalesBreakdown(x);
+    if (!x.soldDate) a.missingDate += 1;
+    if (!(x.soldPlatform || x.platform)) a.missingPlatform += 1;
+    if (Number(sales.saleTaxIncluded || 0) <= 0) a.missingSale += 1;
+    if (Number(sales.finalReceiptJpy || 0) <= 0) a.missingReceipt += 1;
+    return a;
+  }, { missingDate: 0, missingPlatform: 0, missingSale: 0, missingReceipt: 0 });
 
   return (
     <div className="panel">
@@ -5542,7 +5550,15 @@ function SalesReport({ items, downloadCSV }) {
         <Card icon={<Calculator />} title="实际利润" value={jpy(totalProfit)} />
       </div>
 
-      <p>销项消费税：{jpy(totalOutputTax)}　库存成本：{jpy(totalCost)}　最终到账：{jpy(totalReceipt)}</p>
+      <div className="sales-check-strip">
+        <div><span>销项消费税</span><b>{jpy(totalOutputTax)}</b></div>
+        <div><span>库存成本</span><b>{jpy(totalCost)}</b></div>
+        <div><span>最终到账</span><b>{jpy(totalReceipt)}</b></div>
+        <div className={salesCheck.missingDate ? "warn" : "ok"}><span>缺销售日</span><b>{salesCheck.missingDate} 件</b></div>
+        <div className={salesCheck.missingPlatform ? "warn" : "ok"}><span>缺平台</span><b>{salesCheck.missingPlatform} 件</b></div>
+        <div className={salesCheck.missingSale ? "warn" : "ok"}><span>缺售价</span><b>{salesCheck.missingSale} 件</b></div>
+        <div className={salesCheck.missingReceipt ? "warn" : "ok"}><span>缺到账</span><b>{salesCheck.missingReceipt} 件</b></div>
+      </div>
       <Table headers={headers} rows={rows} />
     </div>
   );
