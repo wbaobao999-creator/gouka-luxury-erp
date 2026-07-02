@@ -3998,6 +3998,9 @@ function Profit({ items }) {
 }
 
 function TaxReport({ items, totals, customsBatches, downloadCSV }) {
+  const [auditFilter, setAuditFilter] = useState("全部");
+  const [auditQuery, setAuditQuery] = useState("");
+  const [auditDetailItem, setAuditDetailItem] = useState(null);
   const soldItems = items.filter((x) => isSoldStatus(x.status) && Number(x.soldPriceJpy || x.saleJpy || 0) > 0);
   const auctionItems = items.map((x) => ({ item: x, auction: normalizeAuction(x?.auction) })).filter((x) => x.auction);
 
@@ -4113,6 +4116,62 @@ function TaxReport({ items, totals, customsBatches, downloadCSV }) {
   const severityRank = { HIGH: 1, MEDIUM: 2, LOW: 3, OK: 4 };
   const taxAuditDisplayRows = [...taxAuditRows].sort((a, b) => (severityRank[a[0]] || 9) - (severityRank[b[0]] || 9));
 
+  const issueMap = taxAuditDisplayRows.reduce((map, row) => {
+    const key = row[1];
+    if (!map[key]) map[key] = [];
+    map[key].push(row);
+    return map;
+  }, {});
+
+  const productAuditRowsRaw = (items || []).map((item) => {
+    const evidence = buildEvidenceCheck(item);
+    const trace = buildSourceTrace(item);
+    const auction = normalizeAuction(item?.auction);
+    const itemIssues = issueMap[item.id] || [];
+    const highCount = itemIssues.filter((x) => x[0] === "HIGH").length;
+    const mediumCount = itemIssues.filter((x) => x[0] === "MEDIUM").length;
+    const lowCount = itemIssues.filter((x) => x[0] === "LOW").length;
+    const risk = highCount > 0 ? "高风险" : (mediumCount > 0 || evidence.status !== "完整") ? "需补充" : lowCount > 0 ? "注意" : "完整";
+    const missing = evidence.missing?.length ? evidence.missing.join(" / ") : "—";
+    const suggestions = itemIssues.length ? itemIssues.map((x) => x[3]).join(" / ") : "资料暂无明显缺项";
+    return {
+      item,
+      risk,
+      evidence,
+      missing,
+      suggestions,
+      row: [
+        risk,
+        <ProductThumb item={item} size={56} />,
+        item.id,
+        item.brand || "",
+        productNameCell(item.item),
+        trace.kind || "—",
+        trace.supplier || "—",
+        auction ? (auction.platform || auction.auctionHouse || "日本拍卖") : "—",
+        trace.customsBatch || item.customsBatchId || "—",
+        item.soldDate || "—",
+        missing,
+        suggestions,
+        <button className="ghost" onClick={() => setAuditDetailItem(item)}>详情</button>
+      ]
+    };
+  });
+  const auditKeyword = auditQuery.trim().toLowerCase();
+  const productAuditRows = productAuditRowsRaw.filter(({ item, risk, missing, suggestions }) => {
+    const matchRisk = auditFilter === "全部" || risk === auditFilter;
+    const text = [item.id, item.brand, item.item, item.source, item.supplier, item.soldPlatform, missing, suggestions].join(" ").toLowerCase();
+    return matchRisk && (!auditKeyword || text.includes(auditKeyword));
+  });
+  const auditSummary = productAuditRowsRaw.reduce((a, x) => {
+    a.total += 1;
+    if (x.risk === "高风险") a.high += 1;
+    if (x.risk === "需补充") a.medium += 1;
+    if (x.risk === "注意") a.low += 1;
+    if (x.risk === "完整") a.ok += 1;
+    return a;
+  }, { total: 0, high: 0, medium: 0, low: 0, ok: 0 });
+
   const taxAuditCsvRows = taxAuditDisplayRows.map((r) => ["税务检查提示", r[1], "", r[3], "", r[2], r[0], r[4], "", "", "", "", "", "", ""]);
 
   const csv = [
@@ -4164,6 +4223,23 @@ function TaxReport({ items, totals, customsBatches, downloadCSV }) {
         <Card icon={<Calculator />} title="预计应缴消费税" value={jpy(taxDifference)} />
       </div>
 
+      <h3>税理士检查中心</h3>
+      <p className="note">按商品检查来源、拍卖、EMS、销售、古物台账和税务凭证。此处用于提前准备税务检查资料，不替代正式申报。</p>
+      <div className="grid4 tax-audit-summary" style={{ marginBottom: "14px" }}>
+        <Card icon={<FileText />} title="检查商品" value={auditSummary.total + " 件"} />
+        <Card icon={<FileText />} title="高风险" value={auditSummary.high + " 件"} />
+        <Card icon={<FileText />} title="需补充" value={auditSummary.medium + " 件"} />
+        <Card icon={<FileText />} title="资料完整" value={auditSummary.ok + " 件"} />
+      </div>
+      <div className="filter-row" style={{ marginBottom: "12px" }}>
+        <input className="search" value={auditQuery} onChange={(e) => setAuditQuery(e.target.value)} placeholder="搜索商品编号 / 品牌 / 缺失资料" />
+        <select value={auditFilter} onChange={(e) => setAuditFilter(e.target.value)}>
+          {["全部", "高风险", "需补充", "注意", "完整"].map((x) => <option key={x} value={x}>{x}</option>)}
+        </select>
+        <button className="ghost" onClick={() => { setAuditQuery(""); setAuditFilter("全部"); }}>清除筛选</button>
+      </div>
+      <Table headers={["状态", "图片", "商品编号", "品牌", "商品名", "采购类型", "仕入先", "拍卖", "EMS/批次", "销售日", "缺失资料", "建议处理", "详情"]} rows={productAuditRows.map((x) => x.row)} />
+
       <h3>税务检查提示</h3>
       <p className="note">这里用于提前发现税务检查时可能被追问的缺项。没有提示不代表正式申报完成，正式申报仍以税理士确认结果为准。</p>
       <Table headers={["级别", "商品编号/批次", "业务类型", "检查项目", "建议处理"]} rows={taxAuditDisplayRows.length ? taxAuditDisplayRows : [["OK", "—", "税务参考", "暂无明显缺项", "继续保持商品、拍卖、销售、报关资料一致"]]} />
@@ -4190,6 +4266,14 @@ function TaxReport({ items, totals, customsBatches, downloadCSV }) {
         ["进项税合计", jpy(inputTaxTotal)],
         ["预计应缴消费税（销项税 - 进项税）", jpy(taxDifference)]
       ]} />
+
+      {auditDetailItem && (
+        <div className="image-modal" onClick={() => setAuditDetailItem(null)}>
+          <div className="panel" style={{ width: "1180px", maxWidth: "94vw", maxHeight: "88vh", overflow: "auto" }} onClick={(e) => e.stopPropagation()}>
+            <NbaaProductRecordDetail item={auditDetailItem} onClose={() => setAuditDetailItem(null)} exportItemPdf={null} isOwner={true} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
