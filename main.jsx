@@ -498,19 +498,61 @@ function calcImportBatchTradeSummary(batch, products = []) {
   const cost = calcImportBatchCostSummary(b);
   const tax = calcImportBatchTaxSummary(b);
   const productCostJpy = linkedProducts.reduce((sum, x) => sum + Number(calcTax(x).costJpy || 0), 0);
-  const expectedSalesJpy = linkedProducts.reduce((sum, x) => sum + Number(calcSalesBreakdown(x).expectedSaleTaxIncluded || 0), 0);
-  const expectedRevenueExTax = linkedProducts.reduce((sum, x) => sum + Number(calcSalesBreakdown(x).expectedRevenueExTax || 0), 0);
-  const expectedProfitJpy = expectedRevenueExTax - productCostJpy;
+  const averageInventoryCostJpy = linkedProducts.length ? productCostJpy / linkedProducts.length : 0;
+
+  const expectedProducts = linkedProducts.filter((x) => Number(x.saleJpy || x.expectedSaleJpy || x.listingPriceJpy || 0) > 0);
+  const expectedSalesJpy = expectedProducts.reduce((sum, x) => sum + Number(calcSalesBreakdown(x).expectedSaleTaxIncluded || 0), 0);
+  const expectedRevenueExTax = expectedProducts.reduce((sum, x) => sum + Number(calcSalesBreakdown(x).expectedRevenueExTax || 0), 0);
+  const expectedCostJpy = expectedProducts.reduce((sum, x) => sum + Number(calcTax(x).costJpy || 0), 0);
+  const expectedProfitJpy = expectedProducts.length ? expectedRevenueExTax - expectedCostJpy : 0;
+
   const soldProducts = linkedProducts.filter((x) => isSoldStatus(x.status));
   const soldCount = soldProducts.length;
-  const unsoldCount = linkedProducts.length - soldCount;
+  const unsoldProducts = linkedProducts.filter((x) => !isSoldStatus(x.status));
+  const unsoldCount = unsoldProducts.length;
   const receivedJpy = soldProducts.reduce((sum, x) => sum + Number(calcSalesBreakdown(x).finalReceiptJpy || 0), 0);
   const soldTaxIncluded = soldProducts.reduce((sum, x) => sum + Number(calcSalesBreakdown(x).saleTaxIncluded || 0), 0);
   const unreceivedJpy = Math.max(0, soldTaxIncluded - receivedJpy);
   const actualProfitJpy = soldProducts.reduce((sum, x) => sum + Number(calcSalesBreakdown(x).actualProfitJpy || 0), 0);
+
+  const unrealizedProducts = unsoldProducts.filter((x) => Number(x.saleJpy || x.expectedSaleJpy || x.listingPriceJpy || 0) > 0);
+  const unrealizedRevenueExTax = unrealizedProducts.reduce((sum, x) => sum + Number(calcSalesBreakdown(x).expectedRevenueExTax || 0), 0);
+  const unrealizedCostJpy = unrealizedProducts.reduce((sum, x) => sum + Number(calcTax(x).costJpy || 0), 0);
+  const unrealizedProfitJpy = unrealizedProducts.length ? unrealizedRevenueExTax - unrealizedCostJpy : 0;
+
   const margin = expectedRevenueExTax ? expectedProfitJpy / expectedRevenueExTax * 100 : 0;
   const totalInvestmentJpy = productCostJpy || (Number(b.goodsValueJpy || b.declaredTotalJpy || 0) + cost.costInInventoryJpy);
-  return { linkedProducts, productCostJpy, totalInvestmentJpy, expectedSalesJpy, expectedRevenueExTax, expectedProfitJpy, margin, soldCount, unsoldCount, receivedJpy, unreceivedJpy, actualProfitJpy, cost, tax };
+  const roi = totalInvestmentJpy ? (actualProfitJpy + unrealizedProfitJpy) / totalInvestmentJpy * 100 : 0;
+  const usedTaxCreditJpy = soldProducts.reduce((sum, x) => sum + Number(x.importTaxCreditJpy || x.batchAllocatedImportTaxJpy || 0), 0);
+  const remainingTaxCreditJpy = Math.max(0, tax.taxCreditJpy - usedTaxCreditJpy);
+
+  function groupByField(field, fallback) {
+    const map = {};
+    linkedProducts.forEach((x) => {
+      const key = String(x[field] || fallback || "未分类");
+      const current = map[key] || { name: key, count: 0, costJpy: 0, expectedSalesJpy: 0, actualProfitJpy: 0 };
+      current.count += 1;
+      current.costJpy += Number(calcTax(x).costJpy || 0);
+      current.expectedSalesJpy += Number(calcSalesBreakdown(x).expectedSaleTaxIncluded || 0);
+      current.actualProfitJpy += isSoldStatus(x.status) ? Number(calcSalesBreakdown(x).actualProfitJpy || 0) : 0;
+      map[key] = current;
+    });
+    return Object.values(map).sort((a, b) => b.costJpy - a.costJpy);
+  }
+
+  const brandStats = groupByField("brand", "未识别品牌");
+  const categoryStats = groupByField("category", "未分类");
+  const cashFlow = [
+    { label: "申报货值", amount: Number(b.goodsValueJpy || b.declaredTotalJpy || 0), type: "out" },
+    { label: "关税", amount: cost.dutyJpy, type: "out" },
+    { label: "代理费", amount: cost.agencyFeeJpy, type: "out" },
+    { label: "国际运费", amount: cost.internationalShippingJpy, type: "out" },
+    { label: "其他费用", amount: cost.otherCostJpy, type: "out" },
+    { label: "已回款", amount: receivedJpy, type: "in" },
+    { label: "未回款", amount: unreceivedJpy, type: "pending" }
+  ];
+
+  return { linkedProducts, productCostJpy, averageInventoryCostJpy, totalInvestmentJpy, expectedProductsCount: expectedProducts.length, expectedSalesJpy, expectedRevenueExTax, expectedProfitJpy, margin, soldCount, unsoldCount, receivedJpy, unreceivedJpy, actualProfitJpy, unrealizedProfitJpy, roi, usedTaxCreditJpy, remainingTaxCreditJpy, brandStats, categoryStats, cashFlow, cost, tax };
 }
 
 
@@ -4314,14 +4356,14 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
   const activeAllocationMap = Object.fromEntries(activeAllocations.map((x) => [x.item.id, x]));
   const unlinkedItems = (items || []).filter((x) => !getItemImportBatchId(x));
   const activeTimeline = activeBatch.id ? [
-    ["EMS发货", !!activeBatch.emsNo],
-    ["抵达日本", !!activeBatch.importDate],
-    ["进口申报", !!activeBatch.customsDeclarationNo],
-    ["缴税完成", Number(activeBatch.dutyJpy || 0) || Number(activeBatch.importConsumptionTaxJpy || 0) || Number(activeBatch.localConsumptionTaxJpy || 0)],
-    ["Import Batch 创建", !!activeBatch.id],
-    ["商品关联", !!activeProgress?.linkedCount],
-    ["成本分摊", !!activeProgress?.allocationDone],
-    ["完成", activeProgress?.badges?.includes("已完成")]
+    { label: "EMS发货", done: !!activeBatch.emsNo, date: activeBatch.shipDate || activeBatch.emsDate || "" },
+    { label: "抵达日本", done: !!activeBatch.importDate, date: activeBatch.importDate || "" },
+    { label: "进口申报", done: !!activeBatch.customsDeclarationNo, date: activeBatch.importDate || activeBatch.declarationDate || "" },
+    { label: "缴税完成", done: Number(activeBatch.dutyJpy || 0) || Number(activeBatch.importConsumptionTaxJpy || 0) || Number(activeBatch.localConsumptionTaxJpy || 0), date: activeBatch.taxPaymentDate || activeBatch.importDate || "" },
+    { label: "Import Batch 创建", done: !!activeBatch.id, date: activeBatch.createdAt || activeBatch.created_at || activeBatch.importDate || "" },
+    { label: "商品关联", done: !!activeProgress?.linkedCount, date: activeProgress?.linkedCount ? (activeBatch.linkedAt || activeBatch.updatedAt || activeBatch.importDate || "") : "" },
+    { label: "成本分摊", done: !!activeProgress?.allocationDone, date: activeBatch.allocatedAt || "" },
+    { label: "完成", done: activeProgress?.badges?.includes("已完成"), date: activeProgress?.badges?.includes("已完成") ? (activeBatch.completedAt || activeBatch.allocatedAt || activeBatch.importDate || "") : "" }
   ] : [];
   const linkedHeaders = ["图片", "商品编号", "品牌", "商品名", "申报金额", "当前库存成本", "分摊关税", "分摊代理费", "分摊国际运费", "分摊其他费用", "进口消费税参考", "操作"];
   const linkedRows = (activeTrade?.linkedProducts || []).map((x) => {
@@ -4398,11 +4440,13 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
 
           <div className="import-summary-grid compact">
             <Card title="本票总投入" value={jpy(activeTrade.totalInvestmentJpy)} />
-            <Card title="预计销售" value={jpy(activeTrade.expectedSalesJpy)} />
-            <Card title="预计利润" value={jpy(activeTrade.expectedProfitJpy)} />
-            <Card title="利润率" value={(activeTrade.margin || 0).toFixed(1) + "%"} />
-            <Card title="已售件数" value={activeTrade.soldCount + " 件"} />
-            <Card title="未售件数" value={activeTrade.unsoldCount + " 件"} />
+            <Card title="平均库存成本" value={jpy(activeTrade.averageInventoryCostJpy)} />
+            <Card title="预计销售" value={activeTrade.expectedProductsCount ? jpy(activeTrade.expectedSalesJpy) : "未填写"} />
+            <Card title="预计利润" value={activeTrade.expectedProductsCount ? jpy(activeTrade.expectedProfitJpy) : "未填写"} />
+            <Card title="已实现利润" value={jpy(activeTrade.actualProfitJpy)} />
+            <Card title="未实现利润" value={activeTrade.expectedProductsCount ? jpy(activeTrade.unrealizedProfitJpy) : "未填写"} />
+            <Card title="ROI" value={(activeTrade.roi || 0).toFixed(1) + "%"} />
+            <Card title="已售 / 未售" value={activeTrade.soldCount + " / " + activeTrade.unsoldCount + " 件"} />
             <Card title="已回款金额" value={jpy(activeTrade.receivedJpy)} />
             <Card title="未回款金额" value={jpy(activeTrade.unreceivedJpy)} />
           </div>
@@ -4414,10 +4458,11 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
           </div>
 
           <div className="batch-timeline">
-            {activeTimeline.map(([label, done]) => (
-              <div key={label} className={"timeline-step " + (done ? "done" : "") }>
+            {activeTimeline.map((step) => (
+              <div key={step.label} className={"timeline-step " + (step.done ? "done" : "") }>
                 <div className="timeline-dot" />
-                {label}
+                <b>{step.label}</b>
+                <small>{step.date || "—"}</small>
               </div>
             ))}
           </div>
@@ -4425,13 +4470,13 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
           <div className="import-analysis-grid">
             <div className="record-card">
               <h3>Financial Analysis（资金流）</h3>
-              <div className="record-field-grid">
-                {batchInfoField("申报货值", jpy(activeBatch.goodsValueJpy || activeBatch.declaredTotalJpy || 0))}
-                {batchInfoField("进入库存成本", jpy(activeTrade.cost.costInInventoryJpy))}
-                {batchInfoField("商品库存成本合计", jpy(activeTrade.productCostJpy))}
-                {batchInfoField("预计销售（含税）", jpy(activeTrade.expectedSalesJpy))}
-                {batchInfoField("已回款", jpy(activeTrade.receivedJpy))}
-                {batchInfoField("实际利润", jpy(activeTrade.actualProfitJpy))}
+              <div className="cashflow-list">
+                {activeTrade.cashFlow.map((row) => (
+                  <div key={row.label} className={"cashflow-row " + row.type}>
+                    <span>{row.label}</span>
+                    <b>{jpy(row.amount)}</b>
+                  </div>
+                ))}
               </div>
             </div>
             <div className="record-card">
@@ -4439,8 +4484,37 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
               <div className="record-field-grid">
                 {batchInfoField("进口消费税", jpy(activeTrade.tax.importConsumptionTaxJpy))}
                 {batchInfoField("地方消费税", jpy(activeTrade.tax.localConsumptionTaxJpy))}
-                {batchInfoField("可抵扣进项税参考", jpy(activeTrade.tax.taxCreditJpy))}
+                {batchInfoField("可抵扣", jpy(activeTrade.tax.taxCreditJpy))}
+                {batchInfoField("已抵扣", jpy(activeTrade.usedTaxCreditJpy))}
+                {batchInfoField("剩余可抵扣", jpy(activeTrade.remainingTaxCreditJpy))}
                 {batchInfoField("库存成本处理", "不进入库存成本")}
+              </div>
+            </div>
+          </div>
+
+          <div className="import-analysis-grid">
+            <div className="record-card">
+              <h3>品牌统计</h3>
+              <div className="mini-stat-list">
+                {activeTrade.brandStats.length ? activeTrade.brandStats.slice(0, 8).map((row) => (
+                  <div key={row.name} className="mini-stat-row">
+                    <span>{row.name}</span>
+                    <b>{row.count} 件</b>
+                    <small>成本 {jpy(row.costJpy)}</small>
+                  </div>
+                )) : <p className="note">暂无品牌数据</p>}
+              </div>
+            </div>
+            <div className="record-card">
+              <h3>品类统计</h3>
+              <div className="mini-stat-list">
+                {activeTrade.categoryStats.length ? activeTrade.categoryStats.slice(0, 8).map((row) => (
+                  <div key={row.name} className="mini-stat-row">
+                    <span>{row.name}</span>
+                    <b>{row.count} 件</b>
+                    <small>成本 {jpy(row.costJpy)}</small>
+                  </div>
+                )) : <p className="note">暂无品类数据</p>}
               </div>
             </div>
           </div>
