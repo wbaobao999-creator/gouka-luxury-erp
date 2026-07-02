@@ -94,7 +94,9 @@ const SUPPLIER_KEY = "gouka_erp_v51_suppliers";
 const DELETE_LOG_KEY = "gouka_erp_v663_delete_logs";
 const CUSTOMS_BATCH_KEY = "gouka_erp_v7_customs_batches";
 const USERS = {
-  gouka: { password: "931205", role: "owner", name: "管理者账号" }
+  gouka: { password: "931205", role: "owner", name: "管理者账号" },
+  staff: { password: "123456", role: "staff", name: "员工账号" },
+  zeirishi: { password: "123456", role: "tax", name: "税理士窗口" }
 };
 const TAX_RATE = 0.10;
 const CURRENCY_OPTIONS = ["CNY", "USD", "HKD", "EUR", "JPY"];
@@ -1267,8 +1269,9 @@ function LoginPage({ onLogin }) {
     if (e) e.preventDefault();
     const user = USERS[username];
     if (user && password === user.password) {
-      localStorage.setItem(LOGIN_KEY, JSON.stringify({ username, role: user.role, name: user.name }));
-      onLogin(user.role);
+      const nextSession = { username, role: user.role, name: user.name };
+      localStorage.setItem(LOGIN_KEY, JSON.stringify(nextSession));
+      onLogin(nextSession);
     } else {
       setError("账号或密码错误");
     }
@@ -1388,12 +1391,24 @@ function App() {
   }, [isLoggedIn]);
 
   if (!isLoggedIn) {
-    return <LoginPage onLogin={(role) => { setSession({ username: "gouka", role, name: "管理者账号" }); setIsLoggedIn(true); }} />;
+    return <LoginPage onLogin={(nextSession) => { setSession(nextSession); setIsLoggedIn(true); }} />;
   }
 
   const role = session?.role || "owner";
   const isOwner = role === "owner";
+  const isStaff = role === "staff";
+  const isTaxViewer = role === "tax";
+  const staffAllowedTabs = new Set(["add", "inventory", "listing", "sales", "customs", "ledger"]);
+  const taxAllowedTabs = new Set(["auction", "inventory", "customs", "customsBatch", "ledger", "profit", "tax", "pdf"]);
+  const canAccessTab = (key) => isOwner || (isStaff && staffAllowedTabs.has(key)) || (isTaxViewer && taxAllowedTabs.has(key));
+  const defaultTabForRole = isTaxViewer ? "tax" : "inventory";
+  const canEditBusiness = isOwner || isStaff;
+  const canExportBusinessPdf = isOwner || isTaxViewer;
   const computedItems = useMemo(() => applyBatchAllocations(items, customsBatches), [items, customsBatches]);
+
+  React.useEffect(() => {
+    if (!canAccessTab(tab)) setTab(defaultTabForRole);
+  }, [isOwner, isStaff, isTaxViewer, tab]);
 
   function logout() {
     localStorage.removeItem(LOGIN_KEY);
@@ -2339,7 +2354,7 @@ function App() {
           </div>
         </div>
 
-        {menu.map(([k, v]) => (
+        {menu.filter(([k]) => canAccessTab(k)).map(([k, v]) => (
           <button key={k} className={tab === k ? "active" : ""} onClick={() => setTab(k)}>
             {v}
           </button>
@@ -2358,7 +2373,7 @@ function App() {
             <button className="ghost" onClick={syncToCloud}>手动同步</button>
             <button className="ghost" onClick={loadFromCloud}>手动读取</button>
             <span className="pill">{syncStatusText}</span>
-            <span className="pill">Auto Save · {isOwner ? "管理者" : "员工"}</span>
+            <span className="pill">Auto Save · {isOwner ? "管理者" : isTaxViewer ? "税理士" : "员工"}</span>
           </div>
         </header>
 
@@ -2379,7 +2394,7 @@ function App() {
             customsBatches={customsBatches}
           />
         )}
-        {tab === "auction" && <JapaneseAuctionPanel items={computedItems} downloadCSV={downloadCSV} setPreviewImage={setPreviewImage} setPreviewScale={setPreviewScale} exportItemPdf={exportItemPdf} />}
+        {tab === "auction" && <JapaneseAuctionPanel items={computedItems} downloadCSV={downloadCSV} setPreviewImage={setPreviewImage} setPreviewScale={setPreviewScale} exportItemPdf={canExportBusinessPdf ? exportItemPdf : null} />}
         {tab === "inventory" && (
           <Inventory
             items={filtered}
@@ -2388,22 +2403,25 @@ function App() {
             statusFilter={statusFilter}
             setStatusFilter={setStatusFilter}
             downloadCSV={downloadCSV}
-            editItem={editItem}
-            deleteItem={deleteItem}
+            editItem={canEditBusiness ? editItem : null}
+            deleteItem={isOwner ? deleteItem : null}
             isOwner={isOwner}
+            canEdit={canEditBusiness}
+            canExportPdf={canExportBusinessPdf}
+            canViewFinance={isOwner || isTaxViewer}
             setPreviewImage={setPreviewImage}
             setPreviewScale={setPreviewScale}
-            exportItemPdf={exportItemPdf}
+            exportItemPdf={canExportBusinessPdf ? exportItemPdf : null}
           />
         )}
-        {tab === "ledger" && <Ledger items={filtered} setItems={setItems} isOwner={isOwner} downloadCSV={downloadCSV} exportItemPdf={exportItemPdf} />}
-        {tab === "customsBatch" && <CustomsBatchPanel batches={customsBatches} setBatches={setCustomsBatches} items={computedItems} downloadCSV={downloadCSV} />}
+        {tab === "ledger" && <Ledger items={filtered} setItems={setItems} isOwner={isOwner} downloadCSV={downloadCSV} exportItemPdf={canExportBusinessPdf ? exportItemPdf : null} />}
+        {tab === "customsBatch" && <CustomsBatchPanel batches={customsBatches} setBatches={isOwner ? setCustomsBatches : (() => {})} items={computedItems} downloadCSV={downloadCSV} />}
         {tab === "customs" && <Customs items={filtered} customsBatches={customsBatches} downloadCSV={downloadCSV} />}
         {tab === "profit" && <Profit items={filtered} />}
         {tab === "tax" && <TaxReport items={filtered} totals={totals} customsBatches={customsBatches} downloadCSV={downloadCSV} />}
         {tab === "listing" && <ListingManagement items={computedItems} updateListingItem={updateListingItem} editItem={editItem} setPreviewImage={setPreviewImage} setPreviewScale={setPreviewScale} />}
         {tab === "sales" && <SalesReport items={computedItems} downloadCSV={downloadCSV} />}
-        {tab === "pdf" && <PdfExportPanel items={computedItems} totals={totals} exportInventoryPdf={exportInventoryPdf} exportLedgerPdf={exportLedgerPdf} exportCustomsPdf={exportCustomsPdf} exportItemPdf={exportItemPdf} exportAuctionPdf={exportAuctionPdf} exportTaxPdf={exportTaxPdf} />}
+        {tab === "pdf" && canExportBusinessPdf && <PdfExportPanel items={computedItems} totals={totals} exportInventoryPdf={exportInventoryPdf} exportLedgerPdf={exportLedgerPdf} exportCustomsPdf={exportCustomsPdf} exportItemPdf={exportItemPdf} exportAuctionPdf={exportAuctionPdf} exportTaxPdf={exportTaxPdf} />}
         {tab === "suppliers" && <SupplierPanel suppliers={suppliers} setSuppliers={setSuppliers} downloadCSV={downloadCSV} />}
         {tab === "dictionary" && <DictionaryPanel dictionaries={dictionaries} setDictionaries={setDictionaries} />}
         {tab === "deleteLogs" && <DeleteLogPanel deleteLogs={deleteLogs} downloadCSV={downloadCSV} restoreDeletedItem={restoreDeletedItem} />}
@@ -3103,7 +3121,7 @@ function downloadProductImage(src, itemId) {
   a.remove();
 }
 
-function NbaaProductRecordDetail({ item, onClose, exportItemPdf }) {
+function NbaaProductRecordDetail({ item, onClose, exportItemPdf, isOwner = true }) {
   const t = calcTax(item);
   const auction = getAuction(item);
   const images = Array.isArray(item.images) ? item.images.filter(Boolean) : [];
@@ -3180,23 +3198,25 @@ function NbaaProductRecordDetail({ item, onClose, exportItemPdf }) {
               <RecordField label="商品名称" value={item.item} />
               <RecordField label="状态" value={<StatusBadge status={item.status} />} />
             </div>
-            <div className="product-record-summary">
-              <h3>Business Summary</h3>
-              <div className="record-field-grid">
-                <RecordField label="付款总额" value={jpy(paymentTotal)} />
-                <RecordField label="库存成本" value={jpy(inventoryCost)} />
-                <RecordField label="消费税控除" value={jpy(taxCredit)} />
-                <RecordField label="预计售价（含税）" value={expectedSaleJpy ? jpy(expectedSaleJpy) : ""} />
-                <RecordField label="预计利润" value={expectedSaleJpy ? jpy(expectedProfit) : ""} />
-                <RecordField label="实际利润" value={saleJpy ? jpy(actualProfit) : ""} />
-                <RecordField label="应缴消费税" value={saleJpy ? jpy(taxRef) : ""} />
+            {isOwner && (
+              <div className="product-record-summary">
+                <h3>Business Summary</h3>
+                <div className="record-field-grid">
+                  <RecordField label="付款总额" value={jpy(paymentTotal)} />
+                  <RecordField label="库存成本" value={jpy(inventoryCost)} />
+                  <RecordField label="消费税控除" value={jpy(taxCredit)} />
+                  <RecordField label="预计售价（含税）" value={expectedSaleJpy ? jpy(expectedSaleJpy) : ""} />
+                  <RecordField label="预计利润" value={expectedSaleJpy ? jpy(expectedProfit) : ""} />
+                  <RecordField label="实际利润" value={saleJpy ? jpy(actualProfit) : ""} />
+                  <RecordField label="应缴消费税" value={saleJpy ? jpy(taxRef) : ""} />
+                </div>
               </div>
-            </div>
+            )}
           </div>
           <div className="product-record-actions">
             <span className="note">一件商品 = 一份永久档案</span>
             <div className="action-row">
-              <button className="ghost" onClick={() => exportItemPdf?.(item)}>导出PDF</button>
+              {isOwner && <button className="ghost" onClick={() => exportItemPdf?.(item)}>导出PDF</button>}
               <button onClick={onClose}>关闭</button>
             </div>
           </div>
@@ -3334,7 +3354,7 @@ function NbaaProductRecordDetail({ item, onClose, exportItemPdf }) {
     </div>
   );
 }
-function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, downloadCSV, editItem, deleteItem, isOwner, setPreviewImage, setPreviewScale, exportItemPdf }) {
+function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, downloadCSV, editItem, deleteItem, isOwner, canEdit = true, canExportPdf = true, canViewFinance = true, setPreviewImage, setPreviewScale, exportItemPdf }) {
   const [detailItem, setDetailItem] = useState(null);
   const [page, setPage] = useState(1);
   const [evidenceFilter, setEvidenceFilter] = useState("全部");
@@ -3420,11 +3440,13 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
       profitDisplay,
       <div className="table-actions">
         <button className="ghost" onClick={() => setDetailItem(x)}>详情</button>
-        <button className="ghost" onClick={() => exportItemPdf?.(x)}>PDF</button>
-        <button className="edit" onClick={() => editItem(x)}>
-          <Edit3 size={14} /> 编辑
-        </button>
-        {isOwner && (
+        {canExportPdf && <button className="ghost" onClick={() => exportItemPdf?.(x)}>PDF</button>}
+        {canEdit && editItem && (
+          <button className="edit" onClick={() => editItem(x)}>
+            <Edit3 size={14} /> 编辑
+          </button>
+        )}
+        {isOwner && deleteItem && (
           <button className="danger" onClick={() => deleteItem(x.id)}>
             <Trash2 size={14} /> 删除
           </button>
@@ -3473,7 +3495,7 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
       {detailItem && (
         <div className="image-modal" onClick={() => setDetailItem(null)}>
           <div className="panel" style={{ width: "1180px", maxWidth: "94vw", maxHeight: "88vh", overflow: "auto" }} onClick={(e) => e.stopPropagation()}>
-            <NbaaProductRecordDetail item={detailItem} onClose={() => setDetailItem(null)} exportItemPdf={exportItemPdf} />
+            <NbaaProductRecordDetail item={detailItem} onClose={() => setDetailItem(null)} exportItemPdf={canExportPdf ? exportItemPdf : null} isOwner={canViewFinance} />
           </div>
         </div>
       )}
@@ -3755,7 +3777,7 @@ function Ledger({ items, setItems, isOwner, downloadCSV, exportItemPdf }) {
       {ledgerDetailItem && (
         <div className="image-modal" onClick={() => setLedgerDetailItem(null)}>
           <div className="panel" style={{ width: "1180px", maxWidth: "94vw", maxHeight: "88vh", overflow: "auto" }} onClick={(e) => e.stopPropagation()}>
-            <NbaaProductRecordDetail item={ledgerDetailItem} onClose={() => setLedgerDetailItem(null)} exportItemPdf={exportItemPdf} />
+            <NbaaProductRecordDetail item={ledgerDetailItem} onClose={() => setLedgerDetailItem(null)} exportItemPdf={exportItemPdf} isOwner={isOwner || !!exportItemPdf} />
           </div>
         </div>
       )}
