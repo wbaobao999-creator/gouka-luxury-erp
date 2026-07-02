@@ -425,6 +425,55 @@ function normalizeImportBatch(batch = {}) {
   };
 }
 
+function importBatchStableKey(batch = {}) {
+  const b = normalizeImportBatch(batch);
+  const id = String(b.id || b.importBatchId || b.customsBatchId || "").trim();
+  if (id) return "id:" + id;
+  const declaration = String(b.customsDeclarationNo || "").trim();
+  const ems = String(b.emsNo || "").trim();
+  if (declaration || ems) return "doc:" + declaration + ":" + ems;
+  return "memo:" + [b.importDate || "", b.name || "", b.goodsValueJpy || ""].join(":");
+}
+
+function importBatchDataScore(batch = {}) {
+  const b = normalizeImportBatch(batch);
+  return [b.id, b.name, b.emsNo, b.customsDeclarationNo, b.importDate, b.goodsValueJpy, b.goodsCount, b.dutyJpy, b.importConsumptionTaxJpy, b.localConsumptionTaxJpy, b.agencyFeeJpy, b.internationalShippingJpy, b.otherCostJpy, b.memo].reduce((sum, value) => sum + (value ? 1 : 0), 0) + (Array.isArray(b.attachments) ? b.attachments.length : 0);
+}
+
+function mergeImportBatchRecord(base = {}, incoming = {}) {
+  const a = normalizeImportBatch(base);
+  const b = normalizeImportBatch(incoming);
+  const primary = importBatchDataScore(b) > importBatchDataScore(a) ? b : a;
+  const secondary = primary === b ? a : b;
+  const attachments = [...(Array.isArray(secondary.attachments) ? secondary.attachments : []), ...(Array.isArray(primary.attachments) ? primary.attachments : [])];
+  const seenAttachments = new Set();
+  const mergedAttachments = attachments.filter((att) => {
+    const key = typeof att === "string" ? att : [att?.name || "", att?.url || "", att?.dataUrl ? String(att.dataUrl).slice(0, 80) : ""].join("|");
+    if (seenAttachments.has(key)) return false;
+    seenAttachments.add(key);
+    return true;
+  });
+  return normalizeImportBatch({
+    ...secondary,
+    ...primary,
+    id: primary.id || secondary.id || primary.importBatchId || secondary.importBatchId || primary.customsBatchId || secondary.customsBatchId || "",
+    importBatchId: primary.importBatchId || primary.id || secondary.importBatchId || secondary.id || "",
+    goodsCount: Number(primary.goodsCount || primary.itemCount || secondary.goodsCount || secondary.itemCount || 0),
+    itemCount: Number(primary.itemCount || primary.goodsCount || secondary.itemCount || secondary.goodsCount || 0),
+    attachments: mergedAttachments
+  });
+}
+
+function dedupeImportBatchesForDisplay(batches = []) {
+  const byKey = new Map();
+  (Array.isArray(batches) ? batches : []).map(normalizeImportBatch).forEach((batch) => {
+    const key = importBatchStableKey(batch);
+    if (!key) return;
+    byKey.set(key, byKey.has(key) ? mergeImportBatchRecord(byKey.get(key), batch) : batch);
+  });
+  return Array.from(byKey.values()).filter((batch) => batch.id || batch.emsNo || batch.customsDeclarationNo);
+}
+
 function applyBatchAllocations(items, batches) {
   const batchMap = Object.fromEntries((batches || []).map((b) => normalizeImportBatch(b)).map((b) => [b.id, b]));
   const grouped = {};
@@ -4196,6 +4245,7 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
   const emptyBatch = { id: "", name: "", emsNo: "", customsDeclarationNo: "", importDate: localDateString(), declaredTotalJpy: "", goodsValueJpy: "", goodsCount: "", grossWeightKg: "", dutyJpy: "", importConsumptionTaxJpy: "", localConsumptionTaxJpy: "", shippingJpy: "", internationalShippingAmount: "", internationalShippingCurrency: "JPY", internationalShippingRateToJpy: "1", internationalShippingJpy: "", customsFeeJpy: "", agencyFeeJpy: "", otherCostJpy: "", attachments: [], attachmentsText: "", memo: "" };
   const [form, setForm] = useState(emptyBatch);
   const [editingId, setEditingId] = useState(null);
+  const [activeBatchId, setActiveBatchId] = useState("");
   const [attachmentType, setAttachmentType] = useState("报关库存表");
   const [selectedLinkItemId, setSelectedLinkItemId] = useState("");
   const attachmentTypes = ["报关库存表", "輸入許可通知書 / 报关单", "Invoice", "Packing List", "EMS凭证", "其他"];
@@ -4242,6 +4292,7 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
         ? list.map((b) => normalizeImportBatch(b).id === next.id ? next : b)
         : [next, ...list];
     });
+    setActiveBatchId(next.id);
     alert(editingId ? "报关批次已更新" : "报关批次已保存");
     reset();
   }
@@ -4257,6 +4308,7 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
       attachmentsText: (batch.attachments || []).filter((x) => typeof x === "string").join("\n")
     });
     setEditingId(batch.id);
+    setActiveBatchId(batch.id);
   }
 
   function fillSampleBatch() {
@@ -4298,6 +4350,7 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
       ].join("\n")
     });
     setEditingId(null);
+    setActiveBatchId("EMS-20260702-001");
   }
 
   function normalizeBatchAttachments(batchForm) {
@@ -4370,17 +4423,20 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
   function deleteBatch(id) {
     if (!window.confirm("确认删除这个报关批次吗？商品不会删除，但会失去批次分摊关系。")) return;
     setBatches((prev) => (Array.isArray(prev) ? prev : batches).filter((b) => normalizeImportBatch(b).id !== id));
+    if (activeBatchId === id) setActiveBatchId("");
   }
 
   function getActiveBatch() {
-    const source = editingId ? normalizedBatches.find((b) => b.id === editingId) : (normalizedBatches[0] || normalizeImportBatch(form));
-    return normalizeImportBatch(source || {});
+    const targetId = editingId || activeBatchId;
+    const source = targetId ? normalizedBatches.find((b) => b.id === targetId) : (normalizedBatches[0] || normalizeImportBatch(form));
+    return normalizeImportBatch(source || normalizedBatches[0] || {});
   }
 
   function linkSelectedProduct(batchId) {
     if (!setItems) return alert("当前账号不能关联商品");
     if (!selectedLinkItemId) return alert("请选择要加入批次的商品");
     setItems((prev) => (prev || []).map((x) => x.id === selectedLinkItemId ? { ...x, customsBatchId: batchId, importBatchId: batchId } : x));
+    setActiveBatchId(batchId);
     setSelectedLinkItemId("");
     alert("商品已关联到 Import Batch");
   }
@@ -4432,6 +4488,7 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
         batchAllocatedAt: new Date().toISOString()
       };
     }));
+    setActiveBatchId(b.id);
     const allocatedAt = new Date().toISOString();
     setBatches((prev) => {
       const list = Array.isArray(prev) && prev.length ? prev : (Array.isArray(batches) ? batches : []);
@@ -4452,14 +4509,7 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
     return { count: arr.length, declared, allocatedCost, costTotal, nonCostTaxTotal, declaredCount };
   }
 
-  const normalizedBatches = [];
-  const seenBatchIds = new Set();
-  (batches || []).map(normalizeImportBatch).forEach((batch) => {
-    const key = batch.id || batch.importBatchId || batch.customsBatchId;
-    if (!key || seenBatchIds.has(key)) return;
-    seenBatchIds.add(key);
-    normalizedBatches.push(batch);
-  });
+  const normalizedBatches = dedupeImportBatchesForDisplay(batches);
   const summary = normalizedBatches.reduce((a, b) => {
     const st = batchStats(b);
     a.batchCount += 1;
