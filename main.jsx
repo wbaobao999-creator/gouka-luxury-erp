@@ -4934,6 +4934,30 @@ function ListingManagement({ items, updateListingItem, editItem, setPreviewImage
     await updateListingItem(item.id, patch, `出品状态变更：${item.status || "未设置"} → ${nextStatus}`);
   }
 
+  function renderStockCompactRow(item) {
+    const t = calcTax(item);
+    const image = item.images?.[0];
+    return (
+      <div key={item.id} className="listing-compact-row">
+        <div className="listing-compact-thumb" onClick={() => image && (setPreviewScale(1), setPreviewImage(image))}>
+          {image ? <img src={image} alt={item.item || item.id} /> : "📦"}
+        </div>
+        <div className="listing-compact-main">
+          <b>{item.brand || "—"} {item.item || "未识别商品"}</b>
+          <span>{item.id}</span>
+          <small>成本 {jpy(t.costJpy)} · 平台 {item.platform || "未设置"}</small>
+        </div>
+        <div className="listing-compact-actions">
+          <button className="ghost" onClick={() => quickSetPlatform(item, "NBAA")}>NBAA</button>
+          <button className="ghost" onClick={() => quickSetPlatform(item, "OBA")}>OBA</button>
+          <button className="ghost" onClick={() => quickSetPlatform(item, "ECO Ring")}>ECO</button>
+          <button className="primary" onClick={() => moveStatus(item, "待出品")}>待出品</button>
+          <button className="edit" onClick={() => editItem(item)}>编辑</button>
+        </div>
+      </div>
+    );
+  }
+
   const counts = kanbanStatuses.reduce((a, st) => ({ ...a, [st]: itemsByStatus(st).length }), {});
 
   return (
@@ -4969,6 +4993,12 @@ function ListingManagement({ items, updateListingItem, editItem, setPreviewImage
               <b>{idx + 1}. {status}</b>
               <span className="pill">{itemsByStatus(status).length} 件</span>
             </div>
+            {status === "已入库" ? (
+              <div className="listing-compact-list">
+                {itemsByStatus(status).map((item) => renderStockCompactRow(item))}
+                {!itemsByStatus(status).length && <p className="note">暂无商品</p>}
+              </div>
+            ) : (
             <div style={{display:"flex", flexDirection:"column", gap:"10px"}}>
               {itemsByStatus(status).map((item) => {
                 const t = calcTax(item);
@@ -5026,6 +5056,7 @@ function ListingManagement({ items, updateListingItem, editItem, setPreviewImage
               })}
               {!itemsByStatus(status).length && <p className="note">暂无商品</p>}
             </div>
+            )}
           </div>
         ))}
       </div>
