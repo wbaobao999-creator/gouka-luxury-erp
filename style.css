@@ -1024,3 +1024,17 @@ main { min-width: 0; max-width: 100%; overflow-x: hidden; }
 .batch-review-item.high{border-color:#fecaca;}
 .batch-review-item.medium{border-color:#fed7aa;}
 @media(max-width:900px){.batch-review-list{grid-template-columns:1fr;}}
+
+
+.product-record-status-panel{margin-top:12px;border:1px solid #e1e7ef;border-radius:8px;background:#f8fafc;padding:12px;}
+.product-record-status-panel h3{margin:0 0 10px;font-size:15px;color:#172033;}
+.product-record-status-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;}
+.product-record-status-item{border:1px solid #e4e9f0;border-radius:7px;background:#fff;padding:9px 10px;display:grid;gap:4px;min-height:64px;}
+.product-record-status-item span{font-size:12px;color:#667085;}
+.product-record-status-item b{font-size:13px;color:#172033;line-height:1.35;word-break:break-word;}
+.product-record-status-item.ok{border-color:#bbf7d0;background:#f0fdf4;}
+.product-record-status-item.warn{border-color:#fed7aa;background:#fff7ed;}
+.product-record-status-item.import{border-color:#bfdbfe;background:#eff6ff;}
+.product-record-status-item.auction{border-color:#bbf7d0;background:#f0fdf4;}
+@media(max-width:900px){.product-record-status-grid{grid-template-columns:repeat(2,minmax(0,1fr));}}
+@media(max-width:620px){.product-record-status-grid{grid-template-columns:1fr;}}
