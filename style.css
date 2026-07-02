@@ -1038,3 +1038,105 @@ main { min-width: 0; max-width: 100%; overflow-x: hidden; }
 .product-record-status-item.auction{border-color:#bbf7d0;background:#f0fdf4;}
 @media(max-width:900px){.product-record-status-grid{grid-template-columns:repeat(2,minmax(0,1fr));}}
 @media(max-width:620px){.product-record-status-grid{grid-template-columns:1fr;}}
+
+.inventory-pending {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #f8fafc;
+  border: 1px solid #dbe3ef;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.evidence-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+.evidence-badge.ok { color: #047857; background: #ecfdf5; border: 1px solid #bbf7d0; }
+.evidence-badge.partial { color: #92400e; background: #fffbeb; border: 1px solid #fde68a; }
+.evidence-badge.missing { color: #b91c1c; background: #fef2f2; border: 1px solid #fecaca; }
+
+.listing-column-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.listing-column-head b {
+  display: block;
+  color: #0f172a;
+  line-height: 1.3;
+}
+.listing-column-head small {
+  display: block;
+  margin-top: 4px;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.sales-check-strip {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(120px, 1fr));
+  gap: 10px;
+  margin: 0 0 16px;
+}
+.sales-check-strip > div {
+  border: 1px solid #dbe3ef;
+  border-radius: 10px;
+  background: #fff;
+  padding: 10px 12px;
+  min-height: 58px;
+}
+.sales-check-strip span {
+  display: block;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 800;
+  margin-bottom: 5px;
+}
+.sales-check-strip b {
+  color: #0f172a;
+  font-size: 18px;
+  font-weight: 900;
+}
+.sales-check-strip .ok { background: #ecfdf5; border-color: #bbf7d0; }
+.sales-check-strip .ok b { color: #047857; }
+.sales-check-strip .warn { background: #fff7ed; border-color: #fed7aa; }
+.sales-check-strip .warn b { color: #c2410c; }
+@media (max-width: 1200px) {
+  .sales-check-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+
+/* Sales Center - Sprint 07 */
+.sales-center .filter-row{margin:16px 0;}
+.sales-center-form{border:1px solid var(--line);border-radius:8px;background:#fff;margin:16px 0;padding:16px;}
+.sales-form-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;}
+.sales-form-head h3{margin:0;font-size:18px;}
+.sales-draft-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;align-items:start;}
+.sales-draft-grid label{display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:700;color:#13233a;}
+.sales-draft-grid input,.sales-draft-grid select,.sales-draft-grid textarea{width:100%;min-height:38px;border:1px solid var(--line);border-radius:6px;padding:8px 10px;background:#fff;font:inherit;box-sizing:border-box;}
+.sales-draft-grid textarea{min-height:82px;resize:vertical;}
+.sales-draft-grid .span-2{grid-column:span 2;}
+.sales-draft-grid .span-3{grid-column:1 / -1;}
+.sales-derived{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;background:#f8fafc;border:1px solid var(--line);border-radius:8px;padding:10px;}
+.sales-derived div,.sales-detail-grid div{border:1px solid var(--line);border-radius:7px;background:#fff;padding:10px;}
+.sales-derived span,.sales-detail-grid span{display:block;color:#64748b;font-size:12px;margin-bottom:4px;}
+.sales-derived b,.sales-detail-grid b{font-size:16px;color:#07172f;}
+.sales-detail-modal{max-width:860px;}
+.sales-detail-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:12px;}
+@media (max-width:1200px){.sales-draft-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.sales-derived{grid-template-columns:repeat(3,minmax(0,1fr));}.sales-detail-grid{grid-template-columns:repeat(2,minmax(0,1fr));}}
+@media (max-width:760px){.sales-draft-grid,.sales-derived,.sales-detail-grid{grid-template-columns:1fr;}.sales-draft-grid .span-2,.sales-draft-grid .span-3{grid-column:auto;}}
