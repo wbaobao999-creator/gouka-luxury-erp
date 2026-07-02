@@ -317,6 +317,55 @@ function loadCustomsBatches() {
   }
 }
 
+function getItemBatchIdForRecovery(item = {}) {
+  return item.importBatchId || item.customsBatchId || item.customs_batch_text || item.customsBatchText || "";
+}
+
+function buildRecoveredImportBatchFromItems(batchId, linkedItems = []) {
+  const first = linkedItems[0] || {};
+  const declaredTotal = linkedItems.reduce((sum, x) => sum + Number(calcTax(x).declaredJpy || getDeclaredJpyForAllocation(x) || 0), 0);
+  const dutyTotal = linkedItems.reduce((sum, x) => sum + Number(x.allocatedDutyJpy || x.batchAllocatedDutyJpy || x.dutyJpy || 0), 0);
+  const agentFeeTotal = linkedItems.reduce((sum, x) => sum + Number(x.allocatedAgentFeeJpy || x.batchAllocatedCustomsFeeJpy || x.customsFeeJpy || 0), 0);
+  const shippingTotal = linkedItems.reduce((sum, x) => sum + Number(x.allocatedInternationalShippingJpy || x.batchAllocatedShippingJpy || x.shippingJpy || 0), 0);
+  const otherTotal = linkedItems.reduce((sum, x) => sum + Number(x.allocatedOtherImportCostJpy || x.batchAllocatedOtherCostJpy || x.otherImportCostJpy || 0), 0);
+  const taxCreditTotal = linkedItems.reduce((sum, x) => sum + Number(x.importTaxCreditJpy || x.batchAllocatedImportTaxJpy || x.importConsumptionTaxJpy || x.customsConsumptionTaxJpy || 0), 0);
+  return normalizeImportBatch({
+    id: batchId,
+    name: batchId + " / 自动恢复批次",
+    status: "待确认",
+    emsNo: first.emsNo || first.emsTrackingNo || first.shippingNo || "",
+    customsDeclarationNo: first.customsDeclarationNo || first.declarationNo || first.customsNo || "",
+    importDate: first.customsDate || first.customsDeclarationDate || first.customsBatchDate || first.importDate || "",
+    goodsCount: linkedItems.length,
+    itemCount: linkedItems.length,
+    goodsValueJpy: Math.round(declaredTotal),
+    declaredTotalJpy: Math.round(declaredTotal),
+    dutyJpy: Math.round(dutyTotal),
+    agencyFeeJpy: Math.round(agentFeeTotal),
+    customsFeeJpy: Math.round(agentFeeTotal),
+    internationalShippingJpy: Math.round(shippingTotal),
+    shippingJpy: Math.round(shippingTotal),
+    otherCostJpy: Math.round(otherTotal),
+    importConsumptionTaxJpy: Math.round(taxCreditTotal),
+    localConsumptionTaxJpy: 0,
+    memo: "系统根据商品 Product Record 自动恢复。请核对原始报关单后补充完整批次资料。"
+  });
+}
+
+function mergeRecoveredImportBatches(existingBatches = [], items = []) {
+  const list = (Array.isArray(existingBatches) ? existingBatches : []).map(normalizeImportBatch).filter((b) => b.id);
+  const existingIds = new Set(list.map((b) => b.id));
+  const groups = {};
+  (Array.isArray(items) ? items : []).forEach((item) => {
+    const id = getItemBatchIdForRecovery(item);
+    if (!id || existingIds.has(id)) return;
+    if (!groups[id]) groups[id] = [];
+    groups[id].push(item);
+  });
+  const recovered = Object.entries(groups).map(([id, linked]) => buildRecoveredImportBatchFromItems(id, linked));
+  return recovered.length ? [...list, ...recovered] : list;
+}
+
 function makeCustomsBatchId(batches) {
   const d = new Date();
   const ym = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}`;
@@ -1620,6 +1669,13 @@ function App() {
   }, [customsBatches]);
 
   React.useEffect(() => {
+    const recoveredCustomsBatches = mergeRecoveredImportBatches(customsBatches, items);
+    if (recoveredCustomsBatches.length !== (Array.isArray(customsBatches) ? customsBatches.length : 0)) {
+      setCustomsBatches(recoveredCustomsBatches);
+    }
+  }, [items]);
+
+  React.useEffect(() => {
     let cancelled = false;
     hydrateItemsWithImages(items).then((hydrated) => {
       if (cancelled) return;
@@ -1644,7 +1700,22 @@ function App() {
           setSyncStatusText("云端待机");
           return;
         }
-        const nextItems = cloudItems.map(fromCloudItem);
+        const localItemsByIdForAutoCloudMerge = Object.fromEntries((items || []).map((x) => [x.id, x]));
+        const nextItems = cloudItems.map((raw) => {
+          const cloudItem = fromCloudItem(raw);
+          const localItem = localItemsByIdForAutoCloudMerge[cloudItem.id] || {};
+          return normalizeItem({
+            ...localItem,
+            ...cloudItem,
+            customsBatchId: cloudItem.customsBatchId || localItem.customsBatchId || "",
+            importBatchId: cloudItem.importBatchId || localItem.importBatchId || cloudItem.customsBatchId || localItem.customsBatchId || "",
+            allocatedDutyJpy: cloudItem.allocatedDutyJpy || localItem.allocatedDutyJpy || localItem.batchAllocatedDutyJpy || 0,
+            allocatedAgentFeeJpy: cloudItem.allocatedAgentFeeJpy || localItem.allocatedAgentFeeJpy || localItem.batchAllocatedCustomsFeeJpy || 0,
+            allocatedInternationalShippingJpy: cloudItem.allocatedInternationalShippingJpy || localItem.allocatedInternationalShippingJpy || localItem.batchAllocatedShippingJpy || 0,
+            allocatedOtherImportCostJpy: cloudItem.allocatedOtherImportCostJpy || localItem.allocatedOtherImportCostJpy || localItem.batchAllocatedOtherCostJpy || 0,
+            importTaxCreditJpy: cloudItem.importTaxCreditJpy || localItem.importTaxCreditJpy || localItem.batchAllocatedImportTaxJpy || 0
+          });
+        });
         setItems(nextItems);
         setSyncStatusText(`已读取云端 ${nextItems.length} 件`);
       } catch (e) {
@@ -1819,7 +1890,7 @@ function App() {
       source: x.source || "",
       supplier_address: x.address || "",
       id_check: x.idCheck || "",
-      customs_batch_text: x.customsBatchId || "",
+      customs_batch_text: x.importBatchId || x.customsBatchId || "",
       platform: x.platform || "",
       status: x.status || "",
       memo: memoForCloud(x),
@@ -1862,6 +1933,12 @@ function App() {
       address: x.supplier_address || "",
       idCheck: x.id_check || "",
       customsBatchId: x.customs_batch_text || "",
+      importBatchId: x.import_batch_id || x.customs_batch_text || "",
+      allocatedDutyJpy: x.allocated_duty_jpy || x.batch_allocated_duty_jpy || 0,
+      allocatedAgentFeeJpy: x.allocated_agent_fee_jpy || x.batch_allocated_customs_fee_jpy || 0,
+      allocatedInternationalShippingJpy: x.allocated_international_shipping_jpy || x.batch_allocated_shipping_jpy || 0,
+      allocatedOtherImportCostJpy: x.allocated_other_import_cost_jpy || x.batch_allocated_other_cost_jpy || 0,
+      importTaxCreditJpy: x.import_tax_credit_jpy || x.batch_allocated_import_tax_jpy || 0,
       platform: x.platform || "",
       status: x.status || "已入库",
       memo: x.memo || "",
@@ -1895,7 +1972,22 @@ function App() {
     try {
       setSyncStatusText("正在读取云端…");
       const cloudItems = await getCloudItems();
-      const nextItems = cloudItems.map(fromCloudItem);
+      const localItemsByIdForCloudMerge = Object.fromEntries((items || []).map((x) => [x.id, x]));
+      const nextItems = cloudItems.map((raw) => {
+        const cloudItem = fromCloudItem(raw);
+        const localItem = localItemsByIdForCloudMerge[cloudItem.id] || {};
+        return normalizeItem({
+          ...localItem,
+          ...cloudItem,
+          customsBatchId: cloudItem.customsBatchId || localItem.customsBatchId || "",
+          importBatchId: cloudItem.importBatchId || localItem.importBatchId || cloudItem.customsBatchId || localItem.customsBatchId || "",
+          allocatedDutyJpy: cloudItem.allocatedDutyJpy || localItem.allocatedDutyJpy || localItem.batchAllocatedDutyJpy || 0,
+          allocatedAgentFeeJpy: cloudItem.allocatedAgentFeeJpy || localItem.allocatedAgentFeeJpy || localItem.batchAllocatedCustomsFeeJpy || 0,
+          allocatedInternationalShippingJpy: cloudItem.allocatedInternationalShippingJpy || localItem.allocatedInternationalShippingJpy || localItem.batchAllocatedShippingJpy || 0,
+          allocatedOtherImportCostJpy: cloudItem.allocatedOtherImportCostJpy || localItem.allocatedOtherImportCostJpy || localItem.batchAllocatedOtherCostJpy || 0,
+          importTaxCreditJpy: cloudItem.importTaxCreditJpy || localItem.importTaxCreditJpy || localItem.batchAllocatedImportTaxJpy || 0
+        });
+      });
       if (!window.confirm(`从云端读取 ${nextItems.length} 件商品，并覆盖当前浏览器库存吗？`)) return;
       setItems(nextItems);
       setSyncStatusText(`已读取云端 ${nextItems.length} 件`);
