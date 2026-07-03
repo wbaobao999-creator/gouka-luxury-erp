@@ -5617,7 +5617,12 @@ function SalesReport({ items, updateListingItem, downloadCSV }) {
 
   const salesRows = items
     .map((item) => ({ item, record: getSalesRecordFromProduct(item), sales: calcSalesBreakdown(item) }))
-    .filter((row) => Number(row.record.salePriceTaxIncludedJpy || 0) > 0 || isSoldStatus(row.item.status) || row.item.salesRecord || row.item.soldDate);
+    .filter((row) => {
+      const recordSale = Number(row.record.salePriceTaxIncludedJpy || 0);
+      const oldSoldPrice = Number(row.item.soldPriceJpy || 0);
+      const explicitSalesRecord = row.item.salesRecord && recordSale > 0;
+      return recordSale > 0 || oldSoldPrice > 0 || explicitSalesRecord;
+    });
 
   const filteredSalesRows = salesRows.filter(({ item, record }) => {
     const q = salesQuery.toLowerCase();
