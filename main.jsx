@@ -5752,6 +5752,29 @@ function SalesReport({ items, updateListingItem, downloadCSV }) {
   const missingDeposit = filteredSalesRows.filter((x) => !salesIsDeposited(x.item, x.record)).length;
   const completeSalesRecords = filteredSalesRows.filter((x) => salesRecordQuality(x.item, x.record).ok).length;
   const incompleteSalesRecords = filteredSalesRows.length - completeSalesRecords;
+  const salesPlatformSummary = Object.values(filteredSalesRows.reduce((acc, row) => {
+    const platform = row.record.platform || "未设置平台";
+    if (!acc[platform]) acc[platform] = { platform, count: 0, sale: 0, revenue: 0, outputTax: 0, profit: 0, deposit: 0, pending: 0 };
+    const bucket = acc[platform];
+    bucket.count += 1;
+    bucket.sale += Number(row.record.salePriceTaxIncludedJpy || 0);
+    bucket.revenue += Number(row.record.saleRevenueExTaxJpy || 0);
+    bucket.outputTax += Number(row.record.outputConsumptionTaxJpy || 0);
+    bucket.profit += Number(row.record.actualProfitJpy || 0);
+    bucket.deposit += salesActualDepositJpy(row.item, row.record);
+    bucket.pending += Math.max(0, salesExpectedDepositJpy(row.record) - salesActualDepositJpy(row.item, row.record));
+    return acc;
+  }, {})).sort((a, b) => b.revenue - a.revenue);
+  const platformSummaryRows = salesPlatformSummary.map((x) => [
+    x.platform,
+    x.count + " 件",
+    jpy(x.sale),
+    jpy(x.revenue),
+    jpy(x.outputTax),
+    moneyCell(x.profit),
+    jpy(x.deposit),
+    x.pending ? <span className="money-negative">{jpy(x.pending)}</span> : jpy(0)
+  ]);
 
   return (
     <div className="panel sales-center">
@@ -5773,6 +5796,14 @@ function SalesReport({ items, updateListingItem, downloadCSV }) {
         <div className={missingDeposit ? "warn" : "ok"}><span>未回款件数</span><b>{missingDeposit} 件</b></div>
         <div className={incompleteSalesRecords ? "warn" : "ok"}><span>资料需补充</span><b>{incompleteSalesRecords} 件</b></div>
         <div><span>利润率</span><b>{pct(totalRevenue ? totalProfit / totalRevenue * 100 : 0)}</b></div>
+      </div>
+
+      <div className="sales-platform-summary">
+        <div className="sales-section-head">
+          <h3>平台汇总</h3>
+          <span>按当前筛选自动汇总</span>
+        </div>
+        <Table headers={["平台", "件数", "售价（含税）", "销售收入（未税）", "销项消费税", "实际利润", "已回款", "待回款"]} rows={platformSummaryRows} />
       </div>
 
       <div className="sales-center-form">
