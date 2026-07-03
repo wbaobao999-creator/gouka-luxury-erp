@@ -5582,6 +5582,7 @@ function ListingManagement({ items, updateListingItem, editItem, setPreviewImage
 function SalesReport({ items, updateListingItem, downloadCSV }) {
   const [salesQuery, setSalesQuery] = useState("");
   const [salesMonth, setSalesMonth] = useState("");
+  const [salesPaymentFilter, setSalesPaymentFilter] = useState("全部");
   const [editingSalesId, setEditingSalesId] = useState(null);
   const [salesDraft, setSalesDraft] = useState(null);
   const [detailSales, setDetailSales] = useState(null);
@@ -5628,12 +5629,26 @@ function SalesReport({ items, updateListingItem, downloadCSV }) {
   const saleCandidateItems = items.filter((item) => !salesRecordProductIds.has(item.id));
   const draftProductOptions = editingSalesId === "new" ? saleCandidateItems : items;
 
+  function salesActualDepositJpy(item, record) {
+    return Number(item.salesRecord?.finalDepositJpy || item.finalReceiptJpy || item.netReceiptJpy || 0);
+  }
+
+  function salesIsDeposited(item, record) {
+    return salesActualDepositJpy(item, record) > 0 || !!record.depositDate;
+  }
+
+  function salesExpectedDepositJpy(record) {
+    return Number(record.finalDepositJpy || 0);
+  }
+
   const filteredSalesRows = salesRows.filter(({ item, record }) => {
     const q = salesQuery.toLowerCase();
     const text = [record.salesNo, item.id, item.brand, item.item, record.platform, record.buyerName, record.memo, item.soldMemo].join(" ").toLowerCase();
     const matchText = !q || text.includes(q);
     const matchMonth = !salesMonth || String(record.saleDate || "").startsWith(salesMonth);
-    return matchText && matchMonth;
+    const deposited = salesIsDeposited(item, record);
+    const matchDeposit = salesPaymentFilter === "全部" || (salesPaymentFilter === "已回款" ? deposited : !deposited);
+    return matchText && matchMonth && matchDeposit;
   });
 
   const draftPreview = salesDraft ? getSalesRecordFromProduct({ ...selectedDraftItem(), salesRecord: salesDraft, soldPriceJpy: salesDraft.salePriceTaxIncludedJpy }) : null;
@@ -5653,61 +5668,72 @@ function SalesReport({ items, updateListingItem, downloadCSV }) {
   const headers = ["销售编号", "商品图片", "商品编号", "品牌", "商品名", "销售日期", "平台", "售价（含税）", "销售收入（未税）", "销项消费税", "库存成本", "实际利润", "回款状态", "销售状态", "操作"];
   const csvHeaders = ["销售编号", "商品编号", "品牌", "商品名", "销售日期", "平台", "买家", "联系方式", "售价（含税）", "销售收入（未税）", "销项消费税", "平台手续费", "手续费消费税", "发货费", "退款", "调整金额", "最终到账", "到账日期", "支付方式", "库存成本", "实际利润", "利润率", "回款状态", "销售状态", "备注"];
 
-  const rows = filteredSalesRows.map(({ item, record }) => [
-    record.salesNo,
-    <ProductThumb item={item} />,
-    item.id,
-    item.brand,
-    productNameCell(item.item),
-    record.saleDate || "—",
-    record.platform || "—",
-    jpy(record.salePriceTaxIncludedJpy),
-    jpy(record.saleRevenueExTaxJpy),
-    jpy(record.outputConsumptionTaxJpy),
-    jpy(record.inventoryCostJpy),
-    moneyCell(record.actualProfitJpy),
-    <span className={record.finalDepositJpy || record.depositDate ? "status ok" : "status warn"}>{record.finalDepositJpy || record.depositDate ? "已回款" : "未回款"}</span>,
-    <span className="status">{record.salesStatus}</span>,
-    <div className="table-actions">
-      <button onClick={() => setDetailSales({ item, record })}>详情</button>
-      <button className="edit" onClick={() => { setEditingSalesId(item.id); setSalesDraft(makeDraft(item)); }}>编辑</button>
-    </div>
-  ]);
+  const rows = filteredSalesRows.map(({ item, record }) => {
+    const deposited = salesIsDeposited(item, record);
+    const actualDeposit = salesActualDepositJpy(item, record);
+    const expectedDeposit = salesExpectedDepositJpy(record);
+    return [
+      record.salesNo,
+      <ProductThumb item={item} />,
+      item.id,
+      item.brand,
+      productNameCell(item.item),
+      record.saleDate || "—",
+      record.platform || "—",
+      jpy(record.salePriceTaxIncludedJpy),
+      jpy(record.saleRevenueExTaxJpy),
+      jpy(record.outputConsumptionTaxJpy),
+      jpy(record.inventoryCostJpy),
+      moneyCell(record.actualProfitJpy),
+      <span className={deposited ? "status ok" : "status warn"}>{deposited ? "已回款" : "未回款"}</span>,
+      <span className="status">{record.salesStatus}</span>,
+      <div className="table-actions">
+        <button onClick={() => setDetailSales({ item, record, actualDeposit, expectedDeposit })}>详情</button>
+        <button className="edit" onClick={() => { setEditingSalesId(item.id); setSalesDraft(makeDraft(item)); }}>编辑</button>
+      </div>
+    ];
+  });
 
-  const csvRows = filteredSalesRows.map(({ item, record }) => [
-    record.salesNo,
-    item.id,
-    item.brand,
-    item.item,
-    record.saleDate || "",
-    record.platform || "",
-    record.buyerName || "",
-    record.buyerContact || "",
-    Math.round(record.salePriceTaxIncludedJpy || 0),
-    Math.round(record.saleRevenueExTaxJpy || 0),
-    Math.round(record.outputConsumptionTaxJpy || 0),
-    Math.round(record.platformFeeJpy || 0),
-    Math.round(record.platformFeeTaxJpy || 0),
-    Math.round(record.shippingFeeJpy || 0),
-    Math.round(record.refundJpy || 0),
-    Math.round(record.adjustmentJpy || 0),
-    Math.round(record.finalDepositJpy || 0),
-    record.depositDate || "",
-    record.paymentMethod || "",
-    Math.round(record.inventoryCostJpy || 0),
-    Math.round(record.actualProfitJpy || 0),
-    pct(record.margin || 0),
-    record.finalDepositJpy || record.depositDate ? "已回款" : "未回款",
-    record.salesStatus || "",
-    stripSalesRecordMemo(record.memo || "")
-  ]);
+  const csvRows = filteredSalesRows.map(({ item, record }) => {
+    const deposited = salesIsDeposited(item, record);
+    const actualDeposit = salesActualDepositJpy(item, record);
+    return [
+      record.salesNo,
+      item.id,
+      item.brand,
+      item.item,
+      record.saleDate || "",
+      record.platform || "",
+      record.buyerName || "",
+      record.buyerContact || "",
+      Math.round(record.salePriceTaxIncludedJpy || 0),
+      Math.round(record.saleRevenueExTaxJpy || 0),
+      Math.round(record.outputConsumptionTaxJpy || 0),
+      Math.round(record.platformFeeJpy || 0),
+      Math.round(record.platformFeeTaxJpy || 0),
+      Math.round(record.shippingFeeJpy || 0),
+      Math.round(record.refundJpy || 0),
+      Math.round(record.adjustmentJpy || 0),
+      Math.round(actualDeposit || 0),
+      record.depositDate || "",
+      record.paymentMethod || "",
+      Math.round(record.inventoryCostJpy || 0),
+      Math.round(record.actualProfitJpy || 0),
+      pct(record.margin || 0),
+      deposited ? "已回款" : "未回款",
+      record.salesStatus || "",
+      stripSalesRecordMemo(record.memo || "")
+    ];
+  });
 
   const totalSale = filteredSalesRows.reduce((a, x) => a + Number(x.record.salePriceTaxIncludedJpy || 0), 0);
   const totalRevenue = filteredSalesRows.reduce((a, x) => a + Number(x.record.saleRevenueExTaxJpy || 0), 0);
   const totalOutputTax = filteredSalesRows.reduce((a, x) => a + Number(x.record.outputConsumptionTaxJpy || 0), 0);
-  const totalDeposit = filteredSalesRows.reduce((a, x) => a + Number(x.record.finalDepositJpy || 0), 0);
+  const expectedDepositTotal = filteredSalesRows.reduce((a, x) => a + salesExpectedDepositJpy(x.record), 0);
+  const totalDeposit = filteredSalesRows.reduce((a, x) => a + salesActualDepositJpy(x.item, x.record), 0);
+  const pendingDeposit = Math.max(0, expectedDepositTotal - totalDeposit);
   const totalProfit = filteredSalesRows.reduce((a, x) => a + Number(x.record.actualProfitJpy || 0), 0);
-  const missingDeposit = filteredSalesRows.filter((x) => !x.record.finalDepositJpy && !x.record.depositDate).length;
+  const missingDeposit = filteredSalesRows.filter((x) => !salesIsDeposited(x.item, x.record)).length;
 
   return (
     <div className="panel sales-center">
@@ -5723,8 +5749,10 @@ function SalesReport({ items, updateListingItem, downloadCSV }) {
 
       <div className="sales-check-strip">
         <div><span>销项消费税</span><b>{jpy(totalOutputTax)}</b></div>
-        <div><span>最终到账</span><b>{jpy(totalDeposit)}</b></div>
-        <div className={missingDeposit ? "warn" : "ok"}><span>未回款</span><b>{missingDeposit} 件</b></div>
+        <div><span>预计到账</span><b>{jpy(expectedDepositTotal)}</b></div>
+        <div><span>已回款</span><b>{jpy(totalDeposit)}</b></div>
+        <div className={pendingDeposit ? "warn" : "ok"}><span>待回款</span><b>{jpy(pendingDeposit)}</b></div>
+        <div className={missingDeposit ? "warn" : "ok"}><span>未回款件数</span><b>{missingDeposit} 件</b></div>
         <div><span>利润率</span><b>{pct(totalRevenue ? totalProfit / totalRevenue * 100 : 0)}</b></div>
       </div>
 
@@ -5775,7 +5803,12 @@ function SalesReport({ items, updateListingItem, downloadCSV }) {
       <div className="filter-row">
         <input placeholder="搜索销售编号 / 商品 / 平台 / 买家" value={salesQuery} onChange={(e) => setSalesQuery(e.target.value)} />
         <input type="month" value={salesMonth} onChange={(e) => setSalesMonth(e.target.value)} />
-        <button onClick={() => { setSalesQuery(""); setSalesMonth(""); }}>清除筛选</button>
+        <select value={salesPaymentFilter} onChange={(e) => setSalesPaymentFilter(e.target.value)}>
+          <option value="全部">全部回款状态</option>
+          <option value="未回款">未回款</option>
+          <option value="已回款">已回款</option>
+        </select>
+        <button onClick={() => { setSalesQuery(""); setSalesMonth(""); setSalesPaymentFilter("全部"); }}>清除筛选</button>
       </div>
 
       <Table headers={headers} rows={rows} />
@@ -5793,7 +5826,8 @@ function SalesReport({ items, updateListingItem, downloadCSV }) {
               <div><span>销售收入（未税）</span><b>{jpy(detailSales.record.saleRevenueExTaxJpy)}</b></div>
               <div><span>销项消费税</span><b>{jpy(detailSales.record.outputConsumptionTaxJpy)}</b></div>
               <div><span>平台手续费</span><b>{jpy(detailSales.record.platformFeeJpy)}</b></div>
-              <div><span>最终到账</span><b>{jpy(detailSales.record.finalDepositJpy)}</b></div>
+              <div><span>预计到账</span><b>{jpy(detailSales.expectedDeposit || detailSales.record.finalDepositJpy)}</b></div>
+              <div><span>实际到账</span><b>{jpy(detailSales.actualDeposit || 0)}</b></div>
               <div><span>实际利润</span><b>{jpy(detailSales.record.actualProfitJpy)}</b></div>
               <div><span>利润率</span><b>{pct(detailSales.record.margin || 0)}</b></div>
               <div><span>销售状态</span><b>{detailSales.record.salesStatus}</b></div>
