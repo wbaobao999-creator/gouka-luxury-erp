@@ -5624,6 +5624,10 @@ function SalesReport({ items, updateListingItem, downloadCSV }) {
       return recordSale > 0 || oldSoldPrice > 0 || explicitSalesRecord;
     });
 
+  const salesRecordProductIds = new Set(salesRows.map((row) => row.item.id));
+  const saleCandidateItems = items.filter((item) => !salesRecordProductIds.has(item.id));
+  const draftProductOptions = editingSalesId === "new" ? saleCandidateItems : items;
+
   const filteredSalesRows = salesRows.filter(({ item, record }) => {
     const q = salesQuery.toLowerCase();
     const text = [record.salesNo, item.id, item.brand, item.item, record.platform, record.buyerName, record.memo, item.soldMemo].join(" ").toLowerCase();
@@ -5708,11 +5712,11 @@ function SalesReport({ items, updateListingItem, downloadCSV }) {
   return (
     <div className="panel sales-center">
       <Toolbar title="销售中心" onDownload={() => downloadCSV([csvHeaders, ...csvRows], "gouka_sales_records.csv")} />
-      <p className="note">销售中心以 Sales Record 管理每笔销售：售价为税込，系统自动拆分未税销售收入和销项消费税，利润不混入消费税。</p>
+      <p className="note">销售中心只显示已登记售价的 Sales Record。库存、入库、出品、发货状态不会自动变成销售；售价为税込，系统自动拆分未税销售收入和销项消费税。</p>
 
       <div className="grid4" style={{marginBottom:"16px"}}>
         <Card icon={<Calculator />} title="销售记录" value={filteredSalesRows.length + " 件"} />
-        <Card icon={<Calculator />} title="售价（含税）" value={jpy(totalSale)} />
+        <Card icon={<Calculator />} title="可登记商品" value={saleCandidateItems.length + " 件"} />
         <Card icon={<Calculator />} title="销售收入（未税）" value={jpy(totalRevenue)} />
         <Card icon={<Calculator />} title="实际利润" value={jpy(totalProfit)} />
       </div>
@@ -5727,11 +5731,16 @@ function SalesReport({ items, updateListingItem, downloadCSV }) {
       <div className="sales-center-form">
         <div className="sales-form-head">
           <h3>{editingSalesId ? "编辑 Sales Record" : "新增 Sales Record"}</h3>
-          <button className="primary" onClick={() => { setEditingSalesId("new"); setSalesDraft(makeDraft(items.find((x) => !isSoldStatus(x.status)) || items[0] || {})); }}>新增销售</button>
+          <button className="primary" onClick={() => {
+            const firstCandidate = saleCandidateItems[0];
+            if (!firstCandidate) return alert("当前没有可新增销售的商品。已有销售金额的商品请使用编辑。");
+            setEditingSalesId("new");
+            setSalesDraft(makeDraft(firstCandidate));
+          }}>新增销售</button>
         </div>
         {salesDraft && (
           <div className="sales-draft-grid">
-            <label>商品<select value={salesDraft.productId} onChange={(e) => setSalesDraft(makeDraft(items.find((x) => x.id === e.target.value) || {}))}>{items.map((x) => <option key={x.id} value={x.id}>{x.id} / {x.brand} {x.item}</option>)}</select></label>
+            <label>商品<select value={salesDraft.productId} onChange={(e) => setSalesDraft(makeDraft(items.find((x) => x.id === e.target.value) || {}))}>{draftProductOptions.map((x) => <option key={x.id} value={x.id}>{x.id} / {x.brand} {x.item}</option>)}</select></label>
             <label>销售编号<input value={salesDraft.salesNo} onChange={(e) => setSalesDraft({ ...salesDraft, salesNo: e.target.value })} /></label>
             <label>销售日期<input type="date" value={salesDraft.saleDate} onChange={(e) => setSalesDraft({ ...salesDraft, saleDate: e.target.value })} /></label>
             <label>平台<select value={salesDraft.platform} onChange={(e) => setSalesDraft({ ...salesDraft, platform: e.target.value })}><option value="">选择平台</option>{platformOptions.map((x) => <option key={x} value={x}>{x}</option>)}</select></label>
