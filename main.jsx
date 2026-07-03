@@ -5583,6 +5583,7 @@ function SalesReport({ items, updateListingItem, downloadCSV }) {
   const [salesQuery, setSalesQuery] = useState("");
   const [salesMonth, setSalesMonth] = useState("");
   const [salesPaymentFilter, setSalesPaymentFilter] = useState("全部");
+  const [salesQualityFilter, setSalesQualityFilter] = useState("全部");
   const [editingSalesId, setEditingSalesId] = useState(null);
   const [salesDraft, setSalesDraft] = useState(null);
   const [detailSales, setDetailSales] = useState(null);
@@ -5641,14 +5642,26 @@ function SalesReport({ items, updateListingItem, downloadCSV }) {
     return Number(record.finalDepositJpy || 0);
   }
 
+  function salesRecordQuality(item, record) {
+    const missing = [];
+    if (!record.saleDate) missing.push("销售日");
+    if (!record.platform) missing.push("平台");
+    if (!record.buyerName) missing.push("买家");
+    if (!record.salePriceTaxIncludedJpy) missing.push("售价");
+    if (!salesIsDeposited(item, record)) missing.push("回款");
+    return { ok: missing.length === 0, missing, label: missing.length === 0 ? "完整" : "需补充" };
+  }
+
   const filteredSalesRows = salesRows.filter(({ item, record }) => {
     const q = salesQuery.toLowerCase();
     const text = [record.salesNo, item.id, item.brand, item.item, record.platform, record.buyerName, record.memo, item.soldMemo].join(" ").toLowerCase();
     const matchText = !q || text.includes(q);
     const matchMonth = !salesMonth || String(record.saleDate || "").startsWith(salesMonth);
     const deposited = salesIsDeposited(item, record);
+    const quality = salesRecordQuality(item, record);
     const matchDeposit = salesPaymentFilter === "全部" || (salesPaymentFilter === "已回款" ? deposited : !deposited);
-    return matchText && matchMonth && matchDeposit;
+    const matchQuality = salesQualityFilter === "全部" || (salesQualityFilter === "完整" ? quality.ok : !quality.ok);
+    return matchText && matchMonth && matchDeposit && matchQuality;
   });
 
   const draftPreview = salesDraft ? getSalesRecordFromProduct({ ...selectedDraftItem(), salesRecord: salesDraft, soldPriceJpy: salesDraft.salePriceTaxIncludedJpy }) : null;
@@ -5665,13 +5678,14 @@ function SalesReport({ items, updateListingItem, downloadCSV }) {
     alert("销售记录已保存。");
   }
 
-  const headers = ["销售编号", "商品图片", "商品编号", "品牌", "商品名", "销售日期", "平台", "售价（含税）", "销售收入（未税）", "销项消费税", "库存成本", "实际利润", "回款状态", "销售状态", "操作"];
-  const csvHeaders = ["销售编号", "商品编号", "品牌", "商品名", "销售日期", "平台", "买家", "联系方式", "售价（含税）", "销售收入（未税）", "销项消费税", "平台手续费", "手续费消费税", "发货费", "退款", "调整金额", "最终到账", "到账日期", "支付方式", "库存成本", "实际利润", "利润率", "回款状态", "销售状态", "备注"];
+  const headers = ["销售编号", "商品图片", "商品编号", "品牌", "商品名", "销售日期", "平台", "售价（含税）", "销售收入（未税）", "销项消费税", "库存成本", "实际利润", "回款状态", "资料状态", "销售状态", "操作"];
+  const csvHeaders = ["销售编号", "商品编号", "品牌", "商品名", "销售日期", "平台", "买家", "联系方式", "售价（含税）", "销售收入（未税）", "销项消费税", "平台手续费", "手续费消费税", "发货费", "退款", "调整金额", "最终到账", "到账日期", "支付方式", "库存成本", "实际利润", "利润率", "回款状态", "资料状态", "缺失项目", "销售状态", "备注"];
 
   const rows = filteredSalesRows.map(({ item, record }) => {
     const deposited = salesIsDeposited(item, record);
     const actualDeposit = salesActualDepositJpy(item, record);
     const expectedDeposit = salesExpectedDepositJpy(record);
+    const quality = salesRecordQuality(item, record);
     return [
       record.salesNo,
       <ProductThumb item={item} />,
@@ -5686,6 +5700,7 @@ function SalesReport({ items, updateListingItem, downloadCSV }) {
       jpy(record.inventoryCostJpy),
       moneyCell(record.actualProfitJpy),
       <span className={deposited ? "status ok" : "status warn"}>{deposited ? "已回款" : "未回款"}</span>,
+      <span className={quality.ok ? "status ok" : "status warn"} title={quality.missing.join(" / ")}>{quality.label}</span>,
       <span className="status">{record.salesStatus}</span>,
       <div className="table-actions">
         <button onClick={() => setDetailSales({ item, record, actualDeposit, expectedDeposit })}>详情</button>
@@ -5697,6 +5712,7 @@ function SalesReport({ items, updateListingItem, downloadCSV }) {
   const csvRows = filteredSalesRows.map(({ item, record }) => {
     const deposited = salesIsDeposited(item, record);
     const actualDeposit = salesActualDepositJpy(item, record);
+    const quality = salesRecordQuality(item, record);
     return [
       record.salesNo,
       item.id,
@@ -5734,6 +5750,8 @@ function SalesReport({ items, updateListingItem, downloadCSV }) {
   const pendingDeposit = Math.max(0, expectedDepositTotal - totalDeposit);
   const totalProfit = filteredSalesRows.reduce((a, x) => a + Number(x.record.actualProfitJpy || 0), 0);
   const missingDeposit = filteredSalesRows.filter((x) => !salesIsDeposited(x.item, x.record)).length;
+  const completeSalesRecords = filteredSalesRows.filter((x) => salesRecordQuality(x.item, x.record).ok).length;
+  const incompleteSalesRecords = filteredSalesRows.length - completeSalesRecords;
 
   return (
     <div className="panel sales-center">
@@ -5753,6 +5771,7 @@ function SalesReport({ items, updateListingItem, downloadCSV }) {
         <div><span>已回款</span><b>{jpy(totalDeposit)}</b></div>
         <div className={pendingDeposit ? "warn" : "ok"}><span>待回款</span><b>{jpy(pendingDeposit)}</b></div>
         <div className={missingDeposit ? "warn" : "ok"}><span>未回款件数</span><b>{missingDeposit} 件</b></div>
+        <div className={incompleteSalesRecords ? "warn" : "ok"}><span>资料需补充</span><b>{incompleteSalesRecords} 件</b></div>
         <div><span>利润率</span><b>{pct(totalRevenue ? totalProfit / totalRevenue * 100 : 0)}</b></div>
       </div>
 
@@ -5808,7 +5827,12 @@ function SalesReport({ items, updateListingItem, downloadCSV }) {
           <option value="未回款">未回款</option>
           <option value="已回款">已回款</option>
         </select>
-        <button onClick={() => { setSalesQuery(""); setSalesMonth(""); setSalesPaymentFilter("全部"); }}>清除筛选</button>
+        <select value={salesQualityFilter} onChange={(e) => setSalesQualityFilter(e.target.value)}>
+          <option value="全部">全部资料状态</option>
+          <option value="需补充">需补充</option>
+          <option value="完整">完整</option>
+        </select>
+        <button onClick={() => { setSalesQuery(""); setSalesMonth(""); setSalesPaymentFilter("全部"); setSalesQualityFilter("全部"); }}>清除筛选</button>
       </div>
 
       <Table headers={headers} rows={rows} />
