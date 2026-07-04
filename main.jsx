@@ -3057,6 +3057,7 @@ function Dashboard({ totals, items, setTab, exportBackup, customsBatches = [] })
 
   const todoCustoms = items.filter((x) => x.status === "报关准备").length;
   const todoListing = items.filter((x) => x.status === "已入库" || x.status === "待出品").length;
+  const missingExpectedPriceCount = activeItems.filter((x) => Number(x.saleJpy || 0) <= 0).length;
   const todoShipping = items.filter((x) => isSoldStatus(x.status) && !String(x.soldMemo || "").includes("発送済")).length;
   const now = new Date();
 
@@ -3136,7 +3137,7 @@ function Dashboard({ totals, items, setTab, exportBackup, customsBatches = [] })
           </div>
         </div>
         <div className="v3-hero-right">
-          <p>预计净利润</p>
+          <p>库存预估差额</p>
           <h2>{jpy(expectedNetProfit)}</h2>
           <span>利润率 {expectedMargin.toFixed(1)}% · 当前库存 {activeStock} 件 · 有图 {withImages} 件</span>
         </div>
@@ -3145,8 +3146,8 @@ function Dashboard({ totals, items, setTab, exportBackup, customsBatches = [] })
       <div className="v3-kpi-grid">
         <div className="v3-kpi blue"><span>💰</span><p>库存总成本</p><h2>{jpy(totals.cost)}</h2><small>采购成本 + 运费关税手续费</small></div>
         <div className="v3-kpi green"><span>🏷️</span><p>预计销售总额</p><h2>{jpy(totals.sale)}</h2><small>库存预计含税销售额</small></div>
-        <div className="v3-kpi orange"><span>📈</span><p>预计净利润</p><h2>{jpy(expectedNetProfit)}</h2><small>已扣附加成本</small></div>
-        <div className="v3-kpi purple"><span>📊</span><p>预计利润率</p><h2>{expectedMargin.toFixed(1)}%</h2><small>管理者判断用</small></div>
+        <div className="v3-kpi orange"><span>📈</span><p>库存预估差额</p><h2>{jpy(expectedNetProfit)}</h2><small>预计销售额 - 库存总成本</small></div>
+        <div className="v3-kpi purple"><span>📊</span><p>预估差额率</p><h2>{expectedMargin.toFixed(1)}%</h2><small>仅供经营预估</small></div>
       </div>
 
       <div className="v3-money-grid">
@@ -3207,6 +3208,7 @@ function Dashboard({ totals, items, setTab, exportBackup, customsBatches = [] })
           <div className="v3-tax-list">
             <div><span>待报关</span><b>{todoCustoms} 件</b></div>
             <div><span>待出品</span><b>{todoListing} 件</b></div>
+            <div><span>未设预计售价</span><b>{missingExpectedPriceCount} 件</b></div>
             <div><span>待发货确认</span><b>{todoShipping} 件</b></div>
             <div><span>库存超30天</span><b>{over30} 件</b></div>
             <div><span>库存超60天</span><b>{over60} 件</b></div>
@@ -5948,7 +5950,7 @@ function PdfExportPanel({ items, totals, exportInventoryPdf, exportLedgerPdf, ex
         <Card icon={<Package />} title="商品记录" value={`${items.length} 件`} />
         <Card icon={<ImagePlus />} title="有图商品" value={`${items.filter(x => x.images?.length).length} 件`} />
         <Card icon={<Calculator />} title="库存总成本" value={jpy(totals.cost)} />
-        <Card icon={<Calculator />} title="预计净利润" value={jpy(totals.profit)} />
+        <Card icon={<Calculator />} title="库存预估差额" value={jpy(totals.profit)} />
       </div>
 
       <div className="formgrid" style={{marginTop:"18px"}}>
@@ -6159,7 +6161,7 @@ function answerAiQuestion(question, items, suppliers, dictionaries) {
   if (!question.trim()) return "你可以问：今天赚了多少钱、库存总成本、哪些货超过90天、哪个品牌最赚钱、哪个供应商最赚钱。";
   if (q.includes("今天") || q.includes("今日")) return [`今日经营：`,`今日新增入库：${s.todayIn.length} 件`,`今日销售额：${jpy(s.todaySale)}`,`今日净利润参考：${jpy(s.todayProfit)}`,`今日售出：${s.todaySold.length} 件`].join("\n");
   if (q.includes("本月") || q.includes("这个月")) return [`本月经营（${s.month}）：`,`本月入库：${s.monthIn.length} 件`,`本月销售额：${jpy(s.monthSale)}`,`本月净利润参考：${jpy(s.monthProfit)}`,`本月售出：${s.monthSold.length} 件`].join("\n");
-  if (q.includes("库存") || q.includes("成本") || q.includes("总成本")) return [`库存概况：`,`当前库存：${s.active.length} 件`,`已售商品：${s.sold.length} 件`,`库存总成本参考：${jpy(s.totalCost)}`,`预计销售总额：${jpy(s.totalSale)}`,`预计净利润参考：${jpy(s.totalProfit)}`].join("\n");
+  if (q.includes("库存") || q.includes("成本") || q.includes("总成本")) return [`库存概况：`,`当前库存：${s.active.length} 件`,`已售商品：${s.sold.length} 件`,`库存总成本参考：${jpy(s.totalCost)}`,`预计销售总额：${jpy(s.totalSale)}`,`库存预估差额参考：${jpy(s.totalProfit)}`].join("\n");
   if (q.includes("90") || q.includes("60") || q.includes("30") || q.includes("压货") || q.includes("超龄")) {
     const list = s.longTerm.slice(0, 8).map((x) => `- ${x.id} ${x.brand} ${x.item} / ${x.purchaseDate}`).join("\n");
     return [`库存预警：`,`超过30天：${s.over30.length} 件`,`超过60天：${s.over60.length} 件`,`超过90天：${s.longTerm.length} 件`, s.longTerm.length ? `\n90天以上前几件：\n${list}` : `目前没有90天以上库存。`].join("\n");
