@@ -85,6 +85,14 @@ inventorySprintStyle.textContent = `
 `;
 document.head.appendChild(inventorySprintStyle);
 
+const addFormSprintStyle = document.createElement("style");
+addFormSprintStyle.textContent = `
+.addform-guide{margin:8px 0 16px;padding:10px 12px;border:1px solid #bfdbfe;background:#eff6ff;border-radius:10px;color:#1e3a8a;font-weight:700}
+.image-box{position:relative;border:1px solid #dbe3ef;border-radius:10px;background:#fff;padding:8px;display:flex;flex-direction:column;gap:8px;align-items:center}
+.image-box img{width:120px;height:120px;object-fit:cover;border-radius:8px;border:1px solid #e5e7eb}
+`;
+document.head.appendChild(addFormSprintStyle);
+
 
 const STORAGE_KEY = "gouka_erp_v2_items";
 const LOGIN_KEY = "gouka_erp_login";
@@ -3464,8 +3472,10 @@ function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, 
       <h2>
         <Plus size={20} /> {editingId ? `编辑商品：${editingId}` : "新增商品"}
       </h2>
+      <p className="note addform-guide">建议按顺序录入：采购基础 → 商品识别 → 成本税费 → 来源台账 → 报关/拍卖 → 图片备注。带金额的字段会实时影响库存成本和预估差额。</p>
 
       <div className="formgrid">
+        <FormSectionTitle title="1. 采购基础" subtitle="先确认采购日期、品类、品牌和商品名，这些会影响库存档案和后续检索。" />
         <Input label="仕入日" type="date" value={form.purchaseDate} onChange={(v) => set("purchaseDate", v)} />
 
         <Select label="品类" value={form.category} onChange={(v) => set("category", v)} options={["バッグ類", "財布・小物類", "時計類", "宝飾品類", "アクセサリー類", "時計", "アパレル", "その他"]} />
@@ -3484,6 +3494,8 @@ function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, 
 
         <Input label="数量 Qty" type="number" value={form.qty} onChange={(v) => set("qty", v)} />
 
+        <FormSectionTitle title="2. 成本与预计售价" subtitle="采购金额、汇率、申报金额、运费和费用会进入实时利润预览。预计销售额可先空着，待办中心会提醒。" />
+
         <Select label="采购币种" value={form.purchaseCurrency || "CNY"} onChange={setPurchaseCurrency} options={CURRENCY_OPTIONS} />
         <Input label={`采购金额 ${form.purchaseCurrency || "CNY"}`} type="number" value={form.purchaseCny} onChange={(v) => set("purchaseCny", v)} />
         <Input label={`${form.purchaseCurrency || "CNY"}→JPY 汇率`} type="number" value={form.purchaseRateToJpy || defaultRateFor(form.purchaseCurrency || "CNY")} onChange={(v) => set("purchaseRateToJpy", v)} />
@@ -3500,6 +3512,8 @@ function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, 
         <Input label="拍卖/平台手续费 JPY" type="number" value={form.platformFeeJpy || ""} onChange={(v) => set("platformFeeJpy", v)} />
         <Input label="其他费用 JPY" type="number" value={form.otherCostJpy || ""} onChange={(v) => set("otherCostJpy", v)} />
 
+        <FormSectionTitle title="3. 来源与古物台账" subtitle="仕入先、地址、本人确认方式会用于古物台账和审计留痕。" />
+
         <SelectWithOther label="仕入先 / 来源" value={form.source} onChange={setSourceFromSupplier} options={sourceOptions} placeholder="选择供应商或输入来源" />
 
         <Input label="供应商地址" value={form.address} onChange={(v) => set("address", v)} placeholder="China / Japan address" />
@@ -3512,10 +3526,12 @@ function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, 
 
         <Select label="所属报关批次" value={form.customsBatchId || ""} onChange={(v) => set("customsBatchId", v)} options={["", ...(customsBatches || []).map((b) => b.id)]} />
 
+        <FormSectionTitle title="4. 报关 / 日本拍卖 / 精算" subtitle="有报关批次或日本拍卖精算时在这里关联，方便后续税务和PDF资料输出。" />
+
         <AuctionSettlementBox form={form} setForm={setForm} />
 
         <div className="full panel" style={{ background: "#f8fafc", padding: "16px" }}>
-          <h3 style={{ marginTop: 0 }}>实时利润预览</h3>
+          <h3 style={{ marginTop: 0 }}>5. 实时成本与预估预览</h3>
           <div className="grid4">
             <Card icon={<Calculator />} title="基础采购成本" value={jpy(preview.baseCostJpy)} />
             <Card icon={<Calculator />} title="附加成本合计" value={jpy(preview.extraCostJpy)} />
@@ -3537,6 +3553,8 @@ function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, 
           </div>
         </div>
 
+        <FormSectionTitle title="6. 销售状态" subtitle="未销售商品可以跳过。状态切换为已售后，再填写销售日期、平台和实际销售额。" />
+
         {isSoldStatus(form.status) && (
           <>
             <Input label="销售日期" type="date" value={form.soldDate || ""} onChange={(v) => set("soldDate", v)} />
@@ -3548,6 +3566,8 @@ function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, 
             </label>
           </>
         )}
+
+        <FormSectionTitle title="7. 图片与备注" subtitle="建议每件商品至少上传正面、细节、瑕疵/编号图，方便库存确认和出品。" />
 
         <label
           className="full"
@@ -3578,7 +3598,7 @@ function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, 
 
       <div className="action-row">
         <button type="button" className="primary" onClick={saveItem}>
-          <Save size={16} /> {editingId ? "保存修改" : "添加到库存"}
+          <Save size={16} /> {editingId ? "保存修改" : "保存并加入库存"}
         </button>
         {editingId && (
           <button type="button" className="ghost" onClick={resetForm}>
