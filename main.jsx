@@ -101,6 +101,9 @@ const DICTIONARY_KEY = "gouka_erp_v5_dictionaries";
 const SUPPLIER_KEY = "gouka_erp_v51_suppliers";
 const DELETE_LOG_KEY = "gouka_erp_v663_delete_logs";
 const CUSTOMS_BATCH_KEY = "gouka_erp_v7_customs_batches";
+const GLOBAL_STATE_PRODUCT_NO = "__GOUKA_ERP_GLOBAL_STATE__";
+const GLOBAL_STATE_MEMO_PREFIX = "__GOUKA_ERP_GLOBAL_STATE_JSON__";
+const GLOBAL_STATE_EVENT = "gouka-cloud-state-loaded";
 const USERS = {
   gouka: { password: "931205", role: "owner", name: "管理者账号" },
   staff: { password: "123456", role: "staff", name: "员工账号" },
@@ -1847,6 +1850,35 @@ function RoleNotice({ role }) {
   return <div className="role-notice">{text}</div>;
 }
 
+
+function isGlobalStateCloudRow(row) {
+  return String(row?.product_no || row?.productNo || row?.id || "") === GLOBAL_STATE_PRODUCT_NO;
+}
+function readCashflowFromLocal() {
+  try { const raw = localStorage.getItem(CASHFLOW_KEY); return raw ? JSON.parse(raw) : null; } catch { return null; }
+}
+function extractGlobalStateFromCloudItems(cloudItems) {
+  const row = (cloudItems || []).find(isGlobalStateCloudRow);
+  if (!row) return null;
+  const memo = String(row.memo || row.note || row.description || "");
+  if (!memo.startsWith(GLOBAL_STATE_MEMO_PREFIX)) return null;
+  try { return JSON.parse(memo.slice(GLOBAL_STATE_MEMO_PREFIX.length)); } catch (e) { console.warn("Global cloud state parse failed", e); return null; }
+}
+function buildGlobalStateCloudRow({ dictionaries, suppliers, deleteLogs, customsBatches, cashflow }) {
+  const payload = { version: 1, savedAt: new Date().toISOString(), dictionaries: Array.isArray(dictionaries) ? dictionaries : [], suppliers: Array.isArray(suppliers) ? suppliers : [], deleteLogs: Array.isArray(deleteLogs) ? deleteLogs : [], customsBatches: Array.isArray(customsBatches) ? customsBatches : [], cashflow: cashflow || readCashflowFromLocal() };
+  return { id: GLOBAL_STATE_PRODUCT_NO, product_no: GLOBAL_STATE_PRODUCT_NO, product_name: "GOUKA ERP Global Sync Data", category: "system", brand: "GOUKA ERP", status: "system", qty: 0, purchase_date: "", sale_date: "", purchase_jpy: 0, sale_jpy: 0, memo: GLOBAL_STATE_MEMO_PREFIX + JSON.stringify(payload), images: [] };
+}
+function applyGlobalStateToLocalStorage(globalState) {
+  if (!globalState || typeof globalState !== "object") return null;
+  if (Array.isArray(globalState.dictionaries)) safeLocalSet(DICTIONARY_KEY, globalState.dictionaries, "云端字典资料");
+  if (Array.isArray(globalState.suppliers)) safeLocalSet(SUPPLIER_KEY, globalState.suppliers, "云端供应商资料");
+  if (Array.isArray(globalState.deleteLogs)) safeLocalSet(DELETE_LOG_KEY, globalState.deleteLogs, "云端删除日志");
+  if (Array.isArray(globalState.customsBatches)) safeLocalSet(CUSTOMS_BATCH_KEY, globalState.customsBatches, "云端报关批次");
+  if (globalState.cashflow) localStorage.setItem(CASHFLOW_KEY, JSON.stringify(globalState.cashflow));
+  window.dispatchEvent(new CustomEvent(GLOBAL_STATE_EVENT, { detail: globalState }));
+  return globalState;
+}
+
 function App() {
   const [session, setSession] = useState(() => {
     try {
@@ -1871,6 +1903,8 @@ function App() {
   const [previewImage, setPreviewImage] = useState(null);
   const [previewScale, setPreviewScale] = useState(1);
   const [syncStatusText, setSyncStatusText] = useState("云端待机");
+  const [globalSyncNonce, setGlobalSyncNonce] = useState(0);
+  const cloudGlobalHydratedRef = React.useRef(false);
 
   React.useEffect(() => {
     safeLocalSet(STORAGE_KEY, stripImagesForStorage(items), "商品文字数据");
@@ -1921,11 +1955,22 @@ function App() {
         setSyncStatusText("正在读取云端…");
         const cloudItems = await getCloudItems();
         if (cancelled || !Array.isArray(cloudItems) || cloudItems.length === 0) {
+          cloudGlobalHydratedRef.current = true;
           setSyncStatusText("云端待机");
           return;
         }
+        const globalState = extractGlobalStateFromCloudItems(cloudItems);
+        if (globalState) {
+          applyGlobalStateToLocalStorage(globalState);
+          if (Array.isArray(globalState.dictionaries)) setDictionaries(globalState.dictionaries);
+          if (Array.isArray(globalState.suppliers)) setSuppliers(globalState.suppliers);
+          if (Array.isArray(globalState.deleteLogs)) setDeleteLogs(globalState.deleteLogs);
+          if (Array.isArray(globalState.customsBatches)) setCustomsBatches(globalState.customsBatches);
+        }
+        cloudGlobalHydratedRef.current = true;
+        const productCloudItems = cloudItems.filter((raw) => !isGlobalStateCloudRow(raw));
         const localItemsByIdForAutoCloudMerge = Object.fromEntries((items || []).map((x) => [x.id, x]));
-        const nextItems = cloudItems.map((raw) => {
+        const nextItems = productCloudItems.map((raw) => {
           const cloudItem = fromCloudItem(raw);
           const localItem = localItemsByIdForAutoCloudMerge[cloudItem.id] || {};
           return normalizeItem({
@@ -1941,7 +1986,7 @@ function App() {
           });
         });
         setItems(nextItems);
-        setSyncStatusText(`已读取云端 ${nextItems.length} 件`);
+        setSyncStatusText(globalState ? "已读取云端 " + nextItems.length + " 件 · 全局资料已同步" : "已读取云端 " + nextItems.length + " 件");
       } catch (e) {
         console.error("Auto cloud load failed", e);
         setSyncStatusText("云端读取失败");
@@ -1955,6 +2000,19 @@ function App() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoggedIn]);
+
+  React.useEffect(() => {
+    if (!isLoggedIn || !cloudGlobalHydratedRef.current) return;
+    const timer = setTimeout(async () => {
+      try {
+        await upsertCloudItem(buildGlobalStateCloudRow({ dictionaries, suppliers, deleteLogs, customsBatches, cashflow: readCashflowFromLocal() }));
+        setSyncStatusText("全局资料已同步");
+      } catch (e) { console.error("Global cloud sync failed", e); }
+    }, 900);
+    return () => clearTimeout(timer);
+  }, [isLoggedIn, dictionaries, suppliers, deleteLogs, customsBatches, globalSyncNonce]);
+
+  function requestGlobalCloudSave() { setGlobalSyncNonce((x) => x + 1); }
 
   if (!isLoggedIn) {
     return <LoginPage onLogin={(nextSession) => { setSession(nextSession); setIsLoggedIn(true); }} />;
@@ -2058,6 +2116,7 @@ function App() {
           if (Array.isArray(parsed.deleteLogs)) setDeleteLogs(parsed.deleteLogs);
           if (Array.isArray(parsed.customsBatches)) setCustomsBatches(parsed.customsBatches);
           if (parsed.cashflow) localStorage.setItem(CASHFLOW_KEY, JSON.stringify(parsed.cashflow));
+        upsertCloudItem(buildGlobalStateCloudRow({ dictionaries: parsed.dictionaries || [], suppliers: parsed.suppliers || [], deleteLogs: parsed.deleteLogs || [], customsBatches: parsed.customsBatches || [], cashflow: parsed.cashflow || readCashflowFromLocal() })).catch((e) => console.error("Global backup cloud sync failed", e));
           alert("企业备份已恢复。商品、图片索引、字典、供应商、报关批次、删除日志已按备份内容恢复。");
         }
       } catch (e) {
@@ -2183,6 +2242,7 @@ function App() {
         const cloudImages = await uploadItemImages(item.id, item.images || []);
         await upsertCloudItem(toCloudItem({ ...item, images: cloudImages }));
       }
+      await upsertCloudItem(buildGlobalStateCloudRow({ dictionaries, suppliers, deleteLogs, customsBatches, cashflow: readCashflowFromLocal() }))
       setSyncStatusText(`已同步 ${items.length} 件`);
       alert("已同步到云端。另一台电脑请点击“从云端读取”。");
     } catch (e) {
@@ -2196,8 +2256,10 @@ function App() {
     try {
       setSyncStatusText("正在读取云端…");
       const cloudItems = await getCloudItems();
+      const globalState = extractGlobalStateFromCloudItems(cloudItems);
+      const productCloudItems = (cloudItems || []).filter((raw) => !isGlobalStateCloudRow(raw));
       const localItemsByIdForCloudMerge = Object.fromEntries((items || []).map((x) => [x.id, x]));
-      const nextItems = cloudItems.map((raw) => {
+      const nextItems = productCloudItems.map((raw) => {
         const cloudItem = fromCloudItem(raw);
         const localItem = localItemsByIdForCloudMerge[cloudItem.id] || {};
         return normalizeItem({
@@ -2213,8 +2275,16 @@ function App() {
         });
       });
       if (!window.confirm(`从云端读取 ${nextItems.length} 件商品，并覆盖当前浏览器库存吗？`)) return;
+      if (globalState) {
+        applyGlobalStateToLocalStorage(globalState);
+        if (Array.isArray(globalState.dictionaries)) setDictionaries(globalState.dictionaries);
+        if (Array.isArray(globalState.suppliers)) setSuppliers(globalState.suppliers);
+        if (Array.isArray(globalState.deleteLogs)) setDeleteLogs(globalState.deleteLogs);
+        if (Array.isArray(globalState.customsBatches)) setCustomsBatches(globalState.customsBatches);
+      }
+      cloudGlobalHydratedRef.current = true;
       setItems(nextItems);
-      setSyncStatusText(`已读取云端 ${nextItems.length} 件`);
+      setSyncStatusText(globalState ? "已读取云端 " + nextItems.length + " 件 · 全局资料已同步" : "已读取云端 " + nextItems.length + " 件");
       alert(`已从云端读取 ${nextItems.length} 件商品。`);
     } catch (e) {
       console.error(e);
@@ -2966,7 +3036,7 @@ function App() {
         </header>
         <RoleNotice role={role} />
 
-        {tab === "dashboard" && (canAccessTab("dashboard") ? <Dashboard totals={totals} items={computedItems} setTab={setTab} exportBackup={exportBackup} customsBatches={customsBatches} /> : <RestrictedPanel message={restrictedTabMessage} />)}
+        {tab === "dashboard" && (canAccessTab("dashboard") ? <Dashboard totals={totals} items={computedItems} setTab={setTab} exportBackup={exportBackup} customsBatches={customsBatches} onCashflowSave={requestGlobalCloudSave} /> : <RestrictedPanel message={restrictedTabMessage} />)}
         {tab === "ai" && <AiAssistant onApplyDraft={applyAiDraft} dictionaries={dictionaries} suppliers={suppliers} />}
         {tab === "aiChat" && <AiChatAssistant items={computedItems} suppliers={suppliers} dictionaries={dictionaries} setTab={setTab} />}
         {tab === "add" && (
@@ -3033,7 +3103,7 @@ function App() {
   );
 }
 
-function Dashboard({ totals, items, setTab, exportBackup, customsBatches = [] }) {
+function Dashboard({ totals, items, setTab, exportBackup, customsBatches = [], onCashflowSave = () => {} }) {
   const withImages = items.filter((x) => x.images && x.images.length).length;
   const activeItems = items.filter((x) => !isSoldStatus(x.status) && x.status !== "退货");
   const activeStock = activeItems.length;
@@ -3114,6 +3184,17 @@ function Dashboard({ totals, items, setTab, exportBackup, customsBatches = [] })
   });
   const [cashflowEdit, setCashflowEdit] = useState(false);
   const [cashflowDraft, setCashflowDraft] = useState(cashflow);
+
+  React.useEffect(() => {
+    function handleGlobalStateLoaded(event) {
+      const nextCashflow = event?.detail?.cashflow;
+      if (!nextCashflow) return;
+      setCashflow((current) => ({ ...current, ...nextCashflow }));
+      setCashflowDraft((current) => ({ ...current, ...nextCashflow }));
+    }
+    window.addEventListener(GLOBAL_STATE_EVENT, handleGlobalStateLoaded);
+    return () => window.removeEventListener(GLOBAL_STATE_EVENT, handleGlobalStateLoaded);
+  }, []);
   const rentIncome = Number(cashflow.rentIncome || 0);
   const loanPayment = Number(cashflow.loanPayment || 0);
   const rentCashflow = rentIncome - loanPayment;
@@ -3129,6 +3210,7 @@ function Dashboard({ totals, items, setTab, exportBackup, customsBatches = [] })
     localStorage.setItem(CASHFLOW_KEY, JSON.stringify(next));
     setCashflow(next);
     setCashflowEdit(false);
+    onCashflowSave();
   }
 
   return (
