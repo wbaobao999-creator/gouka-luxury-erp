@@ -1886,6 +1886,30 @@ function applyGlobalStateToLocalStorage(globalState) {
   return globalState;
 }
 
+
+function goukaProductNumberValue(id) {
+  const text = String(id || "");
+  const matches = text.match(/d+/g);
+  if (!matches || matches.length === 0) return 999999999;
+  return Number(matches[matches.length - 1] || 999999999);
+}
+
+function goukaItemSortKeyDate(item) {
+  return item?.purchaseDate || item?.auction?.auctionDate || item?.createdAt || "";
+}
+
+function sortGoukaItems(items) {
+  return [...(items || [])].sort((a, b) => {
+    const dateA = goukaItemSortKeyDate(a);
+    const dateB = goukaItemSortKeyDate(b);
+    if (dateA !== dateB) return String(dateB).localeCompare(String(dateA));
+    const noA = goukaProductNumberValue(a?.id || a?.productNo || a?.product_no);
+    const noB = goukaProductNumberValue(b?.id || b?.productNo || b?.product_no);
+    if (noA !== noB) return noA - noB;
+    return String(a?.id || "").localeCompare(String(b?.id || ""));
+  });
+}
+
 function App() {
   const [session, setSession] = useState(() => {
     try {
@@ -2036,7 +2060,7 @@ function App() {
   const canEditBusiness = isOwner || isStaff;
   const canExportBusinessPdf = isOwner || isTaxViewer;
   const restrictedTabMessage = isTaxViewer ? "税理士窗口为只读审查模式。" : "员工入口没有此模块权限。";
-  const computedItems = useMemo(() => applyBatchAllocations(items, customsBatches), [items, customsBatches]);
+  const computedItems = useMemo(() => sortGoukaItems(applyBatchAllocations(items, customsBatches)), [items, customsBatches]);
 
   React.useEffect(() => {
     if (!canAccessTab(tab)) setTab(defaultTabForRole);
@@ -2072,7 +2096,7 @@ function App() {
         deleteLogs: deleteLogs.length,
         customsBatches: customsBatches.length
       },
-      items,
+      items: sortGoukaItems(items),
       customsBatches,
       dictionaries,
       suppliers,
@@ -4140,7 +4164,7 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
   const [stockSignalFilter, setStockSignalFilter] = useState("全部");
   const [sourceGroupFilter, setSourceGroupFilter] = useState("全部来源");
   const pageSize = 50;
-  const allInventoryItems = items || [];
+  const allInventoryItems = sortGoukaItems(items || []);
   const evidenceOptions = ["全部", "缺资料", "需补充", "完整"];
   const stockSignalOptions = ["全部", "未设预计售价", "无图片", "库存30日以上", "库存365日以上"];
   function sourceGroupOf(item) {
@@ -4368,7 +4392,7 @@ function JapaneseAuctionPanel({ items, downloadCSV, setPreviewImage, setPreviewS
     return { ...normalized, ...raw, ...normalized };
   }
 
-  const baseAuctionRecords = (items || [])
+  const baseAuctionRecords = sortGoukaItems(items || [])
     .map((item) => ({ item, auction: structuredAuction(item) }))
     .filter((x) => x.auction);
 
@@ -4536,7 +4560,7 @@ function Ledger({ items, setItems, isOwner, downloadCSV, exportItemPdf }) {
     alert(`商品编号：${item.id}\n台账状态：${ledgerStatusLabel(item)}\n作废原因：${item.ledgerVoidReason || "无"}\n\n更正履历：\n${history || "暂无履历"}`);
   }
 
-  const filteredItems = items.filter((x) => {
+  const filteredItems = sortGoukaItems(items).filter((x) => {
     const q = ledgerQuery.toLowerCase();
     const auction = ledgerAuction(x);
     const text = [
@@ -5575,7 +5599,7 @@ function ListingManagement({ items, updateListingItem, editItem, setPreviewImage
   };
   const platforms = ["全部", ...LISTING_PLATFORMS];
 
-  const filteredItems = (items || []).filter((x) => {
+  const filteredItems = sortGoukaItems(items || []).filter((x) => {
     const text = [x.id, x.brand, x.item, x.material, x.color, x.platform, x.status, x.memo].join(" ").toLowerCase();
     const matchText = !q || text.includes(q);
     const matchPlatform = platformFilter === "全部" || x.platform === platformFilter;
@@ -6088,7 +6112,7 @@ function PdfExportPanel({ items, totals, exportInventoryPdf, exportLedgerPdf, ex
   const q = pdfQuery.toLowerCase();
   const statuses = ["全部", ...WORKFLOW_STATUSES];
 
-  const filteredPdfItems = (items || []).filter((x) => {
+  const filteredPdfItems = sortGoukaItems(items || []).filter((x) => {
     const matchText = !q || Object.values(x).join(" ").toLowerCase().includes(q);
     const matchStatus = status === "全部" || x.status === status;
     const d = x.purchaseDate || "";
