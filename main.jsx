@@ -81,6 +81,13 @@ inventorySprintStyle.textContent = `
 .inventory-stock-age{font-weight:800;color:#334155}
 .inventory-stock-age.warn{color:#dc2626}
 .inventory-location{color:#334155;font-weight:700}
+.inventory-group-badge{display:inline-flex;align-items:center;border-radius:999px;padding:4px 9px;font-size:12px;font-weight:900;border:1px solid #cbd5e1;background:#f8fafc;color:#334155;white-space:nowrap}
+.inventory-group-badge.cn{background:#fff7ed;border-color:#fed7aa;color:#9a3412}
+.inventory-group-badge.jp{background:#eef6ff;border-color:#bfdbfe;color:#1d4ed8}
+.inventory-group-badge.local{background:#ecfdf5;border-color:#bbf7d0;color:#047857}
+.inventory-group-badge.other{background:#f8fafc;border-color:#cbd5e1;color:#475569}
+.inventory-group-toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0 12px}
+.inventory-group-toolbar button.active{background:#1f4f93;color:#fff;border-color:#1f4f93}
 @media(max-width:1000px){.inventory-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 `;
 document.head.appendChild(inventorySprintStyle);
@@ -1731,7 +1738,7 @@ function buildEvidenceCheck(item) {
 
 
 function buildTaxAuditRows(items) {
-  const headers = [
+  const headers = ["分组", 
     "商品编号", "资料状态", "缺失资料", "采购类型", "仕入先", "供应商地址", "本人确认",
     "采购日", "品类", "品牌", "商品名", "材质", "颜色", "产地", "数量",
     "采购币种", "采购金额", "采购汇率", "采购JPY", "申报币种", "申报金额", "申报汇率", "申报JPY",
@@ -1799,7 +1806,7 @@ function LoginPage({ onLogin }) {
         <div className="login-logo"><Lock size={28} /></div>
         <h1>豪嘉ERP V7.0</h1>
         <p>豪嘉株式会社内部管理系统</p>
-        <p className="note">请选择入口后输入密码。密码不在页面显示。</p>
+        <p className="note">库存先按来源分组：中国进货、日本拍卖、日本本地、其他来源。商品编号先保留原编号，避免旧资料混乱；查货时先点上方来源按钮，再搜索品牌/商品名/编号。<br />请选择入口后输入密码。密码不在页面显示。</p>
 
         <div className="login-role-select">
           {loginOptions.map((option) => (
@@ -4131,10 +4138,37 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
   const [page, setPage] = useState(1);
   const [evidenceFilter, setEvidenceFilter] = useState("全部");
   const [stockSignalFilter, setStockSignalFilter] = useState("全部");
+  const [sourceGroupFilter, setSourceGroupFilter] = useState("全部来源");
   const pageSize = 50;
   const allInventoryItems = items || [];
   const evidenceOptions = ["全部", "缺资料", "需补充", "完整"];
   const stockSignalOptions = ["全部", "未设预计售价", "无图片", "库存30日以上", "库存365日以上"];
+  function sourceGroupOf(item) {
+    const trace = buildSourceTrace(item);
+    const platform = String(item?.platform || "");
+    const source = String(item?.source || item?.purchaseType || trace?.supplier || trace?.kind || "");
+    const text = [platform, source, item?.supplier, item?.sourceCountry, item?.customsBatchId].filter(Boolean).join(" ");
+    if (item?.auction || /NBAA|JBA|AUCNET|EcoRing|ECO Ring|Star Buyers|OBA|日本拍卖|拍卖/i.test(text)) return "日本拍卖";
+    if (/中国|China|CN|供应商|EMS|輸入|进口|import/i.test(text)) return "中国进货";
+    if (/Mercari|Yahoo|楽天|Rakuten|店舗|店铺|日本本地/i.test(text)) return "日本本地";
+    return "其他来源";
+  }
+
+  function sourceGroupClass(group) {
+    if (group === "中国进货") return "cn";
+    if (group === "日本拍卖") return "jp";
+    if (group === "日本本地") return "local";
+    return "other";
+  }
+
+  function sourceGroupBadge(group) {
+    return <span className={"inventory-group-badge " + sourceGroupClass(group)}>{group}</span>;
+  }
+
+  function passesSourceGroup(x) {
+    return sourceGroupFilter === "全部来源" || sourceGroupOf(x) === sourceGroupFilter;
+  }
+
   function passesStockSignal(x) {
     if (stockSignalFilter === "全部") return true;
     const sales = calcSalesBreakdown(x);
@@ -4144,14 +4178,14 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
     if (stockSignalFilter === "库存365日以上") return !sales.sold && stockDays(x) >= 365;
     return true;
   }
-  const inventoryItems = allInventoryItems.filter((x) => (evidenceFilter === "全部" || buildEvidenceCheck(x).status === evidenceFilter) && passesStockSignal(x));
+  const inventoryItems = allInventoryItems.filter((x) => passesSourceGroup(x) && (evidenceFilter === "全部" || buildEvidenceCheck(x).status === evidenceFilter) && passesStockSignal(x));
   const totalPages = Math.max(1, Math.ceil(inventoryItems.length / pageSize));
   const currentPage = Math.min(page, totalPages);
   const pageItems = inventoryItems.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   React.useEffect(() => {
     setPage(1);
-  }, [query, statusFilter, evidenceFilter, stockSignalFilter, items.length]);
+  }, [query, statusFilter, evidenceFilter, stockSignalFilter, sourceGroupFilter, items.length]);
 
   function stockDays(item) {
     if (!item?.purchaseDate) return 0;
@@ -4163,6 +4197,13 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
   function storageLocation(item) {
     return item.location || item.storageLocation || item.stockLocation || item.warehouse || "—";
   }
+
+  const sourceGroupOptions = ["全部来源", "中国进货", "日本拍卖", "日本本地", "其他来源"];
+  const sourceGroupSummary = allInventoryItems.reduce((a, x) => {
+    const group = sourceGroupOf(x);
+    a[group] = (a[group] || 0) + 1;
+    return a;
+  }, {});
 
   const inventorySummary = inventoryItems.reduce((a, x) => {
     const sales = calcSalesBreakdown(x);
@@ -4186,7 +4227,7 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
   }, { count: 0, qty: 0, cost: 0, sale: 0, profit: 0, toList: 0, toCustoms: 0, longTerm: 0, over30: 0, missingPrice: 0, noImage: 0, evidenceMissing: 0, evidencePartial: 0, evidenceComplete: 0 });
 
   const headers = ["图片", "商品编号", "入库日", "库龄", "品牌", "商品名", "来源", "资料", "状态", "库位", "平台", "库存成本", "售价/成交价（含税）", "预计/实际利润", "操作"];
-  const csvHeaders = ["商品编号", "入库日期", "库龄", "库位", "品类", "品牌", "商品名", "材质", "颜色", "产地", "采购类型", "仕入先", "供应商地址", "本人确认", "资料状态", "缺失资料", "数量", "采购币种", "采购金额", "采购汇率", "申报币种", "申报金额", "申报汇率", "采购JPY", "附加成本JPY", "库存成本JPY", "报关批次", "进项消费税估算", "预计/成交销售JPY税込", "销售消费税", "税抜售价", "预计/实际利润", "状态"];
+  const csvHeaders = ["库存分组", "商品编号", "入库日期", "库龄", "库位", "品类", "品牌", "商品名", "材质", "颜色", "产地", "采购类型", "仕入先", "供应商地址", "本人确认", "资料状态", "缺失资料", "数量", "采购币种", "采购金额", "采购汇率", "申报币种", "申报金额", "申报汇率", "采购JPY", "附加成本JPY", "库存成本JPY", "报关批次", "进项消费税估算", "预计/成交销售JPY税込", "销售消费税", "税抜售价", "预计/实际利润", "状态"];
   const csvRows = [csvHeaders];
 
   inventoryItems.forEach((x) => {
@@ -4196,7 +4237,7 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
     const displayProfit = sales.sold ? sales.actualProfitJpy : sales.expectedProfitJpy;
     const trace = buildSourceTrace(x);
     const evidence = buildEvidenceCheck(x);
-    csvRows.push([x.id, x.purchaseDate, stockDays(x), storageLocation(x), x.category, x.brand, x.item, x.material, x.color, x.origin, trace.kind, trace.supplier, trace.address, trace.idCheck, evidence.status, evidence.text, x.qty, x.purchaseCurrency || "CNY", x.purchaseCny, x.purchaseRateToJpy || x.rate, x.declaredCurrency || "CNY", x.declaredCny, x.declaredRateToJpy || x.rate, Math.round(t.baseCostJpy), Math.round(t.extraCostJpy), Math.round(t.costJpy), x.customsBatchId || "", Math.round(t.inputTax), Math.round(displaySale || 0), Math.round(sales.salesOutputTax || 0), Math.round(sales.salesRevenueExTax || 0), Math.round(displayProfit || 0), x.status]);
+    csvRows.push([sourceGroupOf(x), x.id, x.purchaseDate, stockDays(x), storageLocation(x), x.category, x.brand, x.item, x.material, x.color, x.origin, trace.kind, trace.supplier, trace.address, trace.idCheck, evidence.status, evidence.text, x.qty, x.purchaseCurrency || "CNY", x.purchaseCny, x.purchaseRateToJpy || x.rate, x.declaredCurrency || "CNY", x.declaredCny, x.declaredRateToJpy || x.rate, Math.round(t.baseCostJpy), Math.round(t.extraCostJpy), Math.round(t.costJpy), x.customsBatchId || "", Math.round(t.inputTax), Math.round(displaySale || 0), Math.round(sales.salesOutputTax || 0), Math.round(sales.salesRevenueExTax || 0), Math.round(displayProfit || 0), x.status]);
   });
 
   const rows = pageItems.map((x) => {
@@ -4210,6 +4251,7 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
     const evidence = buildEvidenceCheck(x);
     const days = stockDays(x);
     return [
+      sourceGroupBadge(sourceGroupOf(x)),
       x.images && x.images.length ? <img className="thumb" src={x.images[0]} alt={x.item} style={{ width: 72, height: 72 }} onClick={() => { setPreviewScale(1); setPreviewImage(x.images[0]); }} /> : "—",
       x.id,
       x.purchaseDate,
@@ -4251,6 +4293,13 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
         setStatusFilter={setStatusFilter}
         onDownload={() => downloadCSV(csvRows, "gouka_inventory_evidence.csv")}
       />
+      <div className="inventory-group-toolbar">
+        {sourceGroupOptions.map((group) => (
+          <button key={group} className={sourceGroupFilter === group ? "active" : "ghost"} onClick={() => setSourceGroupFilter(group)}>
+            {group} {group === "全部来源" ? allInventoryItems.length : (sourceGroupSummary[group] || 0)}件
+          </button>
+        ))}
+      </div>
       <div className="filter-row" style={{ marginBottom: "14px" }}>
         <label>
           资料状态
@@ -4273,6 +4322,10 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
         <span className="note">当前显示 {inventoryItems.length} 件 / 全部 {allInventoryItems.length} 件</span>
       </div>
       <div className="inventory-summary-grid">
+        <div className="inventory-summary-card"><small>中国进货</small><b>{sourceGroupSummary["中国进货"] || 0} 件</b></div>
+        <div className="inventory-summary-card"><small>日本拍卖</small><b>{sourceGroupSummary["日本拍卖"] || 0} 件</b></div>
+        <div className="inventory-summary-card"><small>日本本地</small><b>{sourceGroupSummary["日本本地"] || 0} 件</b></div>
+        <div className="inventory-summary-card"><small>其他来源</small><b>{sourceGroupSummary["其他来源"] || 0} 件</b></div>
         <div className="inventory-summary-card"><small>当前库存</small><b>{inventorySummary.count} 件</b></div>
         <div className="inventory-summary-card"><small>库存数量</small><b>{inventorySummary.qty} 点</b></div>
         <div className="inventory-summary-card"><small>库存总成本</small><b>{jpy(inventorySummary.cost)}</b></div>
