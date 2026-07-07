@@ -112,6 +112,11 @@ const goukaReadableTablePatchStyle = document.createElement("style");
 goukaReadableTablePatchStyle.textContent = "\n/* GOUKA readable table patch: clearer text for inventory and ledger tables */\nbody{font-family:\"Yu Gothic UI\",\"Meiryo\",\"Microsoft YaHei\",\"PingFang SC\",Arial,sans-serif!important;-webkit-font-smoothing:antialiased!important;text-rendering:optimizeLegibility!important;}\n.tablewrap table{font-size:14px!important;color:#102033!important;}\nth{font-size:13px!important;font-weight:950!important;letter-spacing:.02em!important;line-height:1.35!important;padding:11px 9px!important;}\ntd{font-size:14px!important;font-weight:650!important;line-height:1.55!important;color:#102033!important;padding:12px 10px!important;}\ntd small,td .muted,.note,.record-card-summary{font-size:12px!important;color:#475569!important;font-weight:750!important;}\ntbody tr:nth-child(even) td{background:#fbfdfc!important;}\ntbody tr:hover td{background:#eefaf2!important;}\n.product-name-clamp{font-size:14px!important;font-weight:750!important;line-height:1.5!important;max-width:520px!important;}\n.pill,.status,.inventory-pending{font-size:12px!important;font-weight:900!important;}\n.table-actions button{font-size:13px!important;font-weight:900!important;}\n.inventory-summary-card small{font-size:13px!important;font-weight:900!important;}\n.inventory-summary-card b{font-size:24px!important;font-weight:950!important;}\n.toolbar h2,.panel h2{font-size:25px!important;font-weight:950!important;}\n.search,input,select,textarea,button{font-size:14px!important;}\n@media(max-width:1200px){td{font-size:13px!important;padding:10px 8px!important;}th{font-size:12px!important;padding:9px 7px!important;}.tablewrap table{min-width:1120px!important;}}\n";
 document.head.appendChild(goukaReadableTablePatchStyle);
 
+const goukaLedgerCardPatchStyle = document.createElement("style");
+goukaLedgerCardPatchStyle.textContent = "\n/* GOUKA ledger card view: easier to read one item at a time */\n.ledger-card-list{display:flex;flex-direction:column;gap:16px;margin-top:18px;}\n.ledger-card{background:#fff;border:1px solid #d6ded9;border-radius:0;box-shadow:none;display:grid;grid-template-columns:minmax(0,1fr) 180px;gap:0;overflow:hidden;}\n.ledger-card-main{padding:0;}\n.ledger-card-grid{display:grid;grid-template-columns:150px minmax(0,1fr);border-top:1px solid #dfe5e2;border-left:1px solid #dfe5e2;}\n.ledger-card-label{background:#18a83e;color:#fff;font-weight:950;text-align:center;padding:11px 10px;border-right:1px solid #fff;border-bottom:1px solid #fff;line-height:1.35;}\n.ledger-card-value{background:#fff;color:#102033;font-weight:750;padding:11px 12px;border-right:1px solid #dfe5e2;border-bottom:1px solid #dfe5e2;line-height:1.45;word-break:break-word;}\n.ledger-card-value.strong{font-size:16px;font-weight:950;}\n.ledger-card-section{grid-column:1/-1;background:#f2fbf5;color:#10852f;font-weight:950;padding:10px 12px;border-right:1px solid #dfe5e2;border-bottom:1px solid #dfe5e2;letter-spacing:.03em;}\n.ledger-card-image{border-left:1px solid #dfe5e2;background:#fbfcfb;padding:12px;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:10px;}\n.ledger-card-image .thumb{width:150px!important;height:150px!important;object-fit:cover!important;}\n.ledger-card-actions{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;width:100%;}\n.ledger-card-actions button{font-size:13px!important;padding:6px 10px!important;}\n.ledger-card-status{display:inline-flex;align-items:center;border:1px solid #cbd5e1;background:#f8fafc;border-radius:999px;padding:3px 10px;font-size:12px;font-weight:950;color:#334155;}\n.ledger-original-table{margin-top:18px;border:1px solid #d6ded9;background:#fff;padding:10px;}\n.ledger-original-table summary{cursor:pointer;font-weight:950;color:#10852f;padding:8px 4px;}\n@media(max-width:900px){.ledger-card{grid-template-columns:1fr}.ledger-card-image{border-left:0;border-top:1px solid #dfe5e2}.ledger-card-grid{grid-template-columns:118px minmax(0,1fr)}.ledger-card-label,.ledger-card-value{font-size:13px!important;padding:9px 8px!important}}\n";
+document.head.appendChild(goukaLedgerCardPatchStyle);
+
+
 
 
 
@@ -4413,7 +4418,61 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
         <div className="inventory-summary-card warn"><small>长期库存（365日以上）</small><b>{inventorySummary.longTerm} 件</b></div>
       </div>
       <p className="note">库存管理只显示日常查货字段：库龄、库位、来源、资料状态、库存成本、售价和利润。可按资料状态和库存信号筛出缺资料、未设售价、无图片或长期库存；税务、报关、销售明细请点「详情」进入 Product Record。</p>
-      <Table headers={headers} rows={rows} />
+      <div className="ledger-card-list">
+        {filteredItems.map((x, i) => {
+          const auction = ledgerAuction(x);
+          const tax = calcTax(x);
+          const feature = [x.material, x.color, x.origin].filter(Boolean).join(" / ");
+          const actualPayment = auction ? jpy(auction.invoiceTotal) : String(x.purchaseCny || x.purchaseAmount || 0) + " " + (x.purchaseCurrency || "CNY");
+          const currency = auction ? "JPY" : (x.purchaseCurrency || "CNY");
+          const inventoryCost = auction ? jpy(auction.inventoryCost) : jpy(tax.costJpy);
+          const taxCredit = auction ? jpy(auction.taxCredit) : jpy(tax.inputTax);
+          return (
+            <div className="ledger-card" key={x.id || i}>
+              <div className="ledger-card-main">
+                <div className="ledger-card-grid">
+                  <div className="ledger-card-section">古物台账记录 No.{i + 1}</div>
+                  <div className="ledger-card-label">商品编号</div><div className="ledger-card-value strong">{x.id}</div>
+                  <div className="ledger-card-label">取引日</div><div className="ledger-card-value">{x.purchaseDate || "—"}</div>
+                  <div className="ledger-card-label">区分</div><div className="ledger-card-value">{x.category || "—"}</div>
+                  <div className="ledger-card-label">品牌名</div><div className="ledger-card-value strong">{x.brand || "—"}</div>
+                  <div className="ledger-card-label">商品名</div><div className="ledger-card-value strong">{x.item || "—"}</div>
+                  <div className="ledger-card-label">特徴</div><div className="ledger-card-value">{feature || "—"}</div>
+                  <div className="ledger-card-label">数量</div><div className="ledger-card-value">{x.qty || 1}</div>
+                  <div className="ledger-card-label">取引区分</div><div className="ledger-card-value">仕入</div>
+                  <div className="ledger-card-label">实际支付金额</div><div className="ledger-card-value strong">{actualPayment}</div>
+                  <div className="ledger-card-label">币种</div><div className="ledger-card-value">{currency}</div>
+                  <div className="ledger-card-label">库存成本</div><div className="ledger-card-value strong">{inventoryCost}</div>
+                  <div className="ledger-card-label">可抵扣消费税</div><div className="ledger-card-value">{taxCredit}</div>
+                  <div className="ledger-card-label">相手方</div><div className="ledger-card-value">{x.source || "—"}</div>
+                  <div className="ledger-card-label">住所</div><div className="ledger-card-value">{ledgerAddress(x) || "—"}</div>
+                  <div className="ledger-card-label">本人确认</div><div className="ledger-card-value">{ledgerIdCheck(x) || "—"}</div>
+                  <div className="ledger-card-label">备注</div><div className="ledger-card-value">{displayMemo(x) || "—"}</div>
+                  <div className="ledger-card-label">台账状态</div><div className="ledger-card-value"><span className="ledger-card-status">{ledgerStatusLabel(x)}</span></div>
+                  <div className="ledger-card-label">更正履历</div><div className="ledger-card-value">{latestHistoryText(x) || "—"}</div>
+                </div>
+              </div>
+              <div className="ledger-card-image">
+                <ProductThumb item={x} />
+                <div className="ledger-card-actions">
+                  <button className="ghost" onClick={() => setLedgerDetailItem(x)}>{auction ? "拍卖详情" : "商品档案"}</button>
+                  <button className="ghost" onClick={() => showLedgerHistory(x)}>履历</button>
+                  {isOwner && <button className="edit" onClick={() => correctLedger(x.id)}>更正</button>}
+                  {ledgerStatusLabel(x) === "作废" ? (
+                    isOwner ? <button className="edit" onClick={() => restoreLedger(x.id)}>恢复</button> : <span className="ledger-card-status">作废</span>
+                  ) : (
+                    isOwner ? <button className="danger" onClick={() => voidLedger(x.id)}>作废</button> : <span className="ledger-card-status">锁定</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <details className="ledger-original-table">
+        <summary>打开原始横表</summary>
+        <Table headers={headers} rows={rows} />
+      </details>
 
       {detailItem && (
         <div className="image-modal" onClick={() => setDetailItem(null)}>
