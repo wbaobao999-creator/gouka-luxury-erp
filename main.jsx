@@ -116,6 +116,11 @@ const goukaLedgerCardPatchStyle = document.createElement("style");
 goukaLedgerCardPatchStyle.textContent = "\n/* GOUKA ledger card view: easier to read one item at a time */\n.ledger-card-list{display:flex;flex-direction:column;gap:16px;margin-top:18px;}\n.ledger-card{background:#fff;border:1px solid #d6ded9;border-radius:0;box-shadow:none;display:grid;grid-template-columns:minmax(0,1fr) 180px;gap:0;overflow:hidden;}\n.ledger-card-main{padding:0;}\n.ledger-card-grid{display:grid;grid-template-columns:150px minmax(0,1fr);border-top:1px solid #dfe5e2;border-left:1px solid #dfe5e2;}\n.ledger-card-label{background:#18a83e;color:#fff;font-weight:950;text-align:center;padding:11px 10px;border-right:1px solid #fff;border-bottom:1px solid #fff;line-height:1.35;}\n.ledger-card-value{background:#fff;color:#102033;font-weight:750;padding:11px 12px;border-right:1px solid #dfe5e2;border-bottom:1px solid #dfe5e2;line-height:1.45;word-break:break-word;}\n.ledger-card-value.strong{font-size:16px;font-weight:950;}\n.ledger-card-section{grid-column:1/-1;background:#f2fbf5;color:#10852f;font-weight:950;padding:10px 12px;border-right:1px solid #dfe5e2;border-bottom:1px solid #dfe5e2;letter-spacing:.03em;}\n.ledger-card-image{border-left:1px solid #dfe5e2;background:#fbfcfb;padding:12px;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:10px;}\n.ledger-card-image .thumb{width:150px!important;height:150px!important;object-fit:cover!important;}\n.ledger-card-actions{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;width:100%;}\n.ledger-card-actions button{font-size:13px!important;padding:6px 10px!important;}\n.ledger-card-status{display:inline-flex;align-items:center;border:1px solid #cbd5e1;background:#f8fafc;border-radius:999px;padding:3px 10px;font-size:12px;font-weight:950;color:#334155;}\n.ledger-original-table{margin-top:18px;border:1px solid #d6ded9;background:#fff;padding:10px;}\n.ledger-original-table summary{cursor:pointer;font-weight:950;color:#10852f;padding:8px 4px;}\n@media(max-width:900px){.ledger-card{grid-template-columns:1fr}.ledger-card-image{border-left:0;border-top:1px solid #dfe5e2}.ledger-card-grid{grid-template-columns:118px minmax(0,1fr)}.ledger-card-label,.ledger-card-value{font-size:13px!important;padding:9px 8px!important}}\n";
 document.head.appendChild(goukaLedgerCardPatchStyle);
 
+const goukaAuctionCardPatchStyle = document.createElement("style");
+goukaAuctionCardPatchStyle.textContent = "\n/* GOUKA Japanese auction card view */\n.auction-card-list{display:flex;flex-direction:column;gap:16px;margin-top:18px;}\n.auction-card{background:#fff;border:1px solid #d6ded9;display:grid;grid-template-columns:minmax(0,1fr) 190px;overflow:hidden;}\n.auction-card-main{padding:0;}\n.auction-card-grid{display:grid;grid-template-columns:150px minmax(0,1fr);border-top:1px solid #dfe5e2;border-left:1px solid #dfe5e2;}\n.auction-card-section{grid-column:1/-1;background:#eaf8ef;color:#10852f;font-weight:950;padding:10px 12px;border-right:1px solid #dfe5e2;border-bottom:1px solid #dfe5e2;letter-spacing:.03em;}\n.auction-card-label{background:#18a83e;color:#fff;font-weight:950;text-align:center;padding:11px 10px;border-right:1px solid #fff;border-bottom:1px solid #fff;line-height:1.35;}\n.auction-card-value{background:#fff;color:#102033;font-weight:750;padding:11px 12px;border-right:1px solid #dfe5e2;border-bottom:1px solid #dfe5e2;line-height:1.45;word-break:break-word;}\n.auction-card-value.strong{font-size:16px;font-weight:950;}\n.auction-card-image{border-left:1px solid #dfe5e2;background:#fbfcfb;padding:12px;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:10px;}\n.auction-card-image .thumb{width:160px!important;height:160px!important;object-fit:cover!important;}\n.auction-card-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;width:100%;}\n.auction-card-actions button{font-size:13px!important;padding:6px 10px!important;}\n.auction-original-table{margin-top:18px;border:1px solid #d6ded9;background:#fff;padding:10px;}\n.auction-original-table summary{cursor:pointer;font-weight:950;color:#10852f;padding:8px 4px;}\n@media(max-width:900px){.auction-card{grid-template-columns:1fr}.auction-card-image{border-left:0;border-top:1px solid #dfe5e2}.auction-card-grid{grid-template-columns:118px minmax(0,1fr)}.auction-card-label,.auction-card-value{font-size:13px!important;padding:9px 8px!important}}\n";
+document.head.appendChild(goukaAuctionCardPatchStyle);
+
+
 
 
 
@@ -4538,7 +4543,53 @@ function JapaneseAuctionPanel({ items, downloadCSV, setPreviewImage, setPreviewS
         <div className="inventory-summary-card"><small>付款记录</small><b>{summary.paidCount} 件</b></div>
       </div>
       <p className="note">日本拍卖页只读取商品档案里的 product.auction 结构化数据。付款总额、库存成本、消费税控除分开显示，消费税不进入库存成本。</p>
-      <Table headers={headers} rows={rows} />
+      <div className="auction-card-list">
+        {auctionRecords.map(({ item, auction }, i) => {
+          const house = auction.platform || auction.auctionHouse || "—";
+          const auctionDate = auction.auctionDate || item.purchaseDate || "—";
+          const itemTitle = auction.itemNameJp || item.item || "—";
+          const bidAmount = Number(auction.bidAmount || auction.hammerPrice || auction.itemPrice || 0);
+          const taxAmount = Number(auction.consumptionTax || auction.tax || auction.taxAmount || 0);
+          const feeAmount = Number(auction.commission || auction.fee || auction.auctionFee || 0);
+          const invoiceTotal = Number(auction.invoiceTotal || 0);
+          return (
+            <div className="auction-card" key={item.id || i}>
+              <div className="auction-card-main">
+                <div className="auction-card-grid">
+                  <div className="auction-card-section">落札商品 No.{i + 1}</div>
+                  <div className="auction-card-label">商品编号</div><div className="auction-card-value strong">{item.id}</div>
+                  <div className="auction-card-label">拍卖公司</div><div className="auction-card-value strong">{house}</div>
+                  <div className="auction-card-label">落札コード</div><div className="auction-card-value">{auction.auctionCode || "—"}</div>
+                  <div className="auction-card-label">落札日</div><div className="auction-card-value">{auctionDate}</div>
+                  <div className="auction-card-label">箱番</div><div className="auction-card-value">{auction.boxNo || "—"}</div>
+                  <div className="auction-card-label">枝番</div><div className="auction-card-value">{auction.branchNo || "—"}</div>
+                  <div className="auction-card-label">Lot</div><div className="auction-card-value">{auction.lotNo || "—"}</div>
+                  <div className="auction-card-label">品牌名</div><div className="auction-card-value strong">{item.brand || "—"}</div>
+                  <div className="auction-card-label">商品名</div><div className="auction-card-value strong">{itemTitle}</div>
+                  <div className="auction-card-label">落札金额</div><div className="auction-card-value strong">{bidAmount ? jpy(bidAmount) : "—"}</div>
+                  <div className="auction-card-label">消费税</div><div className="auction-card-value">{taxAmount ? jpy(taxAmount) : "—"}</div>
+                  <div className="auction-card-label">手续费</div><div className="auction-card-value">{feeAmount ? jpy(feeAmount) : "—"}</div>
+                  <div className="auction-card-label">付款总额</div><div className="auction-card-value strong">{invoiceTotal ? jpy(invoiceTotal) : "—"}</div>
+                  <div className="auction-card-label">库存成本</div><div className="auction-card-value strong">{jpy(auction.inventoryCost || 0)}</div>
+                  <div className="auction-card-label">消费税控除</div><div className="auction-card-value">{jpy(auction.taxCredit || 0)}</div>
+                  <div className="auction-card-label">状态</div><div className="auction-card-value"><StatusBadge status={item.status} /></div>
+                </div>
+              </div>
+              <div className="auction-card-image">
+                <ProductThumb item={item} onPreview={(src) => { setPreviewScale?.(1); setPreviewImage?.(src); }} />
+                <div className="auction-card-actions">
+                  <button className="ghost" onClick={() => setDetailItem(item)}>拍卖详情</button>
+                  <button className="ghost" onClick={() => exportItemPdf?.(item)}>PDF</button>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <details className="auction-original-table">
+        <summary>打开原始横表</summary>
+        <Table headers={headers} rows={rows} />
+      </details>
 
       {detailItem && (
         <div className="image-modal" onClick={() => setDetailItem(null)}>
