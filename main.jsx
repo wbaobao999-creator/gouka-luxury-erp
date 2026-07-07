@@ -1366,17 +1366,50 @@ function isSoldStatus(status) {
   return status === "已售出" || status === "已发货";
 }
 
-function makeNextId(items) {
-  const d = new Date();
-  const ym = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}`;
-  const prefix = `GOUKA-${ym}-`;
-  const nums = items
+function normalizeIdText(value) {
+  return String(value || "").trim();
+}
+
+function auctionCodeForId(value) {
+  const text = normalizeIdText(value).toUpperCase();
+  if (/NBAA/.test(text)) return "JP-NBAA";
+  if (/ECO\s*RING|ECORING/.test(text)) return "JP-ECO";
+  if (/JBA/.test(text)) return "JP-JBA";
+  if (/AUCNET/.test(text)) return "JP-AUC";
+  if (/OBA/.test(text)) return "JP-OBA";
+  if (/STAR\s*BUYERS|STARBUYERS/.test(text)) return "JP-STAR";
+  return "JP-AUC";
+}
+
+function productIdPrefixFromItem(item = {}) {
+  const auction = item.auction || {};
+  const text = [
+    item.platform, item.source, item.purchaseType, item.supplier, item.sourceCountry,
+    item.customsBatchId, item.importBatchId, auction.platform, auction.auctionHouse,
+    auction.auctionCode, auction.invoiceNo
+  ].filter(Boolean).join(" ");
+
+  if (item.auction || /NBAA|JBA|AUCNET|EcoRing|ECO Ring|OBA|Star Buyers|日本拍卖|拍卖/i.test(text)) {
+    return auctionCodeForId(text);
+  }
+  if (/中国|China|CN|供应商|EMS|輸入|进口|import/i.test(text)) return "CN";
+  if (/Mercari|Yahoo|楽天|Rakuten|店舗|店铺|日本本地/i.test(text)) return "LOCAL";
+  return "GOUKA";
+}
+
+function makeNextId(items, draft = {}) {
+  const d = draft.purchaseDate ? new Date(draft.purchaseDate) : new Date();
+  const validDate = Number.isNaN(d.getTime()) ? new Date() : d;
+  const ym = String(validDate.getFullYear()) + String(validDate.getMonth() + 1).padStart(2, "0");
+  const groupPrefix = productIdPrefixFromItem(draft);
+  const prefix = groupPrefix + "-" + ym + "-";
+  const nums = (items || [])
     .map((x) => String(x.id || ""))
     .filter((id) => id.startsWith(prefix))
     .map((id) => Number(id.replace(prefix, "")))
     .filter((n) => !Number.isNaN(n));
   const next = (nums.length ? Math.max(...nums) : 0) + 1;
-  return `${prefix}${String(next).padStart(4, "0")}`;
+  return prefix + String(next).padStart(4, "0");
 }
 
 function calcTax(x) {
@@ -2427,7 +2460,7 @@ function App() {
     } else {
       const next = {
         ...safeForm,
-        id: makeNextId(items),
+        id: makeNextId(items, safeForm),
         ledgerStatus: "有效",
         ledgerVoidReason: "",
         ledgerUpdatedAt: new Date().toISOString(),
@@ -6159,7 +6192,7 @@ function PdfExportPanel({ items, totals, exportInventoryPdf, exportLedgerPdf, ex
       </div>
 
       <div className="formgrid" style={{marginTop:"18px"}}>
-        <Input label="搜索编号 / 品牌 / 商品" value={pdfQuery} onChange={setPdfQuery} placeholder="例如 CHANEL / GOUKA-202606" />
+        <Input label="搜索编号 / 品牌 / 商品" value={pdfQuery} onChange={setPdfQuery} placeholder="例如 CHANEL / CN-202607 / JP-NBAA" />
         <Select label="状态筛选" value={status} onChange={setStatus} options={statuses} />
         <Input label="开始日期" type="date" value={startDate} onChange={setStartDate} />
         <Input label="结束日期" type="date" value={endDate} onChange={setEndDate} />
