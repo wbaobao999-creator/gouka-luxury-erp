@@ -4418,61 +4418,7 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
         <div className="inventory-summary-card warn"><small>长期库存（365日以上）</small><b>{inventorySummary.longTerm} 件</b></div>
       </div>
       <p className="note">库存管理只显示日常查货字段：库龄、库位、来源、资料状态、库存成本、售价和利润。可按资料状态和库存信号筛出缺资料、未设售价、无图片或长期库存；税务、报关、销售明细请点「详情」进入 Product Record。</p>
-      <div className="ledger-card-list">
-        {filteredItems.map((x, i) => {
-          const auction = ledgerAuction(x);
-          const tax = calcTax(x);
-          const feature = [x.material, x.color, x.origin].filter(Boolean).join(" / ");
-          const actualPayment = auction ? jpy(auction.invoiceTotal) : String(x.purchaseCny || x.purchaseAmount || 0) + " " + (x.purchaseCurrency || "CNY");
-          const currency = auction ? "JPY" : (x.purchaseCurrency || "CNY");
-          const inventoryCost = auction ? jpy(auction.inventoryCost) : jpy(tax.costJpy);
-          const taxCredit = auction ? jpy(auction.taxCredit) : jpy(tax.inputTax);
-          return (
-            <div className="ledger-card" key={x.id || i}>
-              <div className="ledger-card-main">
-                <div className="ledger-card-grid">
-                  <div className="ledger-card-section">古物台账记录 No.{i + 1}</div>
-                  <div className="ledger-card-label">商品编号</div><div className="ledger-card-value strong">{x.id}</div>
-                  <div className="ledger-card-label">取引日</div><div className="ledger-card-value">{x.purchaseDate || "—"}</div>
-                  <div className="ledger-card-label">区分</div><div className="ledger-card-value">{x.category || "—"}</div>
-                  <div className="ledger-card-label">品牌名</div><div className="ledger-card-value strong">{x.brand || "—"}</div>
-                  <div className="ledger-card-label">商品名</div><div className="ledger-card-value strong">{x.item || "—"}</div>
-                  <div className="ledger-card-label">特徴</div><div className="ledger-card-value">{feature || "—"}</div>
-                  <div className="ledger-card-label">数量</div><div className="ledger-card-value">{x.qty || 1}</div>
-                  <div className="ledger-card-label">取引区分</div><div className="ledger-card-value">仕入</div>
-                  <div className="ledger-card-label">实际支付金额</div><div className="ledger-card-value strong">{actualPayment}</div>
-                  <div className="ledger-card-label">币种</div><div className="ledger-card-value">{currency}</div>
-                  <div className="ledger-card-label">库存成本</div><div className="ledger-card-value strong">{inventoryCost}</div>
-                  <div className="ledger-card-label">可抵扣消费税</div><div className="ledger-card-value">{taxCredit}</div>
-                  <div className="ledger-card-label">相手方</div><div className="ledger-card-value">{x.source || "—"}</div>
-                  <div className="ledger-card-label">住所</div><div className="ledger-card-value">{ledgerAddress(x) || "—"}</div>
-                  <div className="ledger-card-label">本人确认</div><div className="ledger-card-value">{ledgerIdCheck(x) || "—"}</div>
-                  <div className="ledger-card-label">备注</div><div className="ledger-card-value">{displayMemo(x) || "—"}</div>
-                  <div className="ledger-card-label">台账状态</div><div className="ledger-card-value"><span className="ledger-card-status">{ledgerStatusLabel(x)}</span></div>
-                  <div className="ledger-card-label">更正履历</div><div className="ledger-card-value">{latestHistoryText(x) || "—"}</div>
-                </div>
-              </div>
-              <div className="ledger-card-image">
-                <ProductThumb item={x} />
-                <div className="ledger-card-actions">
-                  <button className="ghost" onClick={() => setLedgerDetailItem(x)}>{auction ? "拍卖详情" : "商品档案"}</button>
-                  <button className="ghost" onClick={() => showLedgerHistory(x)}>履历</button>
-                  {isOwner && <button className="edit" onClick={() => correctLedger(x.id)}>更正</button>}
-                  {ledgerStatusLabel(x) === "作废" ? (
-                    isOwner ? <button className="edit" onClick={() => restoreLedger(x.id)}>恢复</button> : <span className="ledger-card-status">作废</span>
-                  ) : (
-                    isOwner ? <button className="danger" onClick={() => voidLedger(x.id)}>作废</button> : <span className="ledger-card-status">锁定</span>
-                  )}
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-      <details className="ledger-original-table">
-        <summary>打开原始横表</summary>
-        <Table headers={headers} rows={rows} />
-      </details>
+      <Table headers={headers} rows={rows} />
 
       {detailItem && (
         <div className="image-modal" onClick={() => setDetailItem(null)}>
@@ -4754,7 +4700,61 @@ function Ledger({ items, setItems, isOwner, downloadCSV, exportItemPdf }) {
       <p className="note">
         当前显示 {filteredItems.length} 件 / 全部 {items.length} 件。古物台账不支持物理删除，只能作废或更正；日本拍卖商品点击「拍卖详情」进入 Product Record。
       </p>
-      <Table headers={headers} rows={rows} />
+      <div className="ledger-card-list">
+        {(Array.isArray(filteredItems) ? filteredItems : []).map((x, i) => {
+          const auction = ledgerAuction(x);
+          const tax = calcTax(x);
+          const feature = [x.material, x.color, x.origin].filter(Boolean).join(" / ");
+          const actualPayment = auction ? jpy(auction.invoiceTotal) : String(x.purchaseCny || x.purchaseAmount || 0) + " " + (x.purchaseCurrency || "CNY");
+          const currency = auction ? "JPY" : (x.purchaseCurrency || "CNY");
+          const inventoryCost = auction ? jpy(auction.inventoryCost) : jpy(tax.costJpy);
+          const taxCredit = auction ? jpy(auction.taxCredit) : jpy(tax.inputTax);
+          return (
+            <div className="ledger-card" key={x.id || i}>
+              <div className="ledger-card-main">
+                <div className="ledger-card-grid">
+                  <div className="ledger-card-section">古物台账记录 No.{i + 1}</div>
+                  <div className="ledger-card-label">商品编号</div><div className="ledger-card-value strong">{x.id}</div>
+                  <div className="ledger-card-label">取引日</div><div className="ledger-card-value">{x.purchaseDate || "—"}</div>
+                  <div className="ledger-card-label">区分</div><div className="ledger-card-value">{x.category || "—"}</div>
+                  <div className="ledger-card-label">品牌名</div><div className="ledger-card-value strong">{x.brand || "—"}</div>
+                  <div className="ledger-card-label">商品名</div><div className="ledger-card-value strong">{x.item || "—"}</div>
+                  <div className="ledger-card-label">特徴</div><div className="ledger-card-value">{feature || "—"}</div>
+                  <div className="ledger-card-label">数量</div><div className="ledger-card-value">{x.qty || 1}</div>
+                  <div className="ledger-card-label">取引区分</div><div className="ledger-card-value">仕入</div>
+                  <div className="ledger-card-label">实际支付金额</div><div className="ledger-card-value strong">{actualPayment}</div>
+                  <div className="ledger-card-label">币种</div><div className="ledger-card-value">{currency}</div>
+                  <div className="ledger-card-label">库存成本</div><div className="ledger-card-value strong">{inventoryCost}</div>
+                  <div className="ledger-card-label">可抵扣消费税</div><div className="ledger-card-value">{taxCredit}</div>
+                  <div className="ledger-card-label">相手方</div><div className="ledger-card-value">{x.source || "—"}</div>
+                  <div className="ledger-card-label">住所</div><div className="ledger-card-value">{ledgerAddress(x) || "—"}</div>
+                  <div className="ledger-card-label">本人确认</div><div className="ledger-card-value">{ledgerIdCheck(x) || "—"}</div>
+                  <div className="ledger-card-label">备注</div><div className="ledger-card-value">{displayMemo(x) || "—"}</div>
+                  <div className="ledger-card-label">台账状态</div><div className="ledger-card-value"><span className="ledger-card-status">{ledgerStatusLabel(x)}</span></div>
+                  <div className="ledger-card-label">更正履历</div><div className="ledger-card-value">{latestHistoryText(x) || "—"}</div>
+                </div>
+              </div>
+              <div className="ledger-card-image">
+                <ProductThumb item={x} />
+                <div className="ledger-card-actions">
+                  <button className="ghost" onClick={() => setLedgerDetailItem(x)}>{auction ? "拍卖详情" : "商品档案"}</button>
+                  <button className="ghost" onClick={() => showLedgerHistory(x)}>履历</button>
+                  {isOwner && <button className="edit" onClick={() => correctLedger(x.id)}>更正</button>}
+                  {ledgerStatusLabel(x) === "作废" ? (
+                    isOwner ? <button className="edit" onClick={() => restoreLedger(x.id)}>恢复</button> : <span className="ledger-card-status">作废</span>
+                  ) : (
+                    isOwner ? <button className="danger" onClick={() => voidLedger(x.id)}>作废</button> : <span className="ledger-card-status">锁定</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <details className="ledger-original-table">
+        <summary>打开原始横表</summary>
+        <Table headers={headers} rows={rows} />
+      </details>
 
       {ledgerDetailItem && (
         <div className="image-modal" onClick={() => setLedgerDetailItem(null)}>
