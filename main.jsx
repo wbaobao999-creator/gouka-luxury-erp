@@ -1999,6 +1999,8 @@ function App() {
   const [syncStatusText, setSyncStatusText] = useState("云端待机");
   const [globalSyncNonce, setGlobalSyncNonce] = useState(0);
   const cloudGlobalHydratedRef = React.useRef(false);
+  const autoCloudReadRunningRef = React.useRef(false);
+  const lastAutoCloudReadRef = React.useRef(0);
 
   React.useEffect(() => {
     safeLocalSet(STORAGE_KEY, stripImagesForStorage(items), "商品文字数据");
@@ -2038,6 +2040,58 @@ function App() {
     // 只在登录后初次进入时补图，避免录入时反复重刷。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoggedIn]);
+
+  async function applyCloudSnapshotSilently(reason = "自动读取") {
+    if (!isLoggedIn) return;
+    if (autoCloudReadRunningRef.current) return;
+    if (tab === "add" || editingId) return;
+    autoCloudReadRunningRef.current = true;
+    lastAutoCloudReadRef.current = Date.now();
+
+    try {
+      setSyncStatusText(reason + "云端…");
+      const cloudItems = await getCloudItems();
+      if (!Array.isArray(cloudItems) || cloudItems.length === 0) {
+        setSyncStatusText("云端待机");
+        return;
+      }
+
+      const globalState = extractGlobalStateFromCloudItems(cloudItems);
+      if (globalState) {
+        applyGlobalStateToLocalStorage(globalState);
+        if (Array.isArray(globalState.dictionaries)) setDictionaries(globalState.dictionaries);
+        if (Array.isArray(globalState.suppliers)) setSuppliers(globalState.suppliers);
+        if (Array.isArray(globalState.deleteLogs)) setDeleteLogs(globalState.deleteLogs);
+        if (Array.isArray(globalState.customsBatches)) setCustomsBatches(globalState.customsBatches);
+      }
+
+      const productCloudItems = cloudItems.filter((raw) => !isGlobalStateCloudRow(raw));
+      const localItemsByIdForAutoMerge = Object.fromEntries((items || []).map((x) => [x.id, x]));
+      const nextItems = productCloudItems.map((raw) => {
+        const cloudItem = fromCloudItem(raw);
+        const localItem = localItemsByIdForAutoMerge[cloudItem.id] || {};
+        return normalizeItem({
+          ...localItem,
+          ...cloudItem,
+          customsBatchId: cloudItem.customsBatchId || localItem.customsBatchId || "",
+          importBatchId: cloudItem.importBatchId || localItem.importBatchId || cloudItem.customsBatchId || localItem.customsBatchId || "",
+          allocatedDutyJpy: cloudItem.allocatedDutyJpy || localItem.allocatedDutyJpy || localItem.batchAllocatedDutyJpy || 0,
+          allocatedAgentFeeJpy: cloudItem.allocatedAgentFeeJpy || localItem.allocatedAgentFeeJpy || localItem.batchAllocatedCustomsFeeJpy || 0,
+          allocatedInternationalShippingJpy: cloudItem.allocatedInternationalShippingJpy || localItem.allocatedInternationalShippingJpy || localItem.batchAllocatedShippingJpy || 0,
+          allocatedOtherImportCostJpy: cloudItem.allocatedOtherImportCostJpy || localItem.allocatedOtherImportCostJpy || localItem.batchAllocatedOtherCostJpy || 0,
+          importTaxCreditJpy: cloudItem.importTaxCreditJpy || localItem.importTaxCreditJpy || localItem.batchAllocatedImportTaxJpy || 0
+        });
+      });
+
+      setItems(sortGoukaItems(nextItems));
+      setSyncStatusText("自动读取云端 " + nextItems.length + " 件" + (globalState ? " · 全局资料已同步" : ""));
+    } catch (e) {
+      console.warn("Auto cloud read failed", e);
+      setSyncStatusText("自动读取失败");
+    } finally {
+      autoCloudReadRunningRef.current = false;
+    }
+  }
 
   React.useEffect(() => {
     if (!isLoggedIn) return;
@@ -2094,6 +2148,29 @@ function App() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoggedIn]);
+
+  React.useEffect(() => {
+    if (!isLoggedIn) return;
+
+    const runIfNeeded = (reason = "自动读取") => {
+      if (document.hidden) return;
+      if (tab === "add" || editingId) return;
+      if (Date.now() - lastAutoCloudReadRef.current < 10000) return;
+      applyCloudSnapshotSilently(reason);
+    };
+
+    const onFocus = () => runIfNeeded("切回页面，读取");
+    const onVisibility = () => { if (!document.hidden) runIfNeeded("页面恢复，读取"); };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
+    const timer = window.setInterval(() => runIfNeeded("自动检查，读取"), 30000);
+
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.clearInterval(timer);
+    };
+  }, [isLoggedIn, tab, editingId, items]);
 
   React.useEffect(() => {
     if (!isLoggedIn || !cloudGlobalHydratedRef.current) return;
