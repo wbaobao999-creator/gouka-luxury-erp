@@ -1926,10 +1926,6 @@ function isGlobalStateCloudRow(row) {
 }
 function readCashflowFromLocal() {
   try { const raw = localStorage.getItem(CASHFLOW_KEY); return raw ? JSON.parse(raw) : null; } catch { return null; }
-function dateOrNullForCloud(value) {
-  const text = String(value || "").trim();
-  return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : null;
-}
 }
 function extractGlobalStateFromCloudItems(cloudItems) {
   const row = (cloudItems || []).find(isGlobalStateCloudRow);
@@ -2247,7 +2243,7 @@ function App() {
   function toCloudItem(x) {
     return {
       product_no: x.id,
-      purchase_date: dateOrNullForCloud(x.purchaseDate),
+      purchase_date: /^\d{4}-\d{2}-\d{2}$/.test(String(x.purchaseDate || "").trim()) ? String(x.purchaseDate || "").trim() : null,
       category: x.category || "",
       brand: x.brand || "",
       item: x.item || "",
@@ -2276,7 +2272,7 @@ function App() {
       status: x.status || "",
       memo: memoForCloud(x),
       auction: getAuction(x) || null,
-      sold_date: dateOrNullForCloud(x.soldDate),
+      sold_date: /^\d{4}-\d{2}-\d{2}$/.test(String(x.soldDate || "").trim()) ? String(x.soldDate || "").trim() : null,
       sold_platform: x.soldPlatform || "",
       sold_price_jpy: Number(x.soldPriceJpy || 0),
       sold_memo: x.soldMemo || "",
