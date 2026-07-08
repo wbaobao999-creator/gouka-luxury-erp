@@ -1926,6 +1926,10 @@ function isGlobalStateCloudRow(row) {
 }
 function readCashflowFromLocal() {
   try { const raw = localStorage.getItem(CASHFLOW_KEY); return raw ? JSON.parse(raw) : null; } catch { return null; }
+function dateOrNullForCloud(value) {
+  const text = String(value || "").trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : null;
+}
 }
 function extractGlobalStateFromCloudItems(cloudItems) {
   const row = (cloudItems || []).find(isGlobalStateCloudRow);
@@ -1936,7 +1940,7 @@ function extractGlobalStateFromCloudItems(cloudItems) {
 }
 function buildGlobalStateCloudRow({ dictionaries, suppliers, deleteLogs, customsBatches, cashflow }) {
   const payload = { version: 1, savedAt: new Date().toISOString(), dictionaries: Array.isArray(dictionaries) ? dictionaries : [], suppliers: Array.isArray(suppliers) ? suppliers : [], deleteLogs: Array.isArray(deleteLogs) ? deleteLogs : [], customsBatches: Array.isArray(customsBatches) ? customsBatches : [], cashflow: cashflow || readCashflowFromLocal() };
-  return { product_no: GLOBAL_STATE_PRODUCT_NO, product_name: "GOUKA ERP Global Sync Data", category: "system", brand: "GOUKA ERP", status: "system", qty: 0, purchase_date: "", sale_date: "", purchase_jpy: 0, sale_jpy: 0, memo: GLOBAL_STATE_MEMO_PREFIX + JSON.stringify(payload), images: [] };
+  return { product_no: GLOBAL_STATE_PRODUCT_NO, product_name: "GOUKA ERP Global Sync Data", category: "system", brand: "GOUKA ERP", status: "system", qty: 0, purchase_date: null, sale_date: null, purchase_jpy: 0, sale_jpy: 0, memo: GLOBAL_STATE_MEMO_PREFIX + JSON.stringify(payload), images: [] };
 }
 function applyGlobalStateToLocalStorage(globalState) {
   if (!globalState || typeof globalState !== "object") return null;
@@ -2243,7 +2247,7 @@ function App() {
   function toCloudItem(x) {
     return {
       product_no: x.id,
-      purchase_date: x.purchaseDate || null,
+      purchase_date: dateOrNullForCloud(x.purchaseDate),
       category: x.category || "",
       brand: x.brand || "",
       item: x.item || "",
@@ -2272,7 +2276,7 @@ function App() {
       status: x.status || "",
       memo: memoForCloud(x),
       auction: getAuction(x) || null,
-      sold_date: x.soldDate || null,
+      sold_date: dateOrNullForCloud(x.soldDate),
       sold_platform: x.soldPlatform || "",
       sold_price_jpy: Number(x.soldPriceJpy || 0),
       sold_memo: x.soldMemo || "",
