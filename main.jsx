@@ -91,6 +91,36 @@ goukaMobileListStyle.textContent = `
 `;
 document.head.appendChild(goukaMobileListStyle);
 
+const goukaReadableTableStyle = document.createElement("style");
+goukaReadableTableStyle.textContent = `
+:root { -webkit-font-smoothing: antialiased; text-rendering: geometricPrecision; }
+body, button, input, select, textarea { font-family: Inter, "Microsoft YaHei", "PingFang SC", "Noto Sans JP", Arial, sans-serif; }
+.panel { color:#0f243d; }
+.tablewrap { border:1px solid #d9e2ef; border-radius:8px; background:#fff; overflow:auto; max-height:calc(100vh - 260px); }
+.tablewrap table { border-collapse:separate; border-spacing:0; min-width:1180px; width:100%; font-size:14px; color:#102033; }
+.tablewrap th { position:sticky; top:0; z-index:3; background:#17a344; color:#fff; font-weight:900; letter-spacing:.01em; padding:11px 10px; border-bottom:1px solid #13883a; white-space:nowrap; }
+.tablewrap td { padding:11px 10px; border-bottom:1px solid #e5edf3; border-right:1px solid #eef3f7; vertical-align:middle; line-height:1.5; background:#fff; }
+.tablewrap tbody tr:nth-child(even) td { background:#fbfdfc; }
+.tablewrap tbody tr:hover td { background:#eefaf1; }
+.tablewrap td:nth-child(1), .tablewrap th:nth-child(1) { position:sticky; left:0; z-index:4; box-shadow:1px 0 0 #d9e2ef; }
+.tablewrap td:nth-child(1) { background:#fff; }
+.tablewrap tbody tr:nth-child(even) td:nth-child(1) { background:#fbfdfc; }
+.tablewrap tbody tr:hover td:nth-child(1) { background:#eefaf1; }
+.tablewrap .thumb { border-radius:6px; object-fit:cover; border:1px solid #d7dee8; background:#fff; }
+.table-actions { gap:6px; flex-wrap:nowrap; }
+.table-actions button { white-space:nowrap; min-height:32px; }
+.table-pager { position:sticky; left:0; display:flex; align-items:center; justify-content:flex-end; gap:8px; margin:10px 0; flex-wrap:wrap; }
+.inventory-summary-card b { font-size:22px; letter-spacing:0; }
+.inventory-group-toolbar button, .filter-row button, .filter-row select { min-height:36px; }
+@media (max-width: 900px) {
+  .tablewrap { max-height:none; }
+  .tablewrap table { font-size:13px; }
+  .toolbar { gap:10px; }
+}
+`;
+document.head.appendChild(goukaReadableTableStyle);
+
+
 
 const tablePagerStyle = document.createElement("style");
 tablePagerStyle.textContent = ".table-pager{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin:10px 0;color:#475467}.table-pager.single{justify-content:flex-end}.table-pager .pill{background:#f8fafc;border:1px solid #d5dbe5;border-radius:999px;padding:6px 10px;font-size:13px}.table-pager button{min-height:34px;padding:6px 10px}";
