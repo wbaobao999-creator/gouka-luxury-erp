@@ -52,6 +52,46 @@ productRecordStyle.textContent = `
 `;
 document.head.appendChild(productRecordStyle);
 
+const goukaMobileListStyle = document.createElement("style");
+goukaMobileListStyle.textContent = `
+.inventory-mobile-cards { display:none; }
+.inventory-mobile-card { border:1px solid #d9e7dc; background:#ffffff; border-radius:6px; overflow:hidden; box-shadow:0 1px 2px rgba(15,23,42,.04); }
+.inventory-mobile-thumb { width:100%; border:0; background:#f8fafc; padding:0; display:block; cursor:pointer; }
+.inventory-mobile-thumb img { width:100%; height:190px; object-fit:cover; display:block; }
+.inventory-mobile-noimg { height:150px; display:grid; place-items:center; color:#64748b; font-weight:800; background:#f1f5f9; }
+.inventory-mobile-body { padding:12px; }
+.inventory-mobile-top { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px; }
+.inventory-mobile-id { font-size:12px; font-weight:900; color:#0f2f52; letter-spacing:.02em; }
+.inventory-mobile-title { font-size:16px; font-weight:900; color:#0b1f3a; line-height:1.35; margin-bottom:8px; }
+.inventory-mobile-name { color:#334155; font-weight:700; }
+.inventory-mobile-meta { display:flex; flex-wrap:wrap; gap:6px; margin:8px 0 10px; }
+.inventory-mobile-meta span { border:1px solid #dbe5ef; background:#f8fafc; border-radius:999px; padding:4px 8px; font-size:12px; color:#334155; font-weight:800; }
+.inventory-mobile-grid { display:grid; grid-template-columns:1fr 1fr; border:1px solid #e2e8f0; border-radius:6px; overflow:hidden; margin-top:10px; }
+.inventory-mobile-cell { padding:8px; border-right:1px solid #e2e8f0; border-bottom:1px solid #e2e8f0; min-height:52px; }
+.inventory-mobile-cell:nth-child(2n) { border-right:0; }
+.inventory-mobile-cell:nth-last-child(-n+2) { border-bottom:0; }
+.inventory-mobile-cell small { display:block; color:#64748b; font-size:11px; font-weight:800; margin-bottom:4px; }
+.inventory-mobile-cell strong { color:#031b3a; font-size:15px; }
+.inventory-mobile-actions { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:7px; margin-top:12px; }
+.inventory-mobile-actions button { min-height:36px; padding:6px 8px; font-size:13px; justify-content:center; }
+.inventory-mobile-evidence { display:flex; align-items:center; gap:7px; margin-top:9px; color:#475569; font-size:12px; line-height:1.45; }
+@media (max-width: 900px) {
+  .inventory-mobile-cards { display:grid; gap:12px; margin:12px 0 18px; }
+  .inventory-mobile-cards + .table-pager,
+  .inventory-mobile-cards + .table-pager + .tablewrap,
+  .inventory-mobile-cards + .table-pager + .tablewrap + .table-pager { display:none !important; }
+  .inventory-summary-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+@media (max-width: 520px) {
+  .inventory-mobile-actions { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .inventory-mobile-grid { grid-template-columns:1fr; }
+  .inventory-mobile-cell, .inventory-mobile-cell:nth-child(2n), .inventory-mobile-cell:nth-last-child(-n+2) { border-right:0; border-bottom:1px solid #e2e8f0; }
+  .inventory-mobile-cell:last-child { border-bottom:0; }
+}
+`;
+document.head.appendChild(goukaMobileListStyle);
+
+
 const tablePagerStyle = document.createElement("style");
 tablePagerStyle.textContent = ".table-pager{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin:10px 0;color:#475467}.table-pager.single{justify-content:flex-end}.table-pager .pill{background:#f8fafc;border:1px solid #d5dbe5;border-radius:999px;padding:6px 10px;font-size:13px}.table-pager button{min-height:34px;padding:6px 10px}";
 document.head.appendChild(tablePagerStyle);
@@ -4297,6 +4337,59 @@ function NbaaProductRecordDetail({ item, onClose, exportItemPdf, isOwner = true 
     </div>
   );
 }
+
+
+function InventoryMobileCards({ items, sourceGroupOf, sourceGroupBadge, stockDays, storageLocation, setDetailItem, setPreviewImage, setPreviewScale, exportItemPdf, editItem, deleteItem, isOwner, canEdit, canExportPdf }) {
+  const safeItems = Array.isArray(items) ? items : [];
+  if (!safeItems.length) return null;
+  return (
+    <div className="inventory-mobile-cards">
+      {safeItems.map((x) => {
+        const t = calcTax(x);
+        const sales = calcSalesBreakdown(x);
+        const sold = sales.sold;
+        const displaySale = sold ? sales.saleTaxIncluded : sales.expectedSaleTaxIncluded;
+        const displayProfit = sold ? sales.actualProfitJpy : sales.expectedProfitJpy;
+        const evidence = buildEvidenceCheck(x);
+        const days = stockDays(x);
+        const img = Array.isArray(x.images) && x.images.length ? x.images[0] : "";
+        return (
+          <article className="inventory-mobile-card" key={x.id}>
+            <button className="inventory-mobile-thumb" type="button" onClick={() => { if (img) { setPreviewScale(1); setPreviewImage(img); } }}>
+              {img ? <img src={img} alt={x.item || x.id} /> : <div className="inventory-mobile-noimg">No Image</div>}
+            </button>
+            <div className="inventory-mobile-body">
+              <div className="inventory-mobile-top">
+                <span className="inventory-mobile-id">{x.id}</span>
+                <StatusBadge status={x.status} />
+              </div>
+              <div className="inventory-mobile-title">{x.brand || "—"} <span className="inventory-mobile-name">/ {x.item || "—"}</span></div>
+              <div className="inventory-mobile-meta">
+                {sourceGroupBadge(sourceGroupOf(x))}
+                <span>{x.purchaseDate || "入库日未填"}</span>
+                <span>{days ? `库龄 ${days} 日` : "库龄 —"}</span>
+                <span>{storageLocation(x)}</span>
+              </div>
+              <div className="inventory-mobile-grid">
+                <div className="inventory-mobile-cell"><small>库存成本</small><strong>{moneyCell(t.costJpy)}</strong></div>
+                <div className="inventory-mobile-cell"><small>售价 / 成交</small><strong>{displaySale > 0 ? expectedSaleCell(displaySale) : <span className="inventory-pending">待填写</span>}</strong></div>
+                <div className="inventory-mobile-cell"><small>预计 / 实际利润</small><strong>{displaySale > 0 ? moneyCell(displayProfit) : <span className="inventory-pending">待填写</span>}</strong></div>
+                <div className="inventory-mobile-cell"><small>资料状态</small><strong><span className={"evidence-badge " + (evidence.status === "完整" ? "ok" : evidence.status === "需补充" ? "partial" : "missing")}>{evidence.status}</span></strong></div>
+              </div>
+              <div className="inventory-mobile-evidence">资料：{evidence.text}</div>
+              <div className="inventory-mobile-actions">
+                <button className="ghost" onClick={() => setDetailItem(x)}>详情</button>
+                {canExportPdf && <button className="ghost" onClick={() => exportItemPdf?.(x)}>PDF</button>}
+                {canEdit && editItem && <button className="edit" onClick={() => editItem(x)}><Edit3 size={14} /> 编辑</button>}
+                {isOwner && deleteItem && <button className="danger" onClick={() => deleteItem(x.id)}><Trash2 size={14} /> 删除</button>}
+              </div>
+            </div>
+          </article>
+        );
+      })}
+    </div>
+  );
+}
 function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, downloadCSV, editItem, deleteItem, isOwner, canEdit = true, canExportPdf = true, canViewFinance = true, setPreviewImage, setPreviewScale, exportItemPdf }) {
   const [detailItem, setDetailItem] = useState(null);
   const [page, setPage] = useState(1);
@@ -4505,6 +4598,22 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
         <div className="inventory-summary-card warn"><small>长期库存（365日以上）</small><b>{inventorySummary.longTerm} 件</b></div>
       </div>
       <p className="note">库存管理只显示日常查货字段：库龄、库位、来源、资料状态、库存成本、售价和利润。可按资料状态和库存信号筛出缺资料、未设售价、无图片或长期库存；税务、报关、销售明细请点「详情」进入 Product Record。</p>
+      <InventoryMobileCards
+        items={pageItems}
+        sourceGroupOf={sourceGroupOf}
+        sourceGroupBadge={sourceGroupBadge}
+        stockDays={stockDays}
+        storageLocation={storageLocation}
+        setDetailItem={setDetailItem}
+        setPreviewImage={setPreviewImage}
+        setPreviewScale={setPreviewScale}
+        exportItemPdf={exportItemPdf}
+        editItem={editItem}
+        deleteItem={deleteItem}
+        isOwner={isOwner}
+        canEdit={canEdit}
+        canExportPdf={canExportPdf}
+      />
       <Table headers={headers} rows={rows} />
 
       {detailItem && (
