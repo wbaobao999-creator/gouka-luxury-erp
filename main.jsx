@@ -120,6 +120,37 @@ body, button, input, select, textarea { font-family: Inter, "Microsoft YaHei", "
 `;
 document.head.appendChild(goukaReadableTableStyle);
 
+const goukaStickyActionStyle = document.createElement("style");
+goukaStickyActionStyle.textContent = `
+.tablewrap th:last-child,
+.tablewrap td:last-child {
+  position:sticky;
+  right:0;
+  z-index:5;
+  box-shadow:-1px 0 0 #d9e2ef, -10px 0 18px rgba(15,23,42,.06);
+}
+.tablewrap th:last-child { background:#148a3a; color:#fff; }
+.tablewrap td:last-child { background:#fff; min-width:168px; }
+.tablewrap tbody tr:nth-child(even) td:last-child { background:#fbfdfc; }
+.tablewrap tbody tr:hover td:last-child { background:#eefaf1; }
+.tablewrap th:first-child { z-index:6; }
+.tablewrap td:first-child { z-index:4; }
+.table-actions { display:flex; align-items:center; justify-content:flex-start; gap:6px; }
+.table-actions .ghost,
+.table-actions .edit,
+.table-actions .danger { border-radius:6px; font-weight:800; }
+.table-actions .edit svg,
+.table-actions .danger svg { flex:0 0 auto; }
+.panel > .note { font-size:14px; color:#475569; line-height:1.7; }
+.toolbar input[type="search"], .toolbar input, .filter-row input, .filter-row select { font-size:14px; }
+@media (max-width: 900px) {
+  .tablewrap th:last-child,
+  .tablewrap td:last-child { position:static; box-shadow:none; min-width:auto; }
+}
+`;
+document.head.appendChild(goukaStickyActionStyle);
+
+
 
 
 const tablePagerStyle = document.createElement("style");
