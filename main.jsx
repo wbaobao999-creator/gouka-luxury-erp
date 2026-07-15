@@ -233,6 +233,49 @@ goukaFilterFocusStyle.textContent = `
 }
 `;
 document.head.appendChild(goukaFilterFocusStyle);
+const goukaWorkbenchPolishStyle = document.createElement("style");
+goukaWorkbenchPolishStyle.textContent = `
+.app { background:#eef4f1; }
+.app aside { box-shadow: 1px 0 0 rgba(15,23,42,.06); }
+aside .brand { padding-bottom:14px; border-bottom:2px solid #16a34a; }
+aside button { transition: background .15s ease, color .15s ease, transform .12s ease; }
+aside button:hover { transform: translateX(2px); }
+main > header { border-top:4px solid #16a34a; box-shadow:0 1px 2px rgba(15,23,42,.05); }
+main > header h1 { letter-spacing:0; }
+.panel { box-shadow:0 8px 24px rgba(15,23,42,.05); border-color:#d8e5ee; }
+button { transition: background .15s ease, border-color .15s ease, transform .12s ease, box-shadow .12s ease; }
+button:hover:not(:disabled) { transform: translateY(-1px); box-shadow:0 4px 10px rgba(15,23,42,.08); }
+button:disabled { opacity:.55; cursor:not-allowed; }
+.primary, button.primary { font-weight:900; }
+.ghost { background:#fff; }
+.table-scroll-hint { display:flex; align-items:center; justify-content:space-between; gap:10px; margin:8px 0; padding:8px 11px; border:1px solid #dbe7ef; border-radius:8px; background:#f8fafc; color:#475569; font-size:13px; font-weight:800; }
+.table-scroll-hint::before { content:"表格提示"; color:#0f2f52; font-weight:900; }
+.tablewrap { scrollbar-color:#94a3b8 #e2e8f0; scrollbar-width:thin; }
+.tablewrap::-webkit-scrollbar { height:12px; width:12px; }
+.tablewrap::-webkit-scrollbar-track { background:#e2e8f0; border-radius:999px; }
+.tablewrap::-webkit-scrollbar-thumb { background:#94a3b8; border-radius:999px; border:3px solid #e2e8f0; }
+.tablewrap .thumb { transition: transform .15s ease, box-shadow .15s ease; cursor:zoom-in; }
+.tablewrap .thumb:hover { transform:scale(1.08); box-shadow:0 8px 18px rgba(15,23,42,.18); }
+.image-modal { backdrop-filter: blur(4px); }
+.image-modal .panel { box-shadow:0 20px 70px rgba(15,23,42,.25); }
+input:focus, select:focus, textarea:focus { outline:none; border-color:#16a34a !important; box-shadow:0 0 0 3px rgba(22,163,74,.14); }
+.pill { border-color:#d9e7dc; background:#fff; font-weight:900; }
+.status, .evidence-badge, .inventory-group-badge { letter-spacing:0; }
+@media print {
+  aside, main > header .action-row, .toolbar-right, .filter-row, .inventory-group-toolbar, .table-pager, .table-scroll-hint, .table-actions button { display:none !important; }
+  .app { display:block !important; background:#fff !important; }
+  main { width:100% !important; margin:0 !important; padding:0 !important; }
+  .panel { box-shadow:none !important; border:0 !important; }
+  .tablewrap { max-height:none !important; overflow:visible !important; }
+  .tablewrap th, .tablewrap td { position:static !important; box-shadow:none !important; }
+}
+@media (max-width: 760px) {
+  .table-scroll-hint { display:none; }
+  main > header { border-top:0; }
+  .panel { border-radius:10px; }
+}
+`;
+document.head.appendChild(goukaWorkbenchPolishStyle);
 
 
 
@@ -7428,6 +7471,7 @@ function Table({ headers, rows }) {
   return (
     <>
       {pager}
+      <div className="table-scroll-hint"><span>横向滚动可以查看全部字段，右侧操作列会固定在旁边。</span></div>
       <div className="tablewrap">
         <table>
           <thead>
@@ -7436,7 +7480,7 @@ function Table({ headers, rows }) {
           <tbody>
             {pageRows.map((r, i) => (
               <tr key={start + i}>
-                {r.map((c, j) => <td key={j}>{c}</td>)}
+                {r.map((c, j) => <td key={j} data-label={headers[j] || ""}>{c}</td>)}
               </tr>
             ))}
           </tbody>
