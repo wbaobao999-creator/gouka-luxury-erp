@@ -149,6 +149,90 @@ goukaStickyActionStyle.textContent = `
 }
 `;
 document.head.appendChild(goukaStickyActionStyle);
+const goukaFilterFocusStyle = document.createElement("style");
+goukaFilterFocusStyle.textContent = `
+.inventory-group-toolbar,
+.filter-row {
+  position: sticky;
+  top: 0;
+  z-index: 12;
+  background: rgba(248,250,252,.96);
+  backdrop-filter: blur(6px);
+  border: 1px solid #dbe7ef;
+  border-radius: 10px;
+  padding: 10px;
+  box-shadow: 0 6px 18px rgba(15,23,42,.05);
+}
+.inventory-group-toolbar { top: 0; margin-bottom: 10px; }
+.filter-row { top: 56px; }
+.inventory-group-toolbar button,
+.filter-row button {
+  border-radius: 999px;
+  font-weight: 900;
+  padding: 8px 13px;
+}
+.inventory-group-toolbar button.active,
+.filter-row button.active,
+.filter-row button:focus-visible,
+.inventory-group-toolbar button:focus-visible {
+  box-shadow: 0 0 0 3px rgba(22,163,74,.16);
+}
+.filter-row label {
+  font-weight: 900;
+  color: #0f2f52;
+}
+.filter-row select {
+  border-radius: 999px;
+  padding: 7px 34px 7px 12px;
+  border-color: #bdd3e6;
+  background-color: #fff;
+}
+.inventory-summary-grid {
+  gap: 10px;
+}
+.inventory-summary-card {
+  border-radius: 8px;
+  border-color: #d7e4ee;
+  box-shadow: 0 1px 2px rgba(15,23,42,.04);
+}
+.inventory-summary-card small {
+  display:block;
+  font-weight:900;
+  color:#3b5875;
+  margin-bottom:5px;
+}
+.inventory-summary-card.good {
+  background: linear-gradient(180deg, #ecfdf5 0%, #ffffff 100%);
+  border-color:#a7f3d0;
+}
+.inventory-summary-card.warn {
+  background: linear-gradient(180deg, #fff7ed 0%, #ffffff 100%);
+  border-color:#fed7aa;
+}
+.inventory-pending {
+  display:inline-flex;
+  align-items:center;
+  min-height:24px;
+  padding:3px 8px;
+  border-radius:999px;
+  background:#fff7ed;
+  color:#9a3412;
+  border:1px solid #fed7aa;
+  font-weight:900;
+  white-space:nowrap;
+}
+.evidence-badge,
+.inventory-group-badge,
+.inventory-location,
+.inventory-stock-age {
+  font-weight:900;
+}
+@media (max-width: 900px) {
+  .inventory-group-toolbar,
+  .filter-row { position: static; backdrop-filter:none; }
+}
+`;
+document.head.appendChild(goukaFilterFocusStyle);
 
 
 
