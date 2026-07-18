@@ -393,6 +393,91 @@ input, select, textarea {
 }
 `;
 document.head.appendChild(goukaDailyOperatorStyle);
+const goukaBossDashboardStyle = document.createElement("style");
+goukaBossDashboardStyle.textContent = `
+.gouka-quick-review-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin: 12px 0 14px;
+}
+.gouka-quick-review-card {
+  border: 1px solid #d7e4ee;
+  border-top: 4px solid #16a34a;
+  background: #fff;
+  padding: 12px 14px;
+  min-height: 82px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  cursor: pointer;
+  text-align: left;
+}
+.gouka-quick-review-card:hover {
+  background: #f2fbf5;
+  border-color: #16a34a;
+}
+.gouka-quick-review-card.warn { border-top-color: #f59e0b; }
+.gouka-quick-review-card.danger { border-top-color: #ef4444; }
+.gouka-quick-review-card small {
+  color: #52657a;
+  font-weight: 900;
+  letter-spacing: .04em;
+}
+.gouka-quick-review-card b {
+  color: #0b1f3a;
+  font-size: 25px;
+  line-height: 1;
+  margin-top: 8px;
+}
+.gouka-quick-review-card span {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 800;
+  margin-top: 8px;
+}
+.v3-kpi, .v3-money-card, .v3-panel {
+  transition: transform .14s ease, box-shadow .14s ease, border-color .14s ease;
+}
+.v3-kpi:hover, .v3-money-card:hover, .v3-panel:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px rgba(15,23,42,.08) !important;
+  border-color: #b7d8c0 !important;
+}
+.v3-hero-right h2,
+.v3-kpi h2,
+.v3-money-card h2 {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+.v3-tax-list div {
+  min-height: 42px;
+}
+.v3-tax-list div b {
+  font-variant-numeric: tabular-nums;
+}
+.v3-recent-item {
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  padding: 8px;
+}
+.v3-recent-item:hover {
+  background: #f8fafc;
+  border-color: #16a34a;
+}
+.v3-recent-img img,
+.v3-recent-img {
+  border-radius: 6px;
+}
+@media (max-width: 1100px) {
+  .gouka-quick-review-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 640px) {
+  .gouka-quick-review-strip { grid-template-columns: 1fr; }
+  .gouka-quick-review-card { min-height: 68px; }
+}
+`;
+document.head.appendChild(goukaBossDashboardStyle);
 
 
 
