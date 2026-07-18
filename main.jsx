@@ -478,6 +478,25 @@ goukaBossDashboardStyle.textContent = `
 }
 `;
 document.head.appendChild(goukaBossDashboardStyle);
+const goukaJapaneseDisplayStyle = document.createElement("style");
+goukaJapaneseDisplayStyle.textContent = `
+.lang-toggle-btn {
+  border-color: #16a34a !important;
+  color: #10852f !important;
+  background: #f2fbf5 !important;
+}
+.lang-toggle-btn.active {
+  background: #16a34a !important;
+  color: #fff !important;
+}
+body.gouka-ja-mode .brand span::after {
+  content: " / 日本語";
+}
+body.gouka-ja-mode .note {
+  line-height: 1.8 !important;
+}
+`;
+document.head.appendChild(goukaJapaneseDisplayStyle);
 
 
 
@@ -2403,7 +2422,210 @@ function sortGoukaItems(items) {
   });
 }
 
+
+const GOUKA_JA_TEXT = {
+  "豪嘉株式会社": "豪嘉株式会社",
+  "GOUKA ERP": "GOUKA ERP",
+  "控制台": "ダッシュボード",
+  "商品录入": "商品登録",
+  "日本拍卖": "日本オークション",
+  "库存管理": "在庫管理",
+  "出品管理": "出品管理",
+  "销售记录": "販売記録",
+  "EMS报关": "EMS通関",
+  "报关批次": "通関バッチ",
+  "古物台账": "古物台帳",
+  "利润分析": "利益分析",
+  "消费税参考": "消費税参考",
+  "PDF导出": "PDF出力",
+  "供应商管理": "仕入先管理",
+  "字典管理": "辞書管理",
+  "删除日志": "削除ログ",
+  "备份恢复": "バックアップ復元",
+  "退出登录": "ログアウト",
+  "豪嘉ERP｜中古奢侈品管理系统": "豪嘉ERP｜中古ブランド品管理システム",
+  "商品档案・日本拍卖・库存管理・EMS报关・销售利润・消费税参考": "商品台帳・日本オークション・在庫管理・EMS通関・販売利益・消費税参考",
+  "手动同步": "手動同期",
+  "手动读取": "手動読込",
+  "管理者": "管理者",
+  "员工": "スタッフ",
+  "税理士": "税理士",
+  "经营驾驶舱 · Enterprise 4.0": "経営ダッシュボード · Enterprise 4.0",
+  "中古奢侈品业务数据汇总。集中查看库存成本、预计利润、销售、报关与待处理事项。": "中古ブランド品業務データの集計。在庫原価、見込み利益、販売、通関、未処理事項をまとめて確認できます。",
+  "新增商品": "商品を追加",
+  "查看库存": "在庫を見る",
+  "立即备份": "今すぐバックアップ",
+  "库存预估差额": "在庫見込み差額",
+  "利润率": "利益率",
+  "当前库存": "現在在庫",
+  "有图": "画像あり",
+  "库存总成本": "在庫総原価",
+  "预计销售总额": "見込み販売総額",
+  "预估差额率": "見込み差額率",
+  "今日采购额": "本日仕入額",
+  "今日销售额": "本日販売額",
+  "今日净利润": "本日純利益",
+  "本月入库": "今月入庫",
+  "本月销售额": "今月販売額",
+  "本月净利润": "今月純利益",
+  "库存预警": "在庫アラート",
+  "累计进口额": "累計輸入額",
+  "累计关税": "累計関税",
+  "累计进口消费税": "累計輸入消費税",
+  "库存资金占用": "在庫資金占用",
+  "经营现金流参考": "経営キャッシュフロー参考",
+  "编辑现金流": "キャッシュフロー編集",
+  "月房租收入": "月額家賃収入",
+  "贷款支出参考": "ローン支出参考",
+  "租金净现金流": "家賃純キャッシュフロー",
+  "公司备用金": "会社予備資金",
+  "待办中心": "タスクセンター",
+  "每天打开系统先看这里": "毎日まずここを確認",
+  "待报关": "通関待ち",
+  "待出品": "出品待ち",
+  "未设预计售价": "予定販売価格未設定",
+  "待发货确认": "発送確認待ち",
+  "库存超30天": "在庫30日超",
+  "库存超60天": "在庫60日超",
+  "库存超90天": "在庫90日超",
+  "品牌利润排行": "ブランド利益ランキング",
+  "供应商利润排行": "仕入先利益ランキング",
+  "最近入库商品": "最近入庫した商品",
+  "品牌价值占比": "ブランド価値構成比",
+  "经营提醒": "経営メモ",
+  "每日快速检查条": "毎日クイックチェック",
+  "待出品 / 已入库商品": "出品待ち / 入庫済み商品",
+  "待报关 / EMS相关": "通関待ち / EMS関連",
+  "未设置预计售价": "予定販売価格未設定",
+  "长期库存预警": "長期在庫アラート",
+  "商品记录": "商品記録",
+  "有图商品": "画像あり商品",
+  "缺资料商品": "資料不足商品",
+  "商品编号": "商品番号",
+  "商品名": "商品名",
+  "商品名称": "商品名",
+  "品牌": "ブランド",
+  "品类": "カテゴリ",
+  "图片": "画像",
+  "入库日": "入庫日",
+  "状态": "状態",
+  "成本": "原価",
+  "利润": "利益",
+  "操作": "操作",
+  "详情": "詳細",
+  "编辑": "編集",
+  "删除": "削除",
+  "保存": "保存",
+  "取消": "キャンセル",
+  "清除条件": "条件クリア",
+  "搜索编号 / 品牌 / 商品": "番号 / ブランド / 商品を検索",
+  "状态筛选": "状態フィルター",
+  "开始日期": "開始日",
+  "结束日期": "終了日",
+  "全部": "すべて",
+  "已入库": "入庫済み",
+  "待出品": "出品待ち",
+  "已出品": "出品済み",
+  "已售出": "販売済み",
+  "已发货": "発送済み",
+  "报关准备": "通関準備",
+  "退货": "返品",
+  "完整": "完備",
+  "需补充": "要補足",
+  "缺资料": "資料不足",
+  "待填写": "未入力",
+  "待填写售价": "販売価格未入力",
+  "中国进货": "中国仕入",
+  "日本拍卖": "日本オークション",
+  "日本本地": "日本国内",
+  "其他来源": "その他仕入",
+  "全部来源": "すべての仕入元",
+  "资料状态": "資料状態",
+  "库存信号": "在庫シグナル",
+  "只看缺资料": "資料不足のみ",
+  "只看需补充": "要補足のみ",
+  "显示全部": "すべて表示",
+  "只看未设售价": "価格未設定のみ",
+  "只看无图片": "画像なしのみ",
+  "清除库存信号": "在庫シグナル解除",
+  "当前显示": "現在表示",
+  "库存数量": "在庫数量",
+  "预计/实际利润合计": "見込み/実績利益合計",
+  "无图片": "画像なし",
+  "库存30日以上": "在庫30日以上",
+  "长期库存": "長期在庫",
+  "库存成本": "在庫原価",
+  "售价 / 成交": "販売価格 / 成約",
+  "预计 / 实际利润": "見込み / 実績利益",
+  "资料": "資料",
+  "库龄": "在庫日数",
+  "入库日未填": "入庫日未入力",
+  "横向滚动可以查看全部字段，右侧操作列会固定在旁边。": "横スクロールで全項目を確認できます。右側の操作列は固定表示されます。",
+  "表格提示": "表のヒント",
+  "云端待机": "クラウド待機中",
+  "正在同步云端…": "クラウド同期中…",
+  "正在读取云端…": "クラウド読込中…",
+  "同步失败": "同期失敗",
+  "读取失败": "読込失敗",
+  "全局资料已同步": "共通データ同期済み"
+};
+
+function goukaTranslateText(text) {
+  let next = text;
+  Object.entries(GOUKA_JA_TEXT).sort((a, b) => b[0].length - a[0].length).forEach(([zh, ja]) => {
+    next = next.split(zh).join(ja);
+  });
+  next = next.replace(/(\d+) 件/g, "$1 点");
+  next = next.replace(/第 (\d+) \/ (\d+) 页/g, "$1 / $2 ページ");
+  next = next.replace(/共 (\d+) 件/g, "合計 $1 点");
+  return next;
+}
+
+function applyGoukaJapaneseDisplay(root = document.body) {
+  if (!document.body.classList.contains("gouka-ja-mode")) return;
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      const parent = node.parentElement;
+      if (!parent) return NodeFilter.FILTER_REJECT;
+      if (parent.closest("script,style,input,textarea,select,option")) return NodeFilter.FILTER_REJECT;
+      if (!node.nodeValue || !node.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
+      return NodeFilter.FILTER_ACCEPT;
+    }
+  });
+  const nodes = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode);
+  nodes.forEach((node) => {
+    const original = node.nodeValue;
+    const translated = goukaTranslateText(original);
+    if (translated !== original) node.nodeValue = translated;
+  });
+  document.querySelectorAll("input[placeholder]").forEach((el) => {
+    const next = goukaTranslateText(el.getAttribute("placeholder") || "");
+    if (next) el.setAttribute("placeholder", next);
+  });
+}
+
+function useGoukaJapaneseDisplay(enabled) {
+  React.useEffect(() => {
+    document.body.classList.toggle("gouka-ja-mode", enabled);
+    if (!enabled) return;
+    applyGoukaJapaneseDisplay();
+    const observer = new MutationObserver((mutations) => {
+      window.requestAnimationFrame(() => mutations.forEach((m) => applyGoukaJapaneseDisplay(m.target.nodeType === 1 ? m.target : document.body)));
+    });
+    observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+    return () => observer.disconnect();
+  }, [enabled]);
+}
 function App() {
+  const [japaneseMode, setJapaneseMode] = useState(() => localStorage.getItem("gouka_ja_mode") === "yes");
+  useGoukaJapaneseDisplay(japaneseMode);
+  function toggleJapaneseMode() {
+    const next = !japaneseMode;
+    setJapaneseMode(next);
+    localStorage.setItem("gouka_ja_mode", next ? "yes" : "no");
+    if (!next) window.location.reload();
+  }
   const [session, setSession] = useState(() => {
     try {
       const raw = localStorage.getItem(LOGIN_KEY);
@@ -3631,6 +3853,7 @@ function App() {
           <div className="action-row">
             <button className="ghost" onClick={syncToCloud}>手动同步</button>
             <button className="ghost" onClick={loadFromCloud}>手动读取</button>
+            <button className={"ghost lang-toggle-btn " + (japaneseMode ? "active" : "")} onClick={toggleJapaneseMode}>{japaneseMode ? "中文表示" : "日本語表示"}</button>
             <span className="pill sync-live-pill">{syncStatusText}</span>
             <span className="pill">Auto Save · {isOwner ? "管理者" : isTaxViewer ? "税理士" : "员工"}</span>
           </div>
