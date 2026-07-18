@@ -276,6 +276,123 @@ input:focus, select:focus, textarea:focus { outline:none; border-color:#16a34a !
 }
 `;
 document.head.appendChild(goukaWorkbenchPolishStyle);
+const goukaDailyOperatorStyle = document.createElement("style");
+goukaDailyOperatorStyle.textContent = `
+.sync-live-pill {
+  position: relative;
+  padding-left: 24px !important;
+  color: #0f2f52;
+  background: #f0fdf4 !important;
+  border-color: #bbf7d0 !important;
+}
+.sync-live-pill::before {
+  content: "";
+  position: absolute;
+  left: 9px;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #16a34a;
+  transform: translateY(-50%);
+  box-shadow: 0 0 0 5px rgba(22,163,74,.12);
+}
+main > header {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  background: rgba(255,255,255,.96);
+  backdrop-filter: blur(8px);
+}
+main > header .action-row {
+  align-items: center;
+  row-gap: 7px;
+}
+main > header .action-row button {
+  min-height: 38px;
+  font-weight: 900;
+}
+.panel h2 {
+  letter-spacing: 0;
+  color: #0b1f3a;
+}
+.toolbar {
+  border-bottom: 1px solid #e2e8f0;
+  padding-bottom: 10px;
+  margin-bottom: 12px;
+}
+.toolbar h2 {
+  margin-bottom: 0;
+}
+.toolbar-right {
+  gap: 8px;
+}
+.search {
+  border-radius: 999px;
+  background: #fff;
+}
+.search input {
+  min-width: 260px;
+}
+.tablewrap {
+  max-height: calc(100vh - 210px);
+}
+.tablewrap td {
+  font-size: 13.5px;
+}
+.table-actions {
+  min-width: 164px;
+}
+.table-actions button {
+  min-height: 30px;
+  padding: 5px 9px;
+  font-size: 12.5px;
+}
+.table-actions .danger {
+  color: #b91c1c;
+  background: #fff5f5;
+  border-color: #fecaca;
+}
+.table-actions .edit {
+  color: #075985;
+  background: #f0f9ff;
+  border-color: #bae6fd;
+}
+.table-actions .ghost {
+  color: #0f2f52;
+}
+.inventory-summary-card {
+  min-height: 72px;
+}
+.inventory-summary-card b {
+  line-height: 1.1;
+}
+.note {
+  color: #52657a;
+}
+.formgrid label,
+label {
+  color: #102033;
+  font-weight: 800;
+}
+input, select, textarea {
+  font-weight: 650;
+  color: #102033;
+}
+@media (max-width: 980px) {
+  main > header { position: static; }
+  main > header .action-row { justify-content: flex-start; }
+  .search input { min-width: 180px; }
+  .tablewrap { max-height: none; }
+}
+@media (max-width: 760px) {
+  main > header { padding: 14px; }
+  main > header h1 { font-size: 22px; }
+  main > header p { font-size: 12px; }
+  .sync-live-pill { width: 100%; justify-content: center; }
+}
+`;
+document.head.appendChild(goukaDailyOperatorStyle);
 
 
 
@@ -3429,7 +3546,7 @@ function App() {
           <div className="action-row">
             <button className="ghost" onClick={syncToCloud}>手动同步</button>
             <button className="ghost" onClick={loadFromCloud}>手动读取</button>
-            <span className="pill">{syncStatusText}</span>
+            <span className="pill sync-live-pill">{syncStatusText}</span>
             <span className="pill">Auto Save · {isOwner ? "管理者" : isTaxViewer ? "税理士" : "员工"}</span>
           </div>
         </header>
