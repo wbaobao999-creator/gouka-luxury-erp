@@ -2567,7 +2567,90 @@ const GOUKA_JA_TEXT = {
   "正在读取云端…": "クラウド読込中…",
   "同步失败": "同期失敗",
   "读取失败": "読込失敗",
-  "全局资料已同步": "共通データ同期済み"
+  "全局资料已同步": "共通データ同期済み",
+  "采购成本": "仕入原価",
+  "运费关税手续费": "送料・関税・手数料",
+  "库存预计含税销售额": "在庫の税込見込み販売額",
+  "预计销售额 - 库存总成本": "見込み販売額 - 在庫総原価",
+  "仅供经营预估": "経営見込み用",
+  "今日新增": "本日追加",
+  "今日售出": "本日販売",
+  "已扣真实成本": "実原価控除後",
+  "按销售日期统计": "販売日ベース",
+  "365日以上库存": "365日以上の在庫",
+  "Import Batch 货值": "Import Batch 商品価額",
+  "按批次汇总": "バッチ別集計",
+  "不进入库存成本": "在庫原価に含めない",
+  "未售库存成本": "未販売在庫原価",
+  "按净利润排序": "純利益順",
+  "知道哪个来源最赚钱": "利益の高い仕入先を確認",
+  "最新录入的前5件商品": "直近登録した5商品",
+  "库存管理": "在庫管理",
+  "未填颜色": "色未入力",
+  "未填日期": "日付未入力",
+  "按库存成本金额统计，不再只看件数": "件数ではなく在庫原価金額で集計",
+  "总记录": "総記録数",
+  "已售": "販売済み",
+  "有图": "画像あり",
+  "企业备份": "企業バックアップ",
+  "导出备份JSON": "バックアップJSON出力",
+  "导入备份JSON": "バックアップJSON取込",
+  "导出国税审计CSV": "税務監査CSV出力",
+  "商品档案PDF": "商品台帳PDF",
+  "库存PDF": "在庫PDF",
+  "古物台账PDF": "古物台帳PDF",
+  "消费税参考PDF": "消費税参考PDF",
+  "选中库存PDF": "選択在庫PDF",
+  "按日期库存PDF": "日付別在庫PDF",
+  "当前筛选": "現在の絞り込み",
+  "已勾选": "選択済み",
+  "搜索供应商/地址/联系人": "仕入先 / 住所 / 担当者を検索",
+  "供应商名称": "仕入先名",
+  "类型": "区分",
+  "国家": "国",
+  "地址": "住所",
+  "联系人": "担当者",
+  "电话": "電話",
+  "邮箱": "メール",
+  "备注": "備考",
+  "新增供应商": "仕入先を追加",
+  "保存供应商": "仕入先を保存",
+  "取消编辑": "編集キャンセル",
+  "供应商列表": "仕入先一覧",
+  "中国供应商": "中国仕入先",
+  "中国个人": "中国個人",
+  "日本个人": "日本個人",
+  "日本拍卖": "日本オークション",
+  "平台采购": "プラットフォーム仕入",
+  "店头收购": "店頭買取",
+  "其他": "その他",
+  "月房租收入 JPY": "月額家賃収入 JPY",
+  "贷款支出 JPY": "ローン支出 JPY",
+  "公司备用金 JPY": "会社予備資金 JPY",
+  "保存现金流": "キャッシュフロー保存",
+  "取消": "キャンセル",
+  "商品记录": "商品記録",
+  "当前商品记录": "現在の商品記録",
+  "有图片商品": "画像あり商品",
+  "已售商品": "販売済み商品",
+  "报关相关": "通関関連",
+  "库存总成本": "在庫総原価",
+  "库存数量": "在庫数量",
+  "当前库存": "現在在庫",
+  "库存预估差额": "在庫見込み差額",
+  "库存资金占用": "在庫資金占用",
+  "预计留抵消费税": "見込み控除対象消費税",
+  "累计进口消费税": "累計輸入消費税",
+  "累计进口额": "累計輸入額",
+  "累计关税": "累計関税",
+  "预计/实际利润合计": "見込み/実績利益合計",
+  "待出品": "出品待ち",
+  "待报关": "通関待ち",
+  "未设预计售价": "予定販売価格未設定",
+  "无图片": "画像なし",
+  "需补充": "要補足",
+  "资料完整": "資料完備",
+  "长期库存（365日以上）": "長期在庫（365日以上）"
 };
 
 function goukaTranslateText(text) {
@@ -2587,7 +2670,7 @@ function applyGoukaJapaneseDisplay(root = document.body) {
     acceptNode(node) {
       const parent = node.parentElement;
       if (!parent) return NodeFilter.FILTER_REJECT;
-      if (parent.closest("script,style,input,textarea,select,option")) return NodeFilter.FILTER_REJECT;
+      if (parent.closest("script,style,input,textarea")) return NodeFilter.FILTER_REJECT;
       if (!node.nodeValue || !node.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
       return NodeFilter.FILTER_ACCEPT;
     }
@@ -2599,9 +2682,18 @@ function applyGoukaJapaneseDisplay(root = document.body) {
     const translated = goukaTranslateText(original);
     if (translated !== original) node.nodeValue = translated;
   });
-  document.querySelectorAll("input[placeholder]").forEach((el) => {
+  document.querySelectorAll("input[placeholder], textarea[placeholder]").forEach((el) => {
     const next = goukaTranslateText(el.getAttribute("placeholder") || "");
     if (next) el.setAttribute("placeholder", next);
+  });
+  document.querySelectorAll("option").forEach((el) => {
+    const original = el.textContent || "";
+    const translated = goukaTranslateText(original);
+    if (translated !== original) el.textContent = translated;
+  });
+  document.querySelectorAll("[title]").forEach((el) => {
+    const next = goukaTranslateText(el.getAttribute("title") || "");
+    if (next) el.setAttribute("title", next);
   });
 }
 
