@@ -1196,23 +1196,47 @@ function calcImportBatchTradeSummary(batch, products = []) {
 }
 
 
+
+function cleanDictionaryList(list, fallback = []) {
+  const badOptionText = /^(选择|请选择|先选|这里可以|输入|undefined|null|-)$/i;
+  const merged = [...(Array.isArray(fallback) ? fallback : []), ...(Array.isArray(list) ? list : [])]
+    .map((x) => String(x || "").trim())
+    .filter((x) => x && !badOptionText.test(x) && !x.includes("选择或输入") && !x.includes("先选品牌"));
+  return [...new Set(merged)];
+}
+
+function normalizeGoukaDictionaries(raw = {}) {
+  const src = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+  const brands = cleanDictionaryList(src.brands, DEFAULT_DICTIONARIES.brands);
+  const itemsByBrand = { ...DEFAULT_DICTIONARIES.itemsByBrand };
+  const rawItemsByBrand = src.itemsByBrand && typeof src.itemsByBrand === "object" && !Array.isArray(src.itemsByBrand) ? src.itemsByBrand : {};
+  Object.entries(rawItemsByBrand).forEach(([brand, list]) => {
+    const key = String(brand || "").trim();
+    if (!key) return;
+    itemsByBrand[key] = cleanDictionaryList(list, itemsByBrand[key] || ["其他"]);
+  });
+  brands.forEach((brand) => {
+    if (!itemsByBrand[brand]) itemsByBrand[brand] = ["其他"];
+  });
+  return {
+    brands,
+    itemsByBrand,
+    materials: cleanDictionaryList(src.materials, DEFAULT_DICTIONARIES.materials),
+    colors: cleanDictionaryList(src.colors, DEFAULT_DICTIONARIES.colors),
+    origins: cleanDictionaryList(src.origins, DEFAULT_DICTIONARIES.origins),
+    sources: cleanDictionaryList(src.sources, DEFAULT_DICTIONARIES.sources),
+    platforms: cleanDictionaryList(src.platforms, DEFAULT_DICTIONARIES.platforms),
+    idChecks: cleanDictionaryList(src.idChecks, DEFAULT_DICTIONARIES.idChecks)
+  };
+}
+
 function loadDictionaries() {
   try {
     const saved = localStorage.getItem(DICTIONARY_KEY);
-    if (!saved) return DEFAULT_DICTIONARIES;
-    const parsed = JSON.parse(saved);
-    return {
-      brands: Array.isArray(parsed.brands) ? parsed.brands : DEFAULT_DICTIONARIES.brands,
-      itemsByBrand: parsed.itemsByBrand && typeof parsed.itemsByBrand === "object" ? parsed.itemsByBrand : DEFAULT_DICTIONARIES.itemsByBrand,
-      materials: Array.isArray(parsed.materials) ? parsed.materials : DEFAULT_DICTIONARIES.materials,
-      colors: Array.isArray(parsed.colors) ? parsed.colors : DEFAULT_DICTIONARIES.colors,
-      origins: Array.isArray(parsed.origins) ? parsed.origins : DEFAULT_DICTIONARIES.origins,
-      sources: Array.isArray(parsed.sources) ? parsed.sources : DEFAULT_DICTIONARIES.sources,
-      platforms: Array.isArray(parsed.platforms) ? parsed.platforms : DEFAULT_DICTIONARIES.platforms,
-      idChecks: Array.isArray(parsed.idChecks) ? parsed.idChecks : DEFAULT_DICTIONARIES.idChecks
-    };
+    if (!saved) return normalizeGoukaDictionaries(DEFAULT_DICTIONARIES);
+    return normalizeGoukaDictionaries(JSON.parse(saved));
   } catch {
-    return DEFAULT_DICTIONARIES;
+    return normalizeGoukaDictionaries(DEFAULT_DICTIONARIES);
   }
 }
 
@@ -2384,12 +2408,12 @@ function extractGlobalStateFromCloudItems(cloudItems) {
   try { return JSON.parse(memo.slice(GLOBAL_STATE_MEMO_PREFIX.length)); } catch (e) { console.warn("Global cloud state parse failed", e); return null; }
 }
 function buildGlobalStateCloudRow({ dictionaries, suppliers, deleteLogs, customsBatches, cashflow }) {
-  const payload = { version: 1, savedAt: new Date().toISOString(), dictionaries: Array.isArray(dictionaries) ? dictionaries : [], suppliers: Array.isArray(suppliers) ? suppliers : [], deleteLogs: Array.isArray(deleteLogs) ? deleteLogs : [], customsBatches: Array.isArray(customsBatches) ? customsBatches : [], cashflow: cashflow || readCashflowFromLocal() };
+  const payload = { version: 1, savedAt: new Date().toISOString(), dictionaries: normalizeGoukaDictionaries(dictionaries), suppliers: Array.isArray(suppliers) ? suppliers : [], deleteLogs: Array.isArray(deleteLogs) ? deleteLogs : [], customsBatches: Array.isArray(customsBatches) ? customsBatches : [], cashflow: cashflow || readCashflowFromLocal() };
   return { product_no: GLOBAL_STATE_PRODUCT_NO, product_name: "GOUKA ERP Global Sync Data", category: "system", brand: "GOUKA ERP", status: "system", qty: 0, purchase_date: null, sale_date: null, purchase_jpy: 0, sale_jpy: 0, memo: GLOBAL_STATE_MEMO_PREFIX + JSON.stringify(payload), images: [] };
 }
 function applyGlobalStateToLocalStorage(globalState) {
   if (!globalState || typeof globalState !== "object") return null;
-  if (Array.isArray(globalState.dictionaries)) safeLocalSet(DICTIONARY_KEY, globalState.dictionaries, "云端字典资料");
+  if (globalState.dictionaries) safeLocalSet(DICTIONARY_KEY, normalizeGoukaDictionaries(globalState.dictionaries), "云端字典资料");
   if (Array.isArray(globalState.suppliers)) safeLocalSet(SUPPLIER_KEY, globalState.suppliers, "云端供应商资料");
   if (Array.isArray(globalState.deleteLogs)) safeLocalSet(DELETE_LOG_KEY, globalState.deleteLogs, "云端删除日志");
   if (Array.isArray(globalState.customsBatches)) safeLocalSet(CUSTOMS_BATCH_KEY, globalState.customsBatches, "云端报关批次");
@@ -2401,7 +2425,7 @@ function applyGlobalStateToLocalStorage(globalState) {
 
 function goukaProductNumberValue(id) {
   const text = String(id || "");
-  const matches = text.match(/d+/g);
+  const matches = text.match(/\\d+/g);
   if (!matches || matches.length === 0) return 999999999;
   return Number(matches[matches.length - 1] || 999999999);
 }
@@ -2803,7 +2827,7 @@ function App() {
       const globalState = extractGlobalStateFromCloudItems(cloudItems);
       if (globalState) {
         applyGlobalStateToLocalStorage(globalState);
-        if (Array.isArray(globalState.dictionaries)) setDictionaries(globalState.dictionaries);
+        if (globalState.dictionaries) setDictionaries(normalizeGoukaDictionaries(globalState.dictionaries));
         if (Array.isArray(globalState.suppliers)) setSuppliers(globalState.suppliers);
         if (Array.isArray(globalState.deleteLogs)) setDeleteLogs(globalState.deleteLogs);
         if (Array.isArray(globalState.customsBatches)) setCustomsBatches(globalState.customsBatches);
@@ -2854,7 +2878,7 @@ function App() {
         const globalState = extractGlobalStateFromCloudItems(cloudItems);
         if (globalState) {
           applyGlobalStateToLocalStorage(globalState);
-          if (Array.isArray(globalState.dictionaries)) setDictionaries(globalState.dictionaries);
+          if (globalState.dictionaries) setDictionaries(normalizeGoukaDictionaries(globalState.dictionaries));
           if (Array.isArray(globalState.suppliers)) setSuppliers(globalState.suppliers);
           if (Array.isArray(globalState.deleteLogs)) setDeleteLogs(globalState.deleteLogs);
           if (Array.isArray(globalState.customsBatches)) setCustomsBatches(globalState.customsBatches);
@@ -3026,7 +3050,7 @@ function App() {
           const normalizedItems = nextItems.map(normalizeItem);
           await Promise.all(normalizedItems.map((item) => saveItemImagesToDb(item.id, item.images || [])));
           setItems(normalizedItems);
-          if (parsed.dictionaries) setDictionaries({ ...DEFAULT_DICTIONARIES, ...parsed.dictionaries });
+          if (parsed.dictionaries) setDictionaries(normalizeGoukaDictionaries(parsed.dictionaries));
           if (Array.isArray(parsed.suppliers)) setSuppliers(parsed.suppliers);
           if (Array.isArray(parsed.deleteLogs)) setDeleteLogs(parsed.deleteLogs);
           if (Array.isArray(parsed.customsBatches)) setCustomsBatches(parsed.customsBatches);
@@ -3192,7 +3216,7 @@ function App() {
       if (!window.confirm(`从云端读取 ${nextItems.length} 件商品，并覆盖当前浏览器库存吗？`)) return;
       if (globalState) {
         applyGlobalStateToLocalStorage(globalState);
-        if (Array.isArray(globalState.dictionaries)) setDictionaries(globalState.dictionaries);
+        if (globalState.dictionaries) setDictionaries(normalizeGoukaDictionaries(globalState.dictionaries));
         if (Array.isArray(globalState.suppliers)) setSuppliers(globalState.suppliers);
         if (Array.isArray(globalState.deleteLogs)) setDeleteLogs(globalState.deleteLogs);
         if (Array.isArray(globalState.customsBatches)) setCustomsBatches(globalState.customsBatches);
@@ -7825,7 +7849,7 @@ function DictionaryPanel({ dictionaries, setDictionaries }) {
   }
 
   function saveDictionary() {
-    const next = {
+    const next = normalizeGoukaDictionaries({
       ...dictionaries,
       brands: splitLines(brandText),
       materials: splitLines(materialText),
@@ -7837,14 +7861,16 @@ function DictionaryPanel({ dictionaries, setDictionaries }) {
         ...dictionaries.itemsByBrand,
         [selectedBrand]: splitLines(itemsText)
       }
-    };
+    });
     setDictionaries(next);
-    alert("字典已保存。新商品录入会使用最新字典。");
+    setBrandText(joinLines(next.brands));
+    if (!next.brands.includes(selectedBrand)) setSelectedBrand(next.brands[0] || "CHANEL");
+    alert("字典已保存。系统默认奢侈品牌会自动保留。新商品录入会使用最新字典。");
   }
 
   function resetDictionary() {
     if (!window.confirm("确认恢复系统默认字典吗？")) return;
-    setDictionaries(DEFAULT_DICTIONARIES);
+    setDictionaries(normalizeGoukaDictionaries(DEFAULT_DICTIONARIES));
     setBrandText(joinLines(DEFAULT_DICTIONARIES.brands));
     setMaterialText(joinLines(DEFAULT_DICTIONARIES.materials));
     setColorText(joinLines(DEFAULT_DICTIONARIES.colors));
