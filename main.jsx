@@ -4,6 +4,62 @@ import { Package, FileText, Calculator, Search, Plus, Building2, Download, Edit3
 import "./style.css";
 import { getCloudItems, upsertCloudItem, deleteItemCloud, uploadItemImages, deleteProductImages, uploadImportBatchAttachments } from "./itemService.js";
 
+
+const goukaPerformanceImagePolishStyle = document.createElement("style");
+goukaPerformanceImagePolishStyle.textContent = `
+/* GOUKA performance polish: many photos / many products */
+img.thumb,
+.inventory-mobile-thumb img,
+.v3-recent-img img,
+.product-record-main-image,
+.product-record-thumbs img,
+.nbaa-main-image,
+.nbaa-thumbs img,
+.ledger-card-image img,
+.auction-card-image img,
+.listing-compact-thumb img {
+  background:#f8fafc;
+  image-rendering:auto;
+}
+.inventory-mobile-card,
+.ledger-card,
+.auction-card,
+.v3-recent-item,
+.record-card {
+  content-visibility:auto;
+  contain-intrinsic-size:280px;
+}
+.product-record-page {
+  content-visibility:auto;
+  contain-intrinsic-size:720px;
+}
+.tablewrap .thumb {
+  will-change:transform;
+}
+.inventory-mobile-thumb img,
+.product-record-main-image,
+.nbaa-main-image,
+.ledger-card-image .thumb,
+.auction-card-image .thumb {
+  transition:opacity .18s ease, transform .18s ease;
+}
+.inventory-mobile-thumb img:hover,
+.product-record-thumbs img:hover,
+.ledger-card-image .thumb:hover,
+.auction-card-image .thumb:hover {
+  transform:scale(1.02);
+}
+@media (prefers-reduced-motion: reduce) {
+  .inventory-mobile-thumb img,
+  .product-record-main-image,
+  .nbaa-main-image,
+  .ledger-card-image .thumb,
+  .auction-card-image .thumb,
+  .tablewrap .thumb { transition:none!important; }
+}
+`;
+document.head.appendChild(goukaPerformanceImagePolishStyle);
+
 const nbaaStyle = document.createElement("style");
 nbaaStyle.textContent = ".nbaa-sheet{background:#eef4ed;border:1px solid #b7d7bd;border-radius:4px;padding:12px}.nbaa-main{display:grid;grid-template-columns:minmax(0,1fr) 190px;gap:12px}.nbaa-grid{display:grid;grid-template-columns:140px minmax(0,1fr);border-top:1px solid #d7d7d7;border-left:1px solid #d7d7d7;background:#fff}.nbaa-section{grid-column:1/-1;background:#e9f8ec;color:#10852f;font-weight:800;padding:9px 10px;border-right:1px solid #d7d7d7;border-bottom:1px solid #d7d7d7}.nbaa-label{background:#19a83d;color:#fff;font-weight:800;text-align:center;padding:9px 8px;border-right:1px solid #d7d7d7;border-bottom:1px solid #d7d7d7;min-height:38px}.nbaa-value{background:#fff;color:#0f172a;padding:9px 10px;border-bottom:1px solid #d7d7d7;min-height:38px;word-break:break-word}.nbaa-image-pane{background:#fff;border:1px solid #d7d7d7;padding:8px;align-self:start}.nbaa-main-image,.nbaa-no-image{width:160px;height:160px;object-fit:cover;border:1px solid #e5e7eb;background:#f8fafc;display:grid;place-items:center;color:#64748b}.nbaa-thumbs{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.nbaa-thumbs img{width:72px;height:72px;object-fit:cover;border:1px solid #e5e7eb}.nbaa-record .toolbar{margin-bottom:12px}@media(max-width:760px){.nbaa-main{grid-template-columns:1fr}.nbaa-grid{grid-template-columns:116px minmax(0,1fr)}.nbaa-image-pane{width:max-content;max-width:100%}}";
 document.head.appendChild(nbaaStyle);
@@ -3517,7 +3573,7 @@ function App() {
   function pdfImageHtml(item, size = 130) {
     const images = Array.isArray(item?.images) ? item.images.filter(Boolean).slice(0, 3) : [];
     if (!images.length) return `<div class="no-image">No Image</div>`;
-    return images.map((src) => `<img class="pdf-img" style="width:${size}px;height:${size}px" src="${htmlEscape(src)}" />`).join("");
+    return images.map((src) => `<img decoding="async" loading="lazy" class="pdf-img" style="width:${size}px;height:${size}px" src="${htmlEscape(src)}" />`).join("");
   }
 
   function makeDocumentNo(prefix = "GOUKA-PDF") {
@@ -3542,7 +3598,7 @@ function App() {
           <div class="company-name">豪嘉株式会社</div>
           <div class="company-en">GOUKA CO., LTD.</div>
           <div class="representative-line">代表取締役　許 四傑
-            <img class="company-stamp seal-on-name" style="transform:translate(${sealX}px, ${sealY}px) rotate(${sealRotate}deg);" src="${COMPANY_STAMP_DATA_URL}" />
+            <img decoding="async" loading="lazy" class="company-stamp seal-on-name" style="transform:translate(${sealX}px, ${sealY}px) rotate(${sealRotate}deg);" src="${COMPANY_STAMP_DATA_URL}" />
           </div>
           <div class="identity-block">
             <div>適格請求書発行事業者　登録番号：T120001249367</div>
@@ -4035,7 +4091,7 @@ function App() {
               <button onClick={() => setPreviewScale(1)}>原图</button>
               <button onClick={() => setPreviewImage(null)}>关闭</button>
             </div>
-            <img src={previewImage} alt="preview" style={{transform:`scale(${previewScale})`}} />
+            <img decoding="async" loading="lazy" src={previewImage} alt="preview" style={{transform:`scale(${previewScale})`}} />
           </div>
         )}
       </main>
@@ -4272,7 +4328,7 @@ function Dashboard({ totals, items, setTab, exportBackup, customsBatches = [], o
           <div className="v3-recent-list">
             {recent.length ? recent.map((x) => (
               <div className="v3-recent-item" key={x.id}>
-                <div className="v3-recent-img">{x.images?.[0] ? <img src={x.images[0]} alt={x.item} /> : "📦"}</div>
+                <div className="v3-recent-img">{x.images?.[0] ? <img decoding="async" loading="lazy" src={x.images[0]} alt={x.item} /> : "📦"}</div>
                 <div><b>{x.brand} {x.item}</b><p>{x.category} / {x.color || "未填颜色"}</p><small>{x.id}</small></div>
                 <StatusBadge status={x.status} />
                 <span className="v3-recent-date">{x.purchaseDate || "未填日期"}</span>
@@ -4604,7 +4660,7 @@ function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, 
         <div className="image-row full">
           {(form.images || []).map((src, i) => (
             <div className="image-box" key={i}>
-              <img src={src} alt={`商品图片${i + 1}`} />
+              <img decoding="async" loading="lazy" src={src} alt={`商品图片${i + 1}`} />
               <button type="button" onClick={() => removeImage(i)}>
                 <X size={14} /> 移除
               </button>
@@ -4641,7 +4697,7 @@ function ProductThumb({ item, size = 72, onPreview }) {
   const src = Array.isArray(item?.images) && item.images.length ? item.images[0] : "";
   if (!src) return "—";
   return (
-    <img
+    <img decoding="async" loading="lazy"
       className="thumb"
       src={src}
       alt={item?.item || item?.id || "product"}
@@ -4845,7 +4901,7 @@ function NbaaProductRecordDetail({ item, onClose, exportItemPdf, isOwner = true 
     <div className="product-record-page">
       <div className="product-record-head">
         <div className="product-record-photo">
-          {mainImage ? <img className="product-record-main-image" src={mainImage} alt={item.item || item.id} /> : <div className="product-record-no-image">No Image</div>}
+          {mainImage ? <img decoding="async" loading="lazy" className="product-record-main-image" src={mainImage} alt={item.item || item.id} /> : <div className="product-record-no-image">No Image</div>}
           {mainImage && (
             <div className="record-image-actions">
               <button className="ghost" onClick={() => window.open(mainImage, "_blank")}>放大</button>
@@ -4854,7 +4910,7 @@ function NbaaProductRecordDetail({ item, onClose, exportItemPdf, isOwner = true 
             </div>
           )}
           <div className="product-record-thumbs">
-            {images.slice(0, 8).map((src, i) => <img key={i} src={src} alt="thumb" onClick={() => window.open(src, "_blank")} />)}
+            {images.slice(0, 8).map((src, i) => <img decoding="async" loading="lazy" key={i} src={src} alt="thumb" onClick={() => window.open(src, "_blank")} />)}
           </div>
         </div>
         <div className="product-record-identity">
@@ -5085,7 +5141,7 @@ function InventoryMobileCards({ items, sourceGroupOf, sourceGroupBadge, stockDay
         return (
           <article className="inventory-mobile-card" key={x.id}>
             <button className="inventory-mobile-thumb" type="button" onClick={() => { if (img) { setPreviewScale(1); setPreviewImage(img); } }}>
-              {img ? <img src={img} alt={x.item || x.id} /> : <div className="inventory-mobile-noimg">No Image</div>}
+              {img ? <img decoding="async" loading="lazy" src={img} alt={x.item || x.id} /> : <div className="inventory-mobile-noimg">No Image</div>}
             </button>
             <div className="inventory-mobile-body">
               <div className="inventory-mobile-top">
@@ -5238,7 +5294,7 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
     const days = stockDays(x);
     return [
       sourceGroupBadge(sourceGroupOf(x)),
-      x.images && x.images.length ? <img className="thumb" src={x.images[0]} alt={x.item} style={{ width: 72, height: 72 }} onClick={() => { setPreviewScale(1); setPreviewImage(x.images[0]); }} /> : "—",
+      x.images && x.images.length ? <img decoding="async" loading="lazy" className="thumb" src={x.images[0]} alt={x.item} style={{ width: 72, height: 72 }} onClick={() => { setPreviewScale(1); setPreviewImage(x.images[0]); }} /> : "—",
       x.id,
       x.purchaseDate,
       <span className={"inventory-stock-age" + (days >= 365 ? " warn" : "")}>{days ? `${days}日` : "—"}</span>,
@@ -6737,7 +6793,7 @@ function ListingManagement({ items, updateListingItem, editItem, setPreviewImage
     return (
       <div key={item.id} className="listing-compact-row">
         <div className="listing-compact-thumb" onClick={() => image && (setPreviewScale(1), setPreviewImage(image))}>
-          {image ? <img src={image} alt={item.item || item.id} /> : "📦"}
+          {image ? <img decoding="async" loading="lazy" src={image} alt={item.item || item.id} /> : "📦"}
         </div>
         <div className="listing-compact-main">
           <b>{item.brand || "—"} {item.item || "未识别商品"}</b>
@@ -6808,7 +6864,7 @@ function ListingManagement({ items, updateListingItem, editItem, setPreviewImage
                   <div key={item.id} style={{background:"#fff", border:"1px solid #e5e7eb", borderRadius:"14px", padding:"10px", boxShadow:"0 8px 18px rgba(15,23,42,.05)"}}>
                     <div style={{display:"flex", gap:"10px", alignItems:"flex-start"}}>
                       <div style={{width:"74px", height:"74px", borderRadius:"12px", background:"#eef2ff", overflow:"hidden", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0}}>
-                        {item.images?.[0] ? <img src={item.images[0]} alt={item.item} style={{width:"100%", height:"100%", objectFit:"cover", cursor:"pointer"}} onClick={() => { setPreviewScale(1); setPreviewImage(item.images[0]); }} /> : "📦"}
+                        {item.images?.[0] ? <img decoding="async" loading="lazy" src={item.images[0]} alt={item.item} style={{width:"100%", height:"100%", objectFit:"cover", cursor:"pointer"}} onClick={() => { setPreviewScale(1); setPreviewImage(item.images[0]); }} /> : "📦"}
                       </div>
                       <div style={{minWidth:0}}>
                         <b style={{display:"block", fontSize:"13px", lineHeight:1.35}}>{item.brand} {item.item}</b>
@@ -7266,7 +7322,7 @@ function PdfExportPanel({ items, totals, exportInventoryPdf, exportLedgerPdf, ex
           const t = calcTax(x);
           return [
             <input type="checkbox" checked={selectedIds.includes(x.id)} onChange={() => toggleOne(x.id)} />,
-            x.images?.[0] ? <img className="thumb" src={x.images[0]} alt={x.item} style={{ width: 72, height: 72 }} /> : "—",
+            x.images?.[0] ? <img decoding="async" loading="lazy" className="thumb" src={x.images[0]} alt={x.item} style={{ width: 72, height: 72 }} /> : "—",
             x.id,
             x.purchaseDate,
             x.brand,
@@ -7591,7 +7647,7 @@ function AiAssistant({ onApplyDraft, dictionaries, suppliers }) {
         <div className="image-row" style={{ marginTop:"12px" }}>
           {uploadedImages.map((img, i) => (
             <div className="image-box" key={i}>
-              <img src={img.src} alt={img.name} />
+              <img decoding="async" loading="lazy" src={img.src} alt={img.name} />
               <button type="button" onClick={() => removeUploadedImage(i)}>
                 <X size={14} /> 移除
               </button>
@@ -7633,7 +7689,7 @@ function AiAssistant({ onApplyDraft, dictionaries, suppliers }) {
           {!!uploadedImages.length && (
             <div className="image-row" style={{ marginBottom:"14px" }}>
               {uploadedImages.map((img, i) => (
-                <img key={i} className="thumb" style={{ width: 88, height: 88 }} src={img.src} alt={img.name} />
+                <img decoding="async" loading="lazy" key={i} className="thumb" style={{ width: 88, height: 88 }} src={img.src} alt={img.name} />
               ))}
             </div>
           )}
