@@ -5471,6 +5471,7 @@ function JapaneseAuctionPanel({ items, downloadCSV, setPreviewImage, setPreviewS
   const [auctionHouseFilter, setAuctionHouseFilter] = useState("全部");
   const [auctionDateFilter, setAuctionDateFilter] = useState("");
   const [paymentFilter, setPaymentFilter] = useState("全部");
+  const [auctionQualityFilter, setAuctionQualityFilter] = useState("全部");
   const [detailItem, setDetailItem] = useState(null);
   const keyword = auctionQuery.trim().toLowerCase();
 
@@ -5487,6 +5488,12 @@ function JapaneseAuctionPanel({ items, downloadCSV, setPreviewImage, setPreviewS
 
   const auctionHouses = ["全部", ...Array.from(new Set(baseAuctionRecords.map(({ auction }) => auction.platform || auction.auctionHouse).filter(Boolean))).sort()];
 
+  const fullAuctionQualitySummary = baseAuctionRecords.reduce((a, { auction }) => {
+    if (auction.inferred) a.inferred += 1;
+    else a.complete += 1;
+    return a;
+  }, { complete: 0, inferred: 0 });
+
   const auctionRecords = baseAuctionRecords.filter(({ item, auction }) => {
     const house = auction.platform || auction.auctionHouse || "";
     const date = auction.auctionDate || item.purchaseDate || "";
@@ -5495,6 +5502,8 @@ function JapaneseAuctionPanel({ items, downloadCSV, setPreviewImage, setPreviewS
     if (auctionDateFilter && date !== auctionDateFilter) return false;
     if (paymentFilter === "已付款" && !paid) return false;
     if (paymentFilter === "未付款" && paid) return false;
+    if (auctionQualityFilter === "完整资料" && auction.inferred) return false;
+    if (auctionQualityFilter === "需补充" && !auction.inferred) return false;
     if (!keyword) return true;
     return [
       item.id, item.brand, item.item, item.category, item.status,
@@ -5509,17 +5518,19 @@ function JapaneseAuctionPanel({ items, downloadCSV, setPreviewImage, setPreviewS
     a.cost += Number(auction.inventoryCost || 0);
     a.tax += Number(auction.taxCredit || 0);
     if (auction.paymentDate || auction.paymentMethod) a.paidCount += 1;
+    if (auction.inferred) a.inferredCount += 1;
+    else a.completeCount += 1;
     return a;
-  }, { count: 0, paid: 0, cost: 0, tax: 0, paidCount: 0 });
+  }, { count: 0, paid: 0, cost: 0, tax: 0, paidCount: 0, completeCount: 0, inferredCount: 0 });
 
-  const headers = ["图片", "商品编号", "品牌", "商品名", "拍卖公司", "落札コード", "Lot", "箱番", "枝番", "拍卖日", "付款总额", "库存成本", "消费税控除", "状态", "操作"];
+  const headers = ["图片", "商品编号", "品牌", "商品名", "拍卖公司", "落札コード", "Lot", "箱番", "枝番", "拍卖日", "付款总额", "库存成本", "消费税控除", "资料状态", "状态", "操作"];
   const csvRows = [headers.filter((h) => h !== "图片" && h !== "操作")];
 
   auctionRecords.forEach(({ item, auction }) => {
     csvRows.push([
       item.id, item.brand || "", item.item || "", auction.platform || auction.auctionHouse || "", auction.auctionCode || "",
       auction.lotNo || "", auction.boxNo || "", auction.branchNo || "", auction.auctionDate || item.purchaseDate || "",
-      Math.round(Number(auction.invoiceTotal || 0)), Math.round(Number(auction.inventoryCost || 0)), Math.round(Number(auction.taxCredit || 0)), item.status || ""
+      Math.round(Number(auction.invoiceTotal || 0)), Math.round(Number(auction.inventoryCost || 0)), Math.round(Number(auction.taxCredit || 0)), auction.inferred ? "需补充" : "完整资料", item.status || ""
     ]);
   });
 
@@ -5537,6 +5548,7 @@ function JapaneseAuctionPanel({ items, downloadCSV, setPreviewImage, setPreviewS
     moneyCell(auction.invoiceTotal),
     moneyCell(auction.inventoryCost),
     moneyCell(auction.taxCredit),
+    auction.inferred ? <span className="inventory-pending">需补充</span> : <span className="status-badge status-已入库">完整</span>,
     <StatusBadge status={item.status} />,
     <div className="table-actions">
       <button className="ghost" onClick={() => setDetailItem(item)}>拍卖详情</button>
@@ -5559,7 +5571,10 @@ function JapaneseAuctionPanel({ items, downloadCSV, setPreviewImage, setPreviewS
           <select value={paymentFilter} onChange={(e) => setPaymentFilter(e.target.value)}>
             {["全部", "已付款", "未付款"].map((x) => <option key={x}>{x}</option>)}
           </select>
-          <button className="ghost" onClick={() => { setAuctionQuery(""); setAuctionHouseFilter("全部"); setAuctionDateFilter(""); setPaymentFilter("全部"); }}>清除筛选</button>
+          <select value={auctionQualityFilter} onChange={(e) => setAuctionQualityFilter(e.target.value)}>
+            {["全部", "完整资料", "需补充"].map((x) => <option key={x}>{x}</option>)}
+          </select>
+          <button className="ghost" onClick={() => { setAuctionQuery(""); setAuctionHouseFilter("全部"); setAuctionDateFilter(""); setPaymentFilter("全部"); setAuctionQualityFilter("全部"); }}>清除筛选</button>
           <button onClick={() => downloadCSV(csvRows, "gouka_auction_records.csv")}>
             <Download size={16} /> CSV导出
           </button>
@@ -5572,8 +5587,11 @@ function JapaneseAuctionPanel({ items, downloadCSV, setPreviewImage, setPreviewS
         <div className="inventory-summary-card"><small>库存成本</small><b>{jpy(summary.cost)}</b></div>
         <div className="inventory-summary-card good"><small>消费税控除</small><b>{jpy(summary.tax)}</b></div>
         <div className="inventory-summary-card"><small>付款记录</small><b>{summary.paidCount} 件</b></div>
+        <div className="inventory-summary-card good"><small>完整资料</small><b>{summary.completeCount} 件</b></div>
+        <div className="inventory-summary-card warn"><small>需补充</small><b>{summary.inferredCount} 件</b></div>
+        <div className="inventory-summary-card"><small>全部完整/需补充</small><b>{fullAuctionQualitySummary.complete} / {fullAuctionQualitySummary.inferred}</b></div>
       </div>
-      <p className="note">日本拍卖页现在与库存来源口径一致：结构化 product.auction 会完整显示；只有来源/NBAA等线索但缺少明细的商品也会列出，并按库存成本作临时参考，请在拍卖详情里补齐落札コード、箱番、枝番和精算金额。</p>
+      <p className="note">日本拍卖页现在与库存来源口径一致：结构化 product.auction 会完整显示；只有来源/NBAA等线索但缺少明细的商品也会列出，并标为「需补充」。可用资料状态筛选，把需要补落札コード、箱番、枝番和精算金额的商品单独拉出来处理。</p>
       <div className="auction-card-list">
         {auctionRecords.map(({ item, auction }, i) => {
           const house = auction.platform || auction.auctionHouse || "—";
