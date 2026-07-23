@@ -1560,27 +1560,82 @@ function calculateAuctionTotals(auction = {}) {
 function normalizeAuction(auction) {
   if (!auction || typeof auction !== "object") return null;
   const totals = calculateAuctionTotals(auction);
+  const directInvoiceTotal = parseMoneyNumber(auction.invoiceTotal || auction.paymentTotal || auction.paidTotal || auction.totalPayment || auction.total || auction.amountTotal);
+  const directInventoryCost = parseMoneyNumber(auction.inventoryCost || auction.inventoryCostJpy || auction.costJpy || auction.cost || auction.stockCost);
+  const directTaxCredit = parseMoneyNumber(auction.taxCredit || auction.inputTax || auction.inputTaxJpy || auction.consumptionTaxCredit || auction.taxDeduction);
+  const platform = auction.platform || auction.auctionHouse || auction.house || auction.vendor || "";
+  const auctionCode = auction.auctionCode || auction.bidCode || auction.settlementCode || auction.paymentCode || auction.code || "";
+  const auctionDate = auction.auctionDate || auction.date || auction.purchaseDate || auction.bidDate || "";
+  const lotNo = auction.lotNo || auction.lot || auction.lotNumber || "";
+  const boxNo = auction.boxNo || auction.box || auction.boxNumber || "";
+  const branchNo = auction.branchNo || auction.branch || auction.branchNumber || "";
+  const itemNameJp = auction.itemNameJp || auction.itemName || auction.productName || "";
+  const invoiceNo = auction.invoiceNo || auction.invoice || auction.paymentNo || auction.statementNo || "";
+  const invoiceTotal = directInvoiceTotal || totals.invoiceTotal;
+  const inventoryCost = directInventoryCost || totals.inventoryCost;
+  const taxCredit = directTaxCredit || totals.taxCredit;
   const hasAuction = Boolean(
-    auction.platform || auction.auctionCode || auction.auctionDate || auction.boxNo || auction.branchNo ||
-    auction.itemNameJp || totals.hammerPrice || totals.hammerTax || totals.buyerFee || totals.buyerFeeTax || totals.domesticShipping
+    platform || auctionCode || auctionDate || lotNo || boxNo || branchNo || invoiceNo ||
+    itemNameJp || invoiceTotal || inventoryCost || taxCredit ||
+    totals.hammerPrice || totals.hammerTax || totals.buyerFee || totals.buyerFeeTax || totals.domesticShipping
   );
   if (!hasAuction) return null;
   return {
-    platform: auction.platform || "",
-    auctionCode: auction.auctionCode || "",
-    auctionDate: auction.auctionDate || "",
-    boxNo: auction.boxNo || "",
-    branchNo: auction.branchNo || "",
-    itemNameJp: auction.itemNameJp || "",
+    platform,
+    auctionHouse: auction.auctionHouse || platform,
+    auctionCode,
+    auctionDate,
+    lotNo,
+    boxNo,
+    branchNo,
+    invoiceNo,
+    itemNameJp,
     hammerPrice: totals.hammerPrice,
     hammerTax: totals.hammerTax,
     buyerFee: totals.buyerFee,
     buyerFeeTax: totals.buyerFeeTax,
     domesticShipping: totals.domesticShipping,
-    invoiceTotal: totals.invoiceTotal,
-    inventoryCost: totals.inventoryCost,
-    taxCredit: totals.taxCredit
+    invoiceTotal,
+    inventoryCost,
+    taxCredit,
+    paymentDate: auction.paymentDate || "",
+    paymentMethod: auction.paymentMethod || "",
+    inferred: Boolean(auction.inferred)
   };
+}
+
+function isJapaneseAuctionLike(item) {
+  if (getAuction(item)) return true;
+  const trace = buildSourceTrace(item);
+  const text = [
+    item?.source, item?.purchaseType, item?.platform, item?.supplier,
+    item?.sourceCountry, item?.customsBatchId, trace?.supplier, trace?.kind,
+    item?.auctionCode, item?.auctionHouse
+  ].filter(Boolean).join(" ");
+  return /NBAA|JBA|AUCNET|EcoRing|ECO Ring|Star Buyers|OBA|日本拍卖|日本拍賣|拍卖|落札/i.test(text);
+}
+
+function inferredAuctionForItem(item) {
+  const direct = getAuction(item);
+  if (direct) return direct;
+  if (!isJapaneseAuctionLike(item)) return null;
+  const trace = buildSourceTrace(item);
+  const platformText = [item?.platform, item?.source, item?.supplier, trace?.supplier, trace?.kind].filter(Boolean).join(" ");
+  const platformMatch = platformText.match(/NBAA|JBA|AUCNET|EcoRing|ECO Ring|Star Buyers|OBA/i);
+  const t = calcTax(item || {});
+  return normalizeAuction({
+    inferred: true,
+    platform: platformMatch ? platformMatch[0] : (item?.platform || item?.source || item?.supplier || "日本拍卖"),
+    auctionCode: item?.auctionCode || item?.bidCode || "",
+    auctionDate: item?.purchaseDate || "",
+    lotNo: item?.lotNo || "",
+    boxNo: item?.boxNo || "",
+    branchNo: item?.branchNo || "",
+    itemNameJp: item?.item || "",
+    invoiceTotal: Number(item?.purchaseJpy || item?.paymentJpy || t.costJpy || 0),
+    inventoryCost: Number(item?.inventoryCostJpy || t.costJpy || 0),
+    taxCredit: Number(item?.inputTaxJpy || t.inputTax || 0)
+  });
 }
 
 function stripAuctionBlocks(memo = "") {
@@ -2481,7 +2536,7 @@ function applyGlobalStateToLocalStorage(globalState) {
 
 function goukaProductNumberValue(id) {
   const text = String(id || "");
-  const matches = text.match(/\\d+/g);
+  const matches = text.match(/\d+/g);
   if (!matches || matches.length === 0) return 999999999;
   return Number(matches[matches.length - 1] || 999999999);
 }
@@ -4830,7 +4885,7 @@ function NbaaProductRecordDetail({ item, onClose, exportItemPdf, isOwner = true 
   const grossProfit = Number(sales.grossProfitJpy || 0);
   const actualProfit = Number(sales.actualProfitJpy || 0);
   const taxRef = Number(sales.payableConsumptionTaxJpy || 0);
-  const paymentTotal = auction ? Number(auction.invoiceTotal || 0) : Number(t.costJpy || 0);
+  const paymentTotal = auction ? Number(auction.invoiceTotal || t.costJpy || 0) : Number(t.costJpy || 0);
   const inventoryCost = auction ? Number(auction.inventoryCost || 0) : Number(t.costJpy || 0);
   const taxCredit = auction ? Number(auction.taxCredit || 0) : Number(t.inputTax || 0);
   const finalReceipt = Number(sales.finalReceiptJpy || 0);
@@ -5190,7 +5245,7 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
     const platform = String(item?.platform || "");
     const source = String(item?.source || item?.purchaseType || trace?.supplier || trace?.kind || "");
     const text = [platform, source, item?.supplier, item?.sourceCountry, item?.customsBatchId].filter(Boolean).join(" ");
-    if (item?.auction || /NBAA|JBA|AUCNET|EcoRing|ECO Ring|Star Buyers|OBA|日本拍卖|拍卖/i.test(text)) return "日本拍卖";
+    if (isJapaneseAuctionLike(item) || /NBAA|JBA|AUCNET|EcoRing|ECO Ring|Star Buyers|OBA|日本拍卖|拍卖/i.test(text)) return "日本拍卖";
     if (/中国|China|CN|供应商|EMS|輸入|进口|import/i.test(text)) return "中国进货";
     if (/Mercari|Yahoo|楽天|Rakuten|店舗|店铺|日本本地/i.test(text)) return "日本本地";
     return "其他来源";
@@ -5421,7 +5476,7 @@ function JapaneseAuctionPanel({ items, downloadCSV, setPreviewImage, setPreviewS
 
   function structuredAuction(item) {
     const raw = item?.auction && typeof item.auction === "object" ? item.auction : null;
-    const normalized = normalizeAuction(raw);
+    const normalized = inferredAuctionForItem(item);
     if (!normalized) return null;
     return { ...normalized, ...raw, ...normalized };
   }
@@ -5518,7 +5573,7 @@ function JapaneseAuctionPanel({ items, downloadCSV, setPreviewImage, setPreviewS
         <div className="inventory-summary-card good"><small>消费税控除</small><b>{jpy(summary.tax)}</b></div>
         <div className="inventory-summary-card"><small>付款记录</small><b>{summary.paidCount} 件</b></div>
       </div>
-      <p className="note">日本拍卖页只读取商品档案里的 product.auction 结构化数据。付款总额、库存成本、消费税控除分开显示，消费税不进入库存成本。</p>
+      <p className="note">日本拍卖页现在与库存来源口径一致：结构化 product.auction 会完整显示；只有来源/NBAA等线索但缺少明细的商品也会列出，并按库存成本作临时参考，请在拍卖详情里补齐落札コード、箱番、枝番和精算金额。</p>
       <div className="auction-card-list">
         {auctionRecords.map(({ item, auction }, i) => {
           const house = auction.platform || auction.auctionHouse || "—";
@@ -5532,7 +5587,7 @@ function JapaneseAuctionPanel({ items, downloadCSV, setPreviewImage, setPreviewS
             <div className="auction-card" key={item.id || i}>
               <div className="auction-card-main">
                 <div className="auction-card-grid">
-                  <div className="auction-card-section">落札商品 No.{i + 1}</div>
+                  <div className="auction-card-section">落札商品 No.{i + 1}{auction.inferred ? " / 资料需补充" : ""}</div>
                   <div className="auction-card-label">商品编号</div><div className="auction-card-value strong">{item.id}</div>
                   <div className="auction-card-label">拍卖公司</div><div className="auction-card-value strong">{house}</div>
                   <div className="auction-card-label">落札コード</div><div className="auction-card-value">{auction.auctionCode || "—"}</div>
@@ -5548,6 +5603,7 @@ function JapaneseAuctionPanel({ items, downloadCSV, setPreviewImage, setPreviewS
                   <div className="auction-card-label">付款总额</div><div className="auction-card-value strong">{invoiceTotal ? jpy(invoiceTotal) : "—"}</div>
                   <div className="auction-card-label">库存成本</div><div className="auction-card-value strong">{jpy(auction.inventoryCost || 0)}</div>
                   <div className="auction-card-label">消费税控除</div><div className="auction-card-value">{jpy(auction.taxCredit || 0)}</div>
+                  {auction.inferred && <><div className="auction-card-label">资料提示</div><div className="auction-card-value">来源判断为日本拍卖，但 auction 明细未完整结构化。请补落札コード、箱番、枝番、付款总额。</div></>}
                   <div className="auction-card-label">状态</div><div className="auction-card-value"><StatusBadge status={item.status} /></div>
                 </div>
               </div>
