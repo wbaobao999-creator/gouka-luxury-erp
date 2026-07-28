@@ -2409,7 +2409,7 @@ function buildTaxAuditRows(items) {
     const importConsumptionTax = Number(item.importConsumptionTaxJpy || item.customsConsumptionTaxJpy || 0);
     const marginText = sales.salesRevenueExTax > 0 ? sales.margin.toFixed(1) + "%" : "";
     return [
-      item.id || "", evidence.status, evidence.text, trace.kind, trace.supplier, trace.address, trace.idCheck,
+      trace.kind || sourceKind(item) || "", item.id || "", evidence.status, evidence.text, trace.kind, trace.supplier, trace.address, trace.idCheck,
       item.purchaseDate || auction.auctionDate || "", item.category || "", item.brand || "", item.item || "", item.material || "", item.color || "", item.origin || "", item.qty || 1,
       item.purchaseCurrency || "CNY", Number(item.purchaseCny || item.purchaseAmount || 0), Number(item.purchaseRateToJpy || item.rate || defaultRateFor(item.purchaseCurrency || "CNY")), Math.round(tax.baseCostJpy || 0),
       item.declaredCurrency || item.purchaseCurrency || "CNY", Number(item.declaredCny || item.declaredAmount || 0), Number(item.declaredRateToJpy || item.rate || defaultRateFor(item.declaredCurrency || item.purchaseCurrency || "CNY")), Math.round(declaredJpy),
@@ -8293,6 +8293,7 @@ createRoot(document.getElementById("root")).render(
     <App />
   </ErrorBoundary>
 );
+
 
 
 
