@@ -706,6 +706,44 @@ goukaTableWorkModePatchStyle.textContent = `
 }
 `;
 document.head.appendChild(goukaTableWorkModePatchStyle);
+const goukaDashboardAlertsPatchStyle = document.createElement("style");
+goukaDashboardAlertsPatchStyle.textContent = `
+/* GOUKA dashboard alerts: daily work priorities */
+.gouka-alert-board{display:grid!important;grid-template-columns:repeat(5,minmax(0,1fr))!important;gap:10px!important;margin:14px 0 16px!important;}
+.gouka-alert-card{border:1px solid #d6ded9!important;border-top:5px solid #18a83e!important;background:#fff!important;color:#102033!important;border-radius:0!important;padding:12px!important;min-height:86px!important;text-align:left!important;display:flex!important;flex-direction:column!important;align-items:flex-start!important;justify-content:space-between!important;box-shadow:none!important;}
+.gouka-alert-card:hover{transform:translateY(-1px)!important;background:#f6fff9!important;border-color:#18a83e!important;}
+.gouka-alert-card.warn{border-top-color:#f59e0b!important;background:#fffdf7!important;}
+.gouka-alert-card.danger{border-top-color:#dc2626!important;background:#fffafa!important;}
+.gouka-alert-card.info{border-top-color:#0d9fda!important;background:#f2fbff!important;}
+.gouka-alert-card small{font-size:12px!important;font-weight:950!important;color:#52606d!important;line-height:1.4!important;}
+.gouka-alert-card b{font-size:24px!important;font-weight:950!important;color:#102033!important;line-height:1.1!important;margin-top:4px!important;}
+.gouka-alert-card span{font-size:12px!important;font-weight:900!important;color:#10852f!important;margin-top:8px!important;}
+.gouka-alert-card.danger span{color:#b91c1c!important;}.gouka-alert-card.warn span{color:#b45309!important;}.gouka-alert-card.info span{color:#0369a1!important;}
+.gouka-alert-title{display:flex!important;align-items:flex-end!important;justify-content:space-between!important;gap:12px!important;margin:8px 0 4px!important;}
+.gouka-alert-title h2{font-size:22px!important;font-weight:950!important;margin:0!important;color:#102033!important;}
+.gouka-alert-title p{font-size:13px!important;font-weight:800!important;color:#52606d!important;margin:0!important;}
+@media(max-width:1200px){.gouka-alert-board{grid-template-columns:repeat(3,minmax(0,1fr))!important;}}
+@media(max-width:760px){.gouka-alert-board{grid-template-columns:1fr!important;}.gouka-alert-title{display:block!important;}.gouka-alert-title p{margin-top:4px!important;}}
+`;
+document.head.appendChild(goukaDashboardAlertsPatchStyle);
+
+const goukaPracticalWorkbenchPatchStyle = document.createElement("style");
+goukaPracticalWorkbenchPatchStyle.textContent = `
+/* GOUKA practical workbench: daily operation shortcuts */
+.gouka-workbench-title{display:flex!important;align-items:flex-end!important;justify-content:space-between!important;gap:12px!important;margin:12px 0 8px!important;}
+.gouka-workbench-title h2{font-size:22px!important;font-weight:950!important;margin:0!important;color:#102033!important;}
+.gouka-workbench-title p{font-size:13px!important;font-weight:800!important;color:#52606d!important;margin:0!important;}
+.gouka-workbench-grid{display:grid!important;grid-template-columns:repeat(8,minmax(0,1fr))!important;gap:10px!important;margin:0 0 18px!important;}
+.gouka-workbench-btn{border:1px solid #cfd8d3!important;border-top:4px solid #18a83e!important;background:#fff!important;color:#102033!important;border-radius:0!important;padding:12px 10px!important;text-align:left!important;min-height:82px!important;display:flex!important;flex-direction:column!important;justify-content:space-between!important;box-shadow:none!important;}
+.gouka-workbench-btn:hover{background:#f4fff8!important;border-color:#18a83e!important;transform:translateY(-1px)!important;}
+.gouka-workbench-btn b{font-size:15px!important;font-weight:950!important;line-height:1.25!important;color:#102033!important;}
+.gouka-workbench-btn span{font-size:12px!important;font-weight:850!important;color:#52606d!important;line-height:1.35!important;margin-top:8px!important;}
+.gouka-workbench-btn.strong{background:#17a83d!important;border-color:#17a83d!important;color:#fff!important;}
+.gouka-workbench-btn.strong b,.gouka-workbench-btn.strong span{color:#fff!important;}
+@media(max-width:1400px){.gouka-workbench-grid{grid-template-columns:repeat(4,minmax(0,1fr))!important;}}
+@media(max-width:760px){.gouka-workbench-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;}.gouka-workbench-title{display:block!important;}.gouka-workbench-title p{margin-top:4px!important;}}
+`;
+document.head.appendChild(goukaPracticalWorkbenchPatchStyle);
 
 const goukaLedgerCardPatchStyle = document.createElement("style");
 goukaLedgerCardPatchStyle.textContent = "\n/* GOUKA ledger card view: easier to read one item at a time */\n.ledger-card-list{display:flex;flex-direction:column;gap:16px;margin-top:18px;}\n.ledger-card{background:#fff;border:1px solid #d6ded9;border-radius:0;box-shadow:none;display:grid;grid-template-columns:minmax(0,1fr) 180px;gap:0;overflow:hidden;}\n.ledger-card-main{padding:0;}\n.ledger-card-grid{display:grid;grid-template-columns:150px minmax(0,1fr);border-top:1px solid #dfe5e2;border-left:1px solid #dfe5e2;}\n.ledger-card-label{background:#18a83e;color:#fff;font-weight:950;text-align:center;padding:11px 10px;border-right:1px solid #fff;border-bottom:1px solid #fff;line-height:1.35;}\n.ledger-card-value{background:#fff;color:#102033;font-weight:750;padding:11px 12px;border-right:1px solid #dfe5e2;border-bottom:1px solid #dfe5e2;line-height:1.45;word-break:break-word;}\n.ledger-card-value.strong{font-size:16px;font-weight:950;}\n.ledger-card-section{grid-column:1/-1;background:#f2fbf5;color:#10852f;font-weight:950;padding:10px 12px;border-right:1px solid #dfe5e2;border-bottom:1px solid #dfe5e2;letter-spacing:.03em;}\n.ledger-card-image{border-left:1px solid #dfe5e2;background:#fbfcfb;padding:12px;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:10px;}\n.ledger-card-image .thumb{width:150px!important;height:150px!important;object-fit:cover!important;}\n.ledger-card-actions{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;width:100%;}\n.ledger-card-actions button{font-size:13px!important;padding:6px 10px!important;}\n.ledger-card-status{display:inline-flex;align-items:center;border:1px solid #cbd5e1;background:#f8fafc;border-radius:999px;padding:3px 10px;font-size:12px;font-weight:950;color:#334155;}\n.ledger-original-table{margin-top:18px;border:1px solid #d6ded9;background:#fff;padding:10px;}\n.ledger-original-table summary{cursor:pointer;font-weight:950;color:#10852f;padding:8px 4px;}\n@media(max-width:900px){.ledger-card{grid-template-columns:1fr}.ledger-card-image{border-left:0;border-top:1px solid #dfe5e2}.ledger-card-grid{grid-template-columns:118px minmax(0,1fr)}.ledger-card-label,.ledger-card-value{font-size:13px!important;padding:9px 8px!important}}\n";
@@ -4294,6 +4332,27 @@ function Dashboard({ totals, items, setTab, exportBackup, customsBatches = [], o
   const over30 = activeItems.filter((x) => stockAgeDays(x) >= 30).length;
   const over60 = activeItems.filter((x) => stockAgeDays(x) >= 60).length;
   const longTerm = activeItems.filter((x) => stockAgeDays(x) >= 365).length;
+  const missingImageCount = activeItems.filter((x) => !(Array.isArray(x.images) && x.images.length)).length;
+  const urgentTodoScore = todoCustoms + todoListing + missingExpectedPriceCount + missingImageCount + over30 + todoShipping;
+  const alertCards = [
+    { label: "待出品", value: todoListing, hint: "入库后尽快上架", tone: todoListing ? "warn" : "", tab: "inventory" },
+    { label: "未设预计售价", value: missingExpectedPriceCount, hint: "影响利润预估", tone: missingExpectedPriceCount ? "danger" : "", tab: "inventory" },
+    { label: "无图片", value: missingImageCount, hint: "影响出品效率", tone: missingImageCount ? "warn" : "", tab: "inventory" },
+    { label: "待报关", value: todoCustoms, hint: "检查报关资料", tone: todoCustoms ? "info" : "", tab: "customsBatch" },
+    { label: "库存超30天", value: over30, hint: "优先检查售价", tone: over30 ? "warn" : "", tab: "inventory" },
+    { label: "待发货确认", value: todoShipping, hint: "销售后处理", tone: todoShipping ? "info" : "", tab: "sales" },
+    { label: "365日以上", value: longTerm, hint: "长期库存预警", tone: longTerm ? "danger" : "", tab: "inventory" }
+  ];
+  const quickActions = [
+    { label: "新增商品", desc: "采购后先录这里", tab: "add", strong: true },
+    { label: "库存管理", desc: "查货、改价、补资料", tab: "inventory" },
+    { label: "日本拍卖", desc: "查看拍卖落札商品", tab: "auction" },
+    { label: "出品管理", desc: "准备上架与平台信息", tab: "listing" },
+    { label: "销售记录", desc: "登记售出与利润", tab: "sales" },
+    { label: "报关批次", desc: "EMS批次与申报资料", tab: "customsBatch" },
+    { label: "PDF导出", desc: "商品、台账、报关资料", tab: "pdf" },
+    { label: "备份恢复", desc: "每天重要操作后备份", tab: "backup" }
+  ];
 
   const brandMap = items.reduce((a, x) => {
     const k = x.brand || "未填写";
@@ -4376,6 +4435,39 @@ function Dashboard({ totals, items, setTab, exportBackup, customsBatches = [], o
           <h2>{jpy(expectedNetProfit)}</h2>
           <span>利润率 {expectedMargin.toFixed(1)}% · 当前库存 {activeStock} 件 · 有图 {withImages} 件</span>
         </div>
+      </div>
+
+      <div className="gouka-alert-title">
+        <div>
+          <h2>今日经营提醒</h2>
+          <p>优先处理会影响出品、报关、利润预估和发货的事项</p>
+        </div>
+        <span className="pill">待处理合计 {urgentTodoScore} 件</span>
+      </div>
+      <div className="gouka-alert-board">
+        {alertCards.map((card) => (
+          <button key={card.label} className={`gouka-alert-card ${card.tone || ""}`} onClick={() => setTab(card.tab)}>
+            <small>{card.label}</small>
+            <b>{card.value} 件</b>
+            <span>{card.hint}</span>
+          </button>
+        ))}
+      </div>
+
+      <div className="gouka-workbench-title">
+        <div>
+          <h2>常用操作</h2>
+          <p>把每天最常点的功能放在控制台，少翻菜单，直接开始处理</p>
+        </div>
+        <span className="pill">Daily Workbench</span>
+      </div>
+      <div className="gouka-workbench-grid">
+        {quickActions.map((action) => (
+          <button key={action.label} className={`gouka-workbench-btn ${action.strong ? "strong" : ""}`} onClick={() => setTab(action.tab)}>
+            <b>{action.label}</b>
+            <span>{action.desc}</span>
+          </button>
+        ))}
       </div>
 
       <div className="v3-kpi-grid">
@@ -8383,6 +8475,8 @@ createRoot(document.getElementById("root")).render(
     <App />
   </ErrorBoundary>
 );
+
+
 
 
 
