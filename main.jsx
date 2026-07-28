@@ -616,6 +616,96 @@ document.head.appendChild(goukaStableWidePatchStyle);
 const goukaReadableTablePatchStyle = document.createElement("style");
 goukaReadableTablePatchStyle.textContent = "\n/* GOUKA readable table patch: clearer text for inventory and ledger tables */\nbody{font-family:\"Yu Gothic UI\",\"Meiryo\",\"Microsoft YaHei\",\"PingFang SC\",Arial,sans-serif!important;-webkit-font-smoothing:antialiased!important;text-rendering:optimizeLegibility!important;}\n.tablewrap table{font-size:14px!important;color:#102033!important;}\nth{font-size:13px!important;font-weight:950!important;letter-spacing:.02em!important;line-height:1.35!important;padding:11px 9px!important;}\ntd{font-size:14px!important;font-weight:650!important;line-height:1.55!important;color:#102033!important;padding:12px 10px!important;}\ntd small,td .muted,.note,.record-card-summary{font-size:12px!important;color:#475569!important;font-weight:750!important;}\ntbody tr:nth-child(even) td{background:#fbfdfc!important;}\ntbody tr:hover td{background:#eefaf2!important;}\n.product-name-clamp{font-size:14px!important;font-weight:750!important;line-height:1.5!important;max-width:520px!important;}\n.pill,.status,.inventory-pending{font-size:12px!important;font-weight:900!important;}\n.table-actions button{font-size:13px!important;font-weight:900!important;}\n.inventory-summary-card small{font-size:13px!important;font-weight:900!important;}\n.inventory-summary-card b{font-size:24px!important;font-weight:950!important;}\n.toolbar h2,.panel h2{font-size:25px!important;font-weight:950!important;}\n.search,input,select,textarea,button{font-size:14px!important;}\n@media(max-width:1200px){td{font-size:13px!important;padding:10px 8px!important;}th{font-size:12px!important;padding:9px 7px!important;}.tablewrap table{min-width:1120px!important;}}\n";
 document.head.appendChild(goukaReadableTablePatchStyle);
+const goukaTableWorkModePatchStyle = document.createElement("style");
+goukaTableWorkModePatchStyle.textContent = `
+/* GOUKA table work mode: easier daily checking for hundreds of items */
+.tablewrap{
+  position:relative!important;
+  overflow:auto!important;
+  max-height:calc(100vh - 250px)!important;
+  border-color:#cbd8d0!important;
+  background:#fff!important;
+}
+.tablewrap table{
+  border-collapse:separate!important;
+  border-spacing:0!important;
+}
+.tablewrap thead th{
+  position:sticky!important;
+  top:0!important;
+  z-index:8!important;
+  box-shadow:0 2px 0 rgba(16,133,47,.22)!important;
+}
+.tablewrap th:first-child,
+.tablewrap td:first-child{
+  position:sticky!important;
+  left:0!important;
+  z-index:6!important;
+  box-shadow:2px 0 0 rgba(203,216,208,.9)!important;
+}
+.tablewrap thead th:first-child{
+  z-index:12!important;
+}
+.tablewrap th:last-child,
+.tablewrap td:last-child{
+  position:sticky!important;
+  right:0!important;
+  z-index:7!important;
+  box-shadow:-2px 0 0 rgba(203,216,208,.9)!important;
+}
+.tablewrap thead th:last-child{
+  z-index:13!important;
+}
+.tablewrap td:first-child,
+.tablewrap td:last-child{
+  background:#fff!important;
+}
+.tablewrap tbody tr:nth-child(even) td:first-child,
+.tablewrap tbody tr:nth-child(even) td:last-child{
+  background:#fbfdfc!important;
+}
+.tablewrap tbody tr:hover td:first-child,
+.tablewrap tbody tr:hover td:last-child{
+  background:#eefaf2!important;
+}
+.tablewrap td[data-label="商品编号"],
+.tablewrap td[data-label="ブランド"],
+.tablewrap td[data-label="品牌"],
+.tablewrap td[data-label="商品名"],
+.tablewrap td[data-label="落札コード"],
+.tablewrap td[data-label="箱番"],
+.tablewrap td[data-label="枝番"]{
+  font-weight:850!important;
+}
+.tablewrap td[data-label="库存成本"],
+.tablewrap td[data-label="付款总额"],
+.tablewrap td[data-label="落札金额"]{
+  font-variant-numeric:tabular-nums!important;
+}
+.table-scroll-hint{
+  position:sticky!important;
+  top:0!important;
+  z-index:20!important;
+  border-radius:0!important;
+  border-left:5px solid #18a83e!important;
+  background:#f6fff9!important;
+}
+.table-pager{
+  position:sticky!important;
+  left:0!important;
+  z-index:18!important;
+  background:rgba(255,255,255,.94)!important;
+  padding:8px 0!important;
+}
+.tablewrap::-webkit-scrollbar{height:16px!important;width:16px!important;}
+.tablewrap::-webkit-scrollbar-thumb{background:#18a83e!important;border:4px solid #e8eee9!important;border-radius:999px!important;}
+.tablewrap::-webkit-scrollbar-track{background:#e8eee9!important;}
+@media(max-width:900px){
+  .tablewrap{max-height:none!important;}
+  .tablewrap th:first-child,.tablewrap td:first-child,.tablewrap th:last-child,.tablewrap td:last-child{position:static!important;box-shadow:none!important;}
+}
+`;
+document.head.appendChild(goukaTableWorkModePatchStyle);
 
 const goukaLedgerCardPatchStyle = document.createElement("style");
 goukaLedgerCardPatchStyle.textContent = "\n/* GOUKA ledger card view: easier to read one item at a time */\n.ledger-card-list{display:flex;flex-direction:column;gap:16px;margin-top:18px;}\n.ledger-card{background:#fff;border:1px solid #d6ded9;border-radius:0;box-shadow:none;display:grid;grid-template-columns:minmax(0,1fr) 180px;gap:0;overflow:hidden;}\n.ledger-card-main{padding:0;}\n.ledger-card-grid{display:grid;grid-template-columns:150px minmax(0,1fr);border-top:1px solid #dfe5e2;border-left:1px solid #dfe5e2;}\n.ledger-card-label{background:#18a83e;color:#fff;font-weight:950;text-align:center;padding:11px 10px;border-right:1px solid #fff;border-bottom:1px solid #fff;line-height:1.35;}\n.ledger-card-value{background:#fff;color:#102033;font-weight:750;padding:11px 12px;border-right:1px solid #dfe5e2;border-bottom:1px solid #dfe5e2;line-height:1.45;word-break:break-word;}\n.ledger-card-value.strong{font-size:16px;font-weight:950;}\n.ledger-card-section{grid-column:1/-1;background:#f2fbf5;color:#10852f;font-weight:950;padding:10px 12px;border-right:1px solid #dfe5e2;border-bottom:1px solid #dfe5e2;letter-spacing:.03em;}\n.ledger-card-image{border-left:1px solid #dfe5e2;background:#fbfcfb;padding:12px;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:10px;}\n.ledger-card-image .thumb{width:150px!important;height:150px!important;object-fit:cover!important;}\n.ledger-card-actions{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;width:100%;}\n.ledger-card-actions button{font-size:13px!important;padding:6px 10px!important;}\n.ledger-card-status{display:inline-flex;align-items:center;border:1px solid #cbd5e1;background:#f8fafc;border-radius:999px;padding:3px 10px;font-size:12px;font-weight:950;color:#334155;}\n.ledger-original-table{margin-top:18px;border:1px solid #d6ded9;background:#fff;padding:10px;}\n.ledger-original-table summary{cursor:pointer;font-weight:950;color:#10852f;padding:8px 4px;}\n@media(max-width:900px){.ledger-card{grid-template-columns:1fr}.ledger-card-image{border-left:0;border-top:1px solid #dfe5e2}.ledger-card-grid{grid-template-columns:118px minmax(0,1fr)}.ledger-card-label,.ledger-card-value{font-size:13px!important;padding:9px 8px!important}}\n";
@@ -8293,6 +8383,7 @@ createRoot(document.getElementById("root")).render(
     <App />
   </ErrorBoundary>
 );
+
 
 
 
