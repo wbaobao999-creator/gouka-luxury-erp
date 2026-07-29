@@ -4862,58 +4862,58 @@ function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, 
       <p className="note addform-guide">建议按顺序录入：采购基础 → 商品识别 → 成本税费 → 来源台账 → 报关/拍卖 → 图片备注。带金额的字段会实时影响库存成本和预估差额。</p>
 
       <div className="formgrid">
-        <FormSectionTitle title="1. 采购基础" subtitle="先确认采购日期、品类、品牌和商品名，这些会影响库存档案和后续检索。" />
-        <Input label="仕入日" type="date" value={form.purchaseDate} onChange={(v) => set("purchaseDate", v)} />
+        <FormSectionTitle title="1. 采购基础 / 商品信息" subtitle="先填采购日期、品类、品牌、商品名。中文为主，括号内保留日文/英文，方便日本员工查看。" />
+        <Input label="采购日期 / 仕入日" type="date" value={form.purchaseDate} onChange={(v) => set("purchaseDate", v)} />
 
-        <Select label="品类" value={form.category} onChange={(v) => set("category", v)} options={["バッグ類", "財布・小物類", "時計類", "宝飾品類", "アクセサリー類", "時計", "アパレル", "その他"]} />
+        <Select label="品类 / カテゴリ" value={form.category} onChange={(v) => set("category", v)} options={["バッグ類", "財布・小物類", "時計類", "宝飾品類", "アクセサリー類", "時計", "アパレル", "その他"]} />
 
-        <SelectWithOther label="品牌 Brand" value={form.brand} onChange={setBrand} options={dictionaries.brands} placeholder="选择或输入品牌" />
+        <SelectWithOther label="品牌 / Brand" value={form.brand} onChange={setBrand} options={dictionaries.brands} placeholder="选择品牌：爱马仕 / 香奈儿 / 路易威登；找不到选其他" />
 
-        <SelectWithOther label="商品名 Item" value={form.item} onChange={(v) => set("item", v)} options={brandItems} placeholder="先选品牌，再选择商品名" />
+        <SelectWithOther label="商品名 / Item" value={form.item} onChange={(v) => set("item", v)} options={brandItems} placeholder="先选品牌，再选择商品名；没有就手动输入" />
 
-        <Input label="自动商品标题" value={form.productTitle || makeAutoTitle(form)} onChange={(v) => set("productTitle", v)} placeholder="系统自动生成，也可手动修改" />
+        <Input label="自动商品标题 / Title" value={form.productTitle || makeAutoTitle(form)} onChange={(v) => set("productTitle", v)} placeholder="系统自动生成，也可以手动修改" />
 
-        <SelectWithOther label="材质 Material" value={form.material} onChange={(v) => set("material", v)} options={dictionaries.materials} placeholder="选择或输入材质" />
+        <SelectWithOther label="材质 / Material" value={form.material} onChange={(v) => set("material", v)} options={dictionaries.materials} placeholder="选择材质：小羊皮 / 牛皮 / 帆布 / 黄金；找不到选其他" />
 
-        <SelectWithOther label="颜色 Color" value={form.color} onChange={(v) => set("color", v)} options={dictionaries.colors} placeholder="选择或输入颜色" />
+        <SelectWithOther label="颜色 / Color" value={form.color} onChange={(v) => set("color", v)} options={dictionaries.colors} placeholder="选择颜色：黑色 / 棕色 / 金色；找不到选其他" />
 
-        <SelectWithOther label="产地 Origin" value={form.origin} onChange={(v) => set("origin", v)} options={dictionaries.origins} placeholder="选择或输入产地" />
+        <SelectWithOther label="产地 / Origin" value={form.origin} onChange={(v) => set("origin", v)} options={dictionaries.origins} placeholder="选择产地：法国 / 意大利 / 日本；找不到选其他" />
 
-        <Input label="数量 Qty" type="number" value={form.qty} onChange={(v) => set("qty", v)} />
+        <Input label="数量 / Qty" type="number" value={form.qty} onChange={(v) => set("qty", v)} />
 
-        <FormSectionTitle title="2. 成本与预计售价" subtitle="采购金额、汇率、申报金额、运费和费用会进入实时利润预览。预计销售额可先空着，待办中心会提醒。" />
+        <FormSectionTitle title="2. 成本与预计售价 / 金额" subtitle="采购金额、汇率、申报金额、运费和费用会进入实时利润预览。预计销售额可先空着，待办中心会提醒。" />
 
-        <Select label="采购币种" value={form.purchaseCurrency || "CNY"} onChange={setPurchaseCurrency} options={CURRENCY_OPTIONS} />
+        <Select label="采购币种 / Purchase Currency" value={form.purchaseCurrency || "CNY"} onChange={setPurchaseCurrency} options={CURRENCY_OPTIONS} />
         <Input label={`采购金额 ${form.purchaseCurrency || "CNY"}`} type="number" value={form.purchaseCny} onChange={(v) => set("purchaseCny", v)} />
         <Input label={`${form.purchaseCurrency || "CNY"}→JPY 汇率`} type="number" value={form.purchaseRateToJpy || defaultRateFor(form.purchaseCurrency || "CNY")} onChange={(v) => set("purchaseRateToJpy", v)} />
 
-        <Select label="申报币种" value={form.declaredCurrency || form.purchaseCurrency || "CNY"} onChange={setDeclaredCurrency} options={CURRENCY_OPTIONS} />
+        <Select label="申报币种 / Declared Currency" value={form.declaredCurrency || form.purchaseCurrency || "CNY"} onChange={setDeclaredCurrency} options={CURRENCY_OPTIONS} />
         <Input label={`申报金额 ${form.declaredCurrency || "CNY"}`} type="number" value={form.declaredCny} onChange={(v) => set("declaredCny", v)} />
         <Input label={`${form.declaredCurrency || "CNY"}→JPY 汇率`} type="number" value={form.declaredRateToJpy || defaultRateFor(form.declaredCurrency || "CNY")} onChange={(v) => set("declaredRateToJpy", v)} />
 
-        <Input label="预计销售额 JPY（税込）" type="number" value={form.saleJpy} onChange={(v) => set("saleJpy", v)} />
+        <Input label="预计销售额 JPY（税込）/ 预估卖价" type="number" value={form.saleJpy} onChange={(v) => set("saleJpy", v)} />
 
-        <Input label="EMS/国际运费 JPY" type="number" value={form.shippingJpy || ""} onChange={(v) => set("shippingJpy", v)} />
-        <Input label="关税 JPY" type="number" value={form.dutyJpy || ""} onChange={(v) => set("dutyJpy", v)} />
-        <Input label="报关代行费 JPY" type="number" value={form.customsFeeJpy || ""} onChange={(v) => set("customsFeeJpy", v)} />
-        <Input label="拍卖/平台手续费 JPY" type="number" value={form.platformFeeJpy || ""} onChange={(v) => set("platformFeeJpy", v)} />
-        <Input label="其他费用 JPY" type="number" value={form.otherCostJpy || ""} onChange={(v) => set("otherCostJpy", v)} />
+        <Input label="EMS/国际运费 JPY / Shipping" type="number" value={form.shippingJpy || ""} onChange={(v) => set("shippingJpy", v)} />
+        <Input label="关税 JPY / Duty" type="number" value={form.dutyJpy || ""} onChange={(v) => set("dutyJpy", v)} />
+        <Input label="报关代行费 JPY / Customs Fee" type="number" value={form.customsFeeJpy || ""} onChange={(v) => set("customsFeeJpy", v)} />
+        <Input label="拍卖/平台手续费 JPY / Platform Fee" type="number" value={form.platformFeeJpy || ""} onChange={(v) => set("platformFeeJpy", v)} />
+        <Input label="其他费用 JPY / Other Cost" type="number" value={form.otherCostJpy || ""} onChange={(v) => set("otherCostJpy", v)} />
 
-        <FormSectionTitle title="3. 来源与古物台账" subtitle="仕入先、地址、本人确认方式会用于古物台账和审计留痕。" />
+        <FormSectionTitle title="3. 来源与古物台账 / 仕入信息" subtitle="供应商、地址、本人确认方式会进入古物台账。这里尽量填完整，后面查账会轻松很多。" />
 
-        <SelectWithOther label="仕入先 / 来源" value={form.source} onChange={setSourceFromSupplier} options={sourceOptions} placeholder="选择供应商或输入来源" />
+        <SelectWithOther label="供应商 / 来源 / 仕入先" value={form.source} onChange={setSourceFromSupplier} options={sourceOptions} placeholder="选择来源：中国供应商 / 日本拍卖 / 店铺；找不到选其他" />
 
-        <Input label="供应商地址" value={form.address} onChange={(v) => set("address", v)} placeholder="China / Japan address" />
+        <Input label="供应商地址 / Address" value={form.address} onChange={(v) => set("address", v)} placeholder="输入供应商地址，中国或日本地址都可以" />
 
-        <SelectWithOther label="本人确认方式" value={form.idCheck} onChange={(v) => set("idCheck", v)} options={dictionaries.idChecks} placeholder="选择或输入确认方式" />
+        <SelectWithOther label="本人确认方式 / ID Check" value={form.idCheck} onChange={(v) => set("idCheck", v)} options={dictionaries.idChecks} placeholder="选择本人确认：供应商发票 / 免许证确认 / 护照等" />
 
-        <Select label="状态" value={form.status} onChange={(v) => set("status", v)} options={WORKFLOW_STATUSES} />
+        <Select label="状态 / Status" value={form.status} onChange={(v) => set("status", v)} options={WORKFLOW_STATUSES} />
 
-        <SelectWithOther label="平台 / 运输方式" value={form.platform} onChange={(v) => set("platform", v)} options={dictionaries.platforms} placeholder="选择或输入平台" />
+        <SelectWithOther label="平台 / 运输方式 / Platform" value={form.platform} onChange={(v) => set("platform", v)} options={dictionaries.platforms} placeholder="选择平台/运输：EMS / NBAA / Mercari / 店铺等" />
 
-        <Select label="所属报关批次" value={form.customsBatchId || ""} onChange={(v) => set("customsBatchId", v)} options={["", ...(customsBatches || []).map((b) => b.id)]} />
+        <Select label="所属报关批次 / Customs Batch" value={form.customsBatchId || ""} onChange={(v) => set("customsBatchId", v)} options={["", ...(customsBatches || []).map((b) => b.id)]} />
 
-        <FormSectionTitle title="4. 报关 / 日本拍卖 / 精算" subtitle="有报关批次或日本拍卖精算时在这里关联，方便后续税务和PDF资料输出。" />
+        <FormSectionTitle title="4. 报关 / 日本拍卖 / 精算信息" subtitle="中国进货一般看报关批次；日本拍卖商品在这里填落札信息，方便后续税务、PDF和古物台账。" />
 
         <AuctionSettlementBox form={form} setForm={setForm} />
 
@@ -4940,7 +4940,7 @@ function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, 
           </div>
         </div>
 
-        <FormSectionTitle title="6. 销售状态" subtitle="未销售商品可以跳过。状态切换为已售后，再填写销售日期、平台和实际销售额。" />
+        <FormSectionTitle title="6. 销售状态 / Sold Info" subtitle="未销售商品可以跳过。状态切换为已售后，再填写销售日期、平台和实际销售额。" />
 
         {isSoldStatus(form.status) && (
           <>
@@ -4954,7 +4954,7 @@ function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, 
           </>
         )}
 
-        <FormSectionTitle title="7. 图片与备注" subtitle="建议每件商品至少上传正面、细节、瑕疵/编号图，方便库存确认和出品。" />
+        <FormSectionTitle title="7. 图片与备注 / Photos & Memo" subtitle="建议每件商品至少上传正面、细节、瑕疵/编号图，方便库存确认和出品。" />
 
         <label
           className="full"
@@ -5230,7 +5230,7 @@ function NbaaProductRecordDetail({ item, onClose, exportItemPdf, isOwner = true 
               <RecordField label="商品编号" value={item.id} />
               <RecordField label="品牌" value={item.brand} />
               <RecordField label="商品名称" value={item.item} />
-              <RecordField label="状态" value={<StatusBadge status={item.status} />} />
+              <RecordField label="状态 / Status" value={<StatusBadge status={item.status} />} />
             </div>
             {isOwner && (
               <>
@@ -8035,7 +8035,7 @@ function AiAssistant({ onApplyDraft, dictionaries, suppliers }) {
             <SelectWithOther label="材质" value={draft.material || ""} onChange={(v)=>setDraftValue("material", v)} options={dictionaries.materials} />
             <SelectWithOther label="颜色" value={draft.color || ""} onChange={(v)=>setDraftValue("color", v)} options={dictionaries.colors} />
             <SelectWithOther label="产地" value={draft.origin || ""} onChange={(v)=>setDraftValue("origin", v)} options={dictionaries.origins} />
-            <Select label="采购币种" value={draft.purchaseCurrency || "CNY"} onChange={(v)=>setDraft({ ...draft, purchaseCurrency:v, purchaseRateToJpy:defaultRateFor(v) })} options={CURRENCY_OPTIONS} />
+            <Select label="采购币种 / Purchase Currency" value={draft.purchaseCurrency || "CNY"} onChange={(v)=>setDraft({ ...draft, purchaseCurrency:v, purchaseRateToJpy:defaultRateFor(v) })} options={CURRENCY_OPTIONS} />
             <Input label="采购金额" type="number" value={draft.purchaseAmount || ""} onChange={(v)=>setDraftValue("purchaseAmount", v)} />
             <Input label="采购汇率→JPY" type="number" value={draft.purchaseRateToJpy || ""} onChange={(v)=>setDraftValue("purchaseRateToJpy", v)} />
             <Input label="预计销售JPY" type="number" value={draft.saleJpy || ""} onChange={(v)=>setDraftValue("saleJpy", v)} />
@@ -8442,13 +8442,177 @@ function Input({ label, value, onChange, type = "text", placeholder = "" }) {
   );
 }
 
+
+function displayOptionLabel(option) {
+  const map = {
+    "バッグ類": "包袋类 / バッグ類",
+    "財布・小物類": "钱包・小物类 / 財布・小物類",
+    "時計類": "手表类 / 時計類",
+    "宝飾品類": "珠宝类 / 宝飾品類",
+    "アクセサリー類": "配饰类 / アクセサリー類",
+    "時計": "手表 / 時計",
+    "アパレル": "服饰 / アパレル",
+    "CHANEL": "香奈儿 / CHANEL",
+    "HERMES": "爱马仕 / HERMES",
+    "Louis Vuitton": "路易威登 / Louis Vuitton",
+    "GUCCI": "古驰 / GUCCI",
+    "Dior": "迪奥 / Dior",
+    "Prada": "普拉达 / Prada",
+    "Fendi": "芬迪 / Fendi",
+    "Celine": "赛琳 / Celine",
+    "Bottega Veneta": "葆蝶家 / Bottega Veneta",
+    "Balenciaga": "巴黎世家 / Balenciaga",
+    "Saint Laurent": "圣罗兰 / Saint Laurent",
+    "LOEWE": "罗意威 / LOEWE",
+    "Cartier": "卡地亚 / Cartier",
+    "BVLGARI": "宝格丽 / BVLGARI",
+    "Tiffany": "蒂芙尼 / Tiffany",
+    "Van Cleef & Arpels": "梵克雅宝 / Van Cleef & Arpels",
+    "Chopard": "萧邦 / Chopard",
+    "Rolex": "劳力士 / Rolex",
+    "OMEGA": "欧米茄 / OMEGA",
+    "Caviar Leather": "鱼子酱牛皮 / Caviar Leather",
+    "Lambskin Leather": "小羊皮 / Lambskin Leather",
+    "Calfskin Leather": "小牛皮 / Calfskin Leather",
+    "Grained Calfskin": "颗粒小牛皮 / Grained Calfskin",
+    "Smooth Calfskin": "光滑小牛皮 / Smooth Calfskin",
+    "Patent Leather": "漆皮 / Patent Leather",
+    "Goatskin": "山羊皮 / Goatskin",
+    "Sheepskin": "绵羊皮 / Sheepskin",
+    "Taurillon Leather": "公牛皮 / Taurillon Leather",
+    "Vachetta Leather": "植鞣皮 / Vachetta Leather",
+    "Nomade Leather": "Nomade皮革 / Nomade Leather",
+    "Togo Leather": "Togo牛皮 / Togo Leather",
+    "Epsom Leather": "Epsom牛皮 / Epsom Leather",
+    "Swift Leather": "Swift牛皮 / Swift Leather",
+    "Clemence Leather": "Clemence牛皮 / Clemence Leather",
+    "Box Leather": "Box牛皮 / Box Leather",
+    "Barenia Leather": "Barenia牛皮 / Barenia Leather",
+    "Fjord Leather": "Fjord牛皮 / Fjord Leather",
+    "Chevre Leather": "山羊皮 / Chevre Leather",
+    "Evercolor Leather": "Evercolor牛皮 / Evercolor Leather",
+    "Evergrain Leather": "Evergrain牛皮 / Evergrain Leather",
+    "Exotic Leather": "特殊皮 / Exotic Leather",
+    "Crocodile": "鳄鱼皮 / Crocodile",
+    "Alligator": "鳄鱼皮 / Alligator",
+    "Lizard": "蜥蜴皮 / Lizard",
+    "Ostrich": "鸵鸟皮 / Ostrich",
+    "Python": "蟒蛇皮 / Python",
+    "Coated Canvas": "涂层帆布 / Coated Canvas",
+    "Canvas": "帆布 / Canvas",
+    "Monogram Canvas": "老花帆布 / Monogram Canvas",
+    "Damier Canvas": "棋盘格帆布 / Damier Canvas",
+    "Damier Ebene": "深色棋盘格 / Damier Ebene",
+    "Damier Azur": "浅色棋盘格 / Damier Azur",
+    "Epi Leather": "水波纹皮 / Epi Leather",
+    "Taiga Leather": "Taiga皮革 / Taiga Leather",
+    "GG Canvas": "GG帆布 / GG Canvas",
+    "Oblique Canvas": "Oblique帆布 / Oblique Canvas",
+    "Triomphe Canvas": "凯旋门帆布 / Triomphe Canvas",
+    "Nylon": "尼龙 / Nylon",
+    "Tessuto Nylon": "尼龙布 / Tessuto Nylon",
+    "Denim": "牛仔布 / Denim",
+    "Tweed": "粗花呢 / Tweed",
+    "Suede": "麂皮 / Suede",
+    "Velvet": "丝绒 / Velvet",
+    "Satin": "缎面 / Satin",
+    "Silk": "丝绸 / Silk",
+    "Wool": "羊毛 / Wool",
+    "Cashmere": "羊绒 / Cashmere",
+    "Gold": "黄金 / Gold",
+    "Yellow Gold": "黄金 / Yellow Gold",
+    "Pink Gold": "粉金 / Pink Gold",
+    "Rose Gold": "玫瑰金 / Rose Gold",
+    "White Gold": "白金 / White Gold",
+    "Silver": "银色/银 / Silver",
+    "Sterling Silver": "纯银 / Sterling Silver",
+    "Platinum": "铂金 / Platinum",
+    "Diamond": "钻石 / Diamond",
+    "Pearl": "珍珠 / Pearl",
+    "Ruby": "红宝石 / Ruby",
+    "Sapphire": "蓝宝石 / Sapphire",
+    "Emerald": "祖母绿 / Emerald",
+    "Onyx": "黑玛瑙 / Onyx",
+    "Mother of Pearl": "贝母 / Mother of Pearl",
+    "Ceramic": "陶瓷 / Ceramic",
+    "Steel": "钢 / Steel",
+    "Stainless Steel": "不锈钢 / Stainless Steel",
+    "Titanium": "钛金属 / Titanium",
+    "Carbon": "碳纤维 / Carbon",
+    "PVC": "PVC材质 / PVC",
+    "Plastic": "塑料 / Plastic",
+    "Resin": "树脂 / Resin",
+    "Black": "黑色 / Black",
+    "Brown": "棕色 / Brown",
+    "Dark Brown": "深棕色 / Dark Brown",
+    "Light Brown": "浅棕色 / Light Brown",
+    "White": "白色 / White",
+    "Beige": "米色 / Beige",
+    "Ivory": "象牙白 / Ivory",
+    "Cream": "奶油色 / Cream",
+    "Grey": "灰色 / Grey",
+    "Etoupe": "大象灰 / Etoupe",
+    "Etain": "锡器灰 / Etain",
+    "Taupe": "灰褐色 / Taupe",
+    "Blue": "蓝色 / Blue",
+    "Navy": "藏青色 / Navy",
+    "Light Blue": "浅蓝色 / Light Blue",
+    "Red": "红色 / Red",
+    "Bordeaux": "波尔多红 / Bordeaux",
+    "Wine": "酒红色 / Wine",
+    "Pink": "粉色 / Pink",
+    "Rose": "玫瑰粉 / Rose",
+    "Green": "绿色 / Green",
+    "Olive": "橄榄绿 / Olive",
+    "Yellow": "黄色 / Yellow",
+    "Orange": "橙色 / Orange",
+    "Purple": "紫色 / Purple",
+    "Champagne": "香槟色 / Champagne",
+    "Bronze": "古铜色 / Bronze",
+    "Monogram": "老花 / Monogram",
+    "Damier": "棋盘格 / Damier",
+    "Multicolor": "多色 / Multicolor",
+    "Clear": "透明 / Clear",
+    "France": "法国 / France",
+    "Italy": "意大利 / Italy",
+    "Spain": "西班牙 / Spain",
+    "Germany": "德国 / Germany",
+    "Switzerland": "瑞士 / Switzerland",
+    "Japan": "日本 / Japan",
+    "USA": "美国 / USA",
+    "UK": "英国 / UK",
+    "China": "中国 / China",
+    "Korea": "韩国 / Korea",
+    "Mercari": "煤炉 / Mercari",
+    "Yahoo": "雅虎 / Yahoo",
+    "楽天": "乐天 / 楽天",
+    "店铺": "店铺 / 店舗",
+    "EMS": "EMS国际邮政 / EMS",
+    "DHL": "DHL快递 / DHL",
+    "FedEx": "联邦快递 / FedEx",
+    "UPS": "UPS快递 / UPS",
+    "SF Express": "顺丰 / SF Express",
+    "Yamato": "黑猫宅急便 / Yamato",
+    "佐川急便": "佐川急便",
+    "日本郵便": "日本邮便 / 日本郵便",
+    "手提搬入": "手提搬入",
+    "船运": "船运 / Sea Freight",
+    "空运": "空运 / Air Freight",
+    "Supplier invoice": "供应商发票 / Supplier invoice",
+    "Supplier invoice / customs documents": "供应商发票+报关资料 / Supplier invoice / customs documents",
+    "Passport": "护照 / Passport",
+    "Residence Card": "在留卡 / Residence Card",
+    "其他": "其他"
+  };
+  return map[option] || option;
+}
 function Select({ label, value, onChange, options }) {
   return (
     <label>
       {label}
       <select value={value} onChange={(e) => onChange(e.target.value)}>
         {options.map((o) => (
-          <option key={o}>{o}</option>
+          <option key={o} value={o}>{displayOptionLabel(o)}</option>
         ))}
       </select>
     </label>
@@ -8485,7 +8649,7 @@ function SelectWithOther({ label, value, onChange, options, placeholder = "" }) 
       >
         <option value="">{placeholder || "请选择；找不到请选其他手动输入"}</option>
         {safeOptions.map((o) => (
-          <option key={o} value={o}>{o}</option>
+          <option key={o} value={o}>{displayOptionLabel(o)}</option>
         ))}
         {!safeOptions.includes("其他") && <option value="其他">其他</option>}
       </select>
@@ -8542,6 +8706,9 @@ createRoot(document.getElementById("root")).render(
     <App />
   </ErrorBoundary>
 );
+
+
+
 
 
 
