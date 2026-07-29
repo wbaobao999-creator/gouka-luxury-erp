@@ -63,6 +63,223 @@ document.head.appendChild(goukaPerformanceImagePolishStyle);
 const nbaaStyle = document.createElement("style");
 nbaaStyle.textContent = ".nbaa-sheet{background:#eef4ed;border:1px solid #b7d7bd;border-radius:4px;padding:12px}.nbaa-main{display:grid;grid-template-columns:minmax(0,1fr) 190px;gap:12px}.nbaa-grid{display:grid;grid-template-columns:140px minmax(0,1fr);border-top:1px solid #d7d7d7;border-left:1px solid #d7d7d7;background:#fff}.nbaa-section{grid-column:1/-1;background:#e9f8ec;color:#10852f;font-weight:800;padding:9px 10px;border-right:1px solid #d7d7d7;border-bottom:1px solid #d7d7d7}.nbaa-label{background:#19a83d;color:#fff;font-weight:800;text-align:center;padding:9px 8px;border-right:1px solid #d7d7d7;border-bottom:1px solid #d7d7d7;min-height:38px}.nbaa-value{background:#fff;color:#0f172a;padding:9px 10px;border-bottom:1px solid #d7d7d7;min-height:38px;word-break:break-word}.nbaa-image-pane{background:#fff;border:1px solid #d7d7d7;padding:8px;align-self:start}.nbaa-main-image,.nbaa-no-image{width:160px;height:160px;object-fit:cover;border:1px solid #e5e7eb;background:#f8fafc;display:grid;place-items:center;color:#64748b}.nbaa-thumbs{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.nbaa-thumbs img{width:72px;height:72px;object-fit:cover;border:1px solid #e5e7eb}.nbaa-record .toolbar{margin-bottom:12px}@media(max-width:760px){.nbaa-main{grid-template-columns:1fr}.nbaa-grid{grid-template-columns:116px minmax(0,1fr)}.nbaa-image-pane{width:max-content;max-width:100%}}";
 document.head.appendChild(nbaaStyle);
+const goukaNbaaDirectionStyle = document.createElement("style");
+goukaNbaaDirectionStyle.textContent = `
+/* GOUKA NBAA direction polish: quieter business UI, clearer daily workflow */
+.app { background:#dfe6e1 !important; }
+aside {
+  background:#fff !important;
+  border-right:1px solid #cdd8d0 !important;
+  box-shadow:none !important;
+}
+aside .brand {
+  color:#0f172a !important;
+  border-bottom:3px solid #18a63d !important;
+  margin-bottom:12px !important;
+}
+aside .brand small { color:#10852f !important; letter-spacing:.08em; font-weight:900; }
+aside button {
+  border-radius:0 !important;
+  background:#fff !important;
+  color:#0f172a !important;
+  border:0 !important;
+  border-bottom:2px solid #18a63d !important;
+  font-weight:900 !important;
+  min-height:44px !important;
+  justify-content:flex-start !important;
+}
+aside button:hover {
+  background:#f0fbf3 !important;
+  color:#0b7a2a !important;
+  transform:none !important;
+  box-shadow:none !important;
+}
+aside button.active {
+  background:#19a83d !important;
+  color:#fff !important;
+  border-bottom-color:#19a83d !important;
+}
+aside .logout-btn {
+  margin-top:18px !important;
+  border:1px solid #d4dde5 !important;
+  border-radius:4px !important;
+  color:#334155 !important;
+}
+main { max-width:1440px !important; margin:0 auto !important; }
+main > header {
+  background:#fff !important;
+  border-top:5px solid #18a63d !important;
+  border-radius:0 !important;
+  box-shadow:none !important;
+  margin-bottom:14px !important;
+}
+main > header h1 { font-size:28px !important; color:#0b2341 !important; }
+main > header p { color:#0f172a !important; font-weight:800 !important; }
+.panel {
+  border-radius:0 !important;
+  border:1px solid #d4ded7 !important;
+  box-shadow:none !important;
+  background:#fff !important;
+}
+.toolbar {
+  border-bottom:3px solid #19a83d !important;
+  padding-bottom:14px !important;
+  align-items:flex-end !important;
+}
+.toolbar h2 {
+  font-size:28px !important;
+  color:#0b2341 !important;
+}
+button, input, select, textarea {
+  border-radius:4px !important;
+}
+button.primary, .primary, button.active {
+  background:#18a63d !important;
+  border-color:#18a63d !important;
+  color:#fff !important;
+}
+.ghost {
+  background:#fff !important;
+  border-color:#b8c8d7 !important;
+}
+.v3-dashboard { display:block; }
+.v3-hero {
+  background:#fff !important;
+  border-top:5px solid #18a63d !important;
+  border-radius:0 !important;
+  color:#0f172a !important;
+  box-shadow:none !important;
+}
+.v3-hero h1 { color:#0b2341 !important; }
+.v3-hero p { color:#334155 !important; }
+.v3-kicker {
+  color:#18a63d !important;
+  background:#e9f8ec !important;
+  border:1px solid #b7d7bd !important;
+}
+.v3-hero-right {
+  border-radius:0 !important;
+  border:1px solid #b7d7bd !important;
+  background:#f7fff8 !important;
+  color:#0b2341 !important;
+}
+.gouka-nbaa-flow {
+  background:#fff;
+  border:1px solid #cfdcd3;
+  border-top:5px solid #18a63d;
+  margin:14px 0;
+  padding:16px;
+}
+.gouka-nbaa-flow-head {
+  display:flex;
+  justify-content:space-between;
+  gap:12px;
+  align-items:flex-end;
+  margin-bottom:12px;
+}
+.gouka-nbaa-flow-head h2 {
+  margin:0;
+  color:#0b2341;
+  font-size:22px;
+}
+.gouka-nbaa-flow-head p {
+  margin:4px 0 0;
+  color:#64748b;
+  font-size:13px;
+}
+.gouka-nbaa-flow-grid {
+  display:grid;
+  grid-template-columns:repeat(6,minmax(0,1fr));
+  gap:8px;
+}
+.gouka-nbaa-flow-step {
+  border:1px solid #d6e2da;
+  background:#fbfdfb;
+  padding:11px 10px;
+  min-height:78px;
+  text-align:left;
+}
+.gouka-nbaa-flow-step strong {
+  display:block;
+  color:#0b2341;
+  font-size:15px;
+  margin-bottom:5px;
+}
+.gouka-nbaa-flow-step span {
+  display:block;
+  color:#64748b;
+  font-size:12px;
+  line-height:1.45;
+}
+.gouka-nbaa-flow-step b {
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-width:24px;
+  height:24px;
+  margin-bottom:8px;
+  background:#18a63d;
+  color:#fff;
+  border-radius:999px;
+  font-size:12px;
+}
+.gouka-nbaa-flow-step.warn b { background:#f59e0b; }
+.gouka-nbaa-flow-step.danger b { background:#dc2626; }
+.v3-kpi, .v3-money-card, .v3-panel, .gouka-alert-card, .gouka-workbench-btn, .inventory-summary-card {
+  border-radius:0 !important;
+  box-shadow:none !important;
+  border:1px solid #d4ded7 !important;
+  border-top:4px solid #18a63d !important;
+}
+.v3-kpi:hover, .v3-money-card:hover, .v3-panel:hover, .gouka-alert-card:hover, .gouka-workbench-btn:hover {
+  transform:none !important;
+  box-shadow:none !important;
+}
+.inventory-summary-grid { gap:8px !important; }
+.inventory-summary-card small { color:#334155 !important; font-weight:800 !important; }
+.inventory-summary-card b { color:#061a33 !important; }
+.ledger-card,
+.auction-card {
+  border-radius:0 !important;
+  border:1px solid #d7d7d7 !important;
+  box-shadow:none !important;
+  background:#fff !important;
+}
+.ledger-card-section,
+.auction-card-section {
+  background:#e9f8ec !important;
+  color:#10852f !important;
+  border-bottom:1px solid #d7d7d7 !important;
+}
+.ledger-card-label,
+.auction-card-label,
+.nbaa-label {
+  background:#19a83d !important;
+  color:#fff !important;
+}
+.ledger-card-value,
+.auction-card-value,
+.nbaa-value {
+  color:#0f172a !important;
+  font-size:15px !important;
+}
+.tablewrap th {
+  background:#19a83d !important;
+  color:#fff !important;
+}
+.tablewrap td {
+  color:#0f172a !important;
+  font-size:14px !important;
+}
+@media(max-width:1100px){
+  .gouka-nbaa-flow-grid { grid-template-columns:repeat(3,minmax(0,1fr)); }
+}
+@media(max-width:680px){
+  .gouka-nbaa-flow-grid { grid-template-columns:1fr; }
+  main > header { padding:14px !important; }
+}
+`;
+document.head.appendChild(goukaNbaaDirectionStyle);
 const productRecordStyle = document.createElement("style");
 productRecordStyle.textContent = `
 .product-record-page { background:#f8fafc; border:1px solid #d9e2ef; border-radius:14px; padding:18px; }
@@ -4421,6 +4638,14 @@ function Dashboard({ totals, items, setTab, exportBackup, customsBatches = [], o
     { label: "字典管理", tab: "dictionary" },
     { label: "删除日志", tab: "deleteLogs" }
   ];
+  const nbaaFlowSteps = [
+    { no: 1, title: "商品录入", desc: "采购后先录品牌、商品名、来源和照片", tab: "add", tone: "" },
+    { no: 2, title: "补资料", desc: `${missingImageCount + missingExpectedPriceCount} 件需要补图或售价`, tab: "inventory", tone: missingImageCount + missingExpectedPriceCount ? "warn" : "" },
+    { no: 3, title: "出品准备", desc: `${todoListing} 件待出品或已入库`, tab: "listing", tone: todoListing ? "warn" : "" },
+    { no: 4, title: "EMS报关", desc: `${todoCustoms} 件与报关相关`, tab: "customsBatch", tone: todoCustoms ? "warn" : "" },
+    { no: 5, title: "销售确认", desc: `${todoShipping} 件待发货确认`, tab: "sales", tone: todoShipping ? "danger" : "" },
+    { no: 6, title: "台账/PDF", desc: "古物台账、商品PDF、审计资料导出", tab: "ledger", tone: "" }
+  ];
 
   const brandMap = items.reduce((a, x) => {
     const k = x.brand || "未填写";
@@ -4502,6 +4727,25 @@ function Dashboard({ totals, items, setTab, exportBackup, customsBatches = [], o
           <p>库存预估差额</p>
           <h2>{jpy(expectedNetProfit)}</h2>
           <span>利润率 {expectedMargin.toFixed(1)}% · 当前库存 {activeStock} 件 · 有图 {withImages} 件</span>
+        </div>
+      </div>
+
+      <div className="gouka-nbaa-flow">
+        <div className="gouka-nbaa-flow-head">
+          <div>
+            <h2>日常业务流程</h2>
+            <p>按照拍卖后台的工作方式，把每天要走的步骤放在一排，哪里有待处理一眼看见。</p>
+          </div>
+          <span className="pill">NBAA Style Workflow</span>
+        </div>
+        <div className="gouka-nbaa-flow-grid">
+          {nbaaFlowSteps.map((step) => (
+            <button key={step.no} className={"gouka-nbaa-flow-step " + (step.tone || "")} onClick={() => setTab(step.tab)}>
+              <b>{step.no}</b>
+              <strong>{step.title}</strong>
+              <span>{step.desc}</span>
+            </button>
+          ))}
         </div>
       </div>
 
