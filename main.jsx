@@ -4187,7 +4187,18 @@ function App() {
     setTab("add");
     alert("AI草稿已填入商品录入页，请确认后点击添加到库存。");
   }
+  function scrollMainTop() {
+    requestAnimationFrame(() => {
+      const mainEl = document.querySelector("main");
+      if (mainEl && typeof mainEl.scrollTo === "function") mainEl.scrollTo({ top: 0, left: 0, behavior: "auto" });
+      window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+    });
+  }
 
+  function goTab(nextTab) {
+    setTab(nextTab);
+    if (nextTab === "add") scrollMainTop();
+  }
 
   const menu = [
     ["dashboard", "控制台"],
@@ -4216,7 +4227,7 @@ function App() {
         </div>
 
         {menu.filter(([k]) => canAccessTab(k)).map(([k, v]) => (
-          <button key={k} className={tab === k ? "active" : ""} onClick={() => setTab(k)}>
+          <button key={k} className={tab === k ? "active" : ""} onClick={() => goTab(k)}>
             {v}
           </button>
         ))}
@@ -4834,6 +4845,14 @@ function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, 
     e.preventDefault();
     handleImages(e.dataTransfer.files);
   }
+
+  React.useEffect(() => {
+    requestAnimationFrame(() => {
+      const mainEl = document.querySelector("main");
+      if (mainEl && typeof mainEl.scrollTo === "function") mainEl.scrollTo({ top: 0, left: 0, behavior: "auto" });
+      window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+    });
+  }, [editingId]);
 
   return (
     <div className="panel">
@@ -8475,7 +8494,6 @@ function SelectWithOther({ label, value, onChange, options, placeholder = "" }) 
           style={{ marginTop: "6px" }}
           value={value === "其他" ? "" : value}
           placeholder="这里可以手动输入"
-          autoFocus
           onChange={(e) => onChange(e.target.value)}
         />
       )}
@@ -8524,6 +8542,9 @@ createRoot(document.getElementById("root")).render(
     <App />
   </ErrorBoundary>
 );
+
+
+
 
 
 
