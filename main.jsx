@@ -2945,10 +2945,14 @@ const GOUKA_JA_TEXT = {
   "长期库存（365日以上）": "長期在庫（365日以上）"
 };
 
+const GOUKA_JA_TEXT_ENTRIES = Object.entries(GOUKA_JA_TEXT).sort((a, b) => b[0].length - a[0].length);
+const GOUKA_JA_CJK_RE = /[\u4e00-\u9fff]/;
+
 function goukaTranslateText(text) {
+  if (!text || !GOUKA_JA_CJK_RE.test(text)) return text;
   let next = text;
-  Object.entries(GOUKA_JA_TEXT).sort((a, b) => b[0].length - a[0].length).forEach(([zh, ja]) => {
-    next = next.split(zh).join(ja);
+  GOUKA_JA_TEXT_ENTRIES.forEach(([zh, ja]) => {
+    if (next.includes(zh)) next = next.split(zh).join(ja);
   });
   next = next.replace(/(\d+) 件/g, "$1 点");
   next = next.replace(/第 (\d+) \/ (\d+) 页/g, "$1 / $2 ページ");
@@ -2956,14 +2960,20 @@ function goukaTranslateText(text) {
   return next;
 }
 
-function applyGoukaJapaneseDisplay(root = document.body) {
+function goukaJapaneseRoot() {
+  return document.getElementById("root") || document.body;
+}
+
+function applyGoukaJapaneseDisplay(root = goukaJapaneseRoot()) {
   if (!document.body.classList.contains("gouka-ja-mode")) return;
+  if (!root || root.nodeType !== 1) root = goukaJapaneseRoot();
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
     acceptNode(node) {
       const parent = node.parentElement;
       if (!parent) return NodeFilter.FILTER_REJECT;
       if (parent.closest("script,style,input,textarea")) return NodeFilter.FILTER_REJECT;
       if (!node.nodeValue || !node.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
+      if (!GOUKA_JA_CJK_RE.test(node.nodeValue)) return NodeFilter.FILTER_REJECT;
       return NodeFilter.FILTER_ACCEPT;
     }
   });
@@ -2974,18 +2984,20 @@ function applyGoukaJapaneseDisplay(root = document.body) {
     const translated = goukaTranslateText(original);
     if (translated !== original) node.nodeValue = translated;
   });
-  document.querySelectorAll("input[placeholder], textarea[placeholder]").forEach((el) => {
-    const next = goukaTranslateText(el.getAttribute("placeholder") || "");
-    if (next) el.setAttribute("placeholder", next);
+  root.querySelectorAll("input[placeholder], textarea[placeholder]").forEach((el) => {
+    const current = el.getAttribute("placeholder") || "";
+    const next = goukaTranslateText(current);
+    if (next && next !== current) el.setAttribute("placeholder", next);
   });
-  document.querySelectorAll("option").forEach((el) => {
+  root.querySelectorAll("option").forEach((el) => {
     const original = el.textContent || "";
     const translated = goukaTranslateText(original);
     if (translated !== original) el.textContent = translated;
   });
-  document.querySelectorAll("[title]").forEach((el) => {
-    const next = goukaTranslateText(el.getAttribute("title") || "");
-    if (next) el.setAttribute("title", next);
+  root.querySelectorAll("[title]").forEach((el) => {
+    const current = el.getAttribute("title") || "";
+    const next = goukaTranslateText(current);
+    if (next && next !== current) el.setAttribute("title", next);
   });
 }
 
@@ -2993,12 +3005,29 @@ function useGoukaJapaneseDisplay(enabled) {
   React.useEffect(() => {
     document.body.classList.toggle("gouka-ja-mode", enabled);
     if (!enabled) return;
-    applyGoukaJapaneseDisplay();
-    const observer = new MutationObserver((mutations) => {
-      window.requestAnimationFrame(() => mutations.forEach((m) => applyGoukaJapaneseDisplay(m.target.nodeType === 1 ? m.target : document.body)));
-    });
-    observer.observe(document.body, { childList: true, subtree: true, characterData: true });
-    return () => observer.disconnect();
+
+    let queued = false;
+    let timer = null;
+    const run = () => {
+      queued = false;
+      timer = null;
+      applyGoukaJapaneseDisplay(goukaJapaneseRoot());
+    };
+    const schedule = () => {
+      if (queued) return;
+      queued = true;
+      const idle = window.requestIdleCallback || ((cb) => window.setTimeout(cb, 80));
+      timer = idle(run, { timeout: 260 });
+    };
+
+    schedule();
+    const root = document.getElementById("root") || document.body;
+    const observer = new MutationObserver(schedule);
+    observer.observe(root, { childList: true, subtree: true });
+    return () => {
+      observer.disconnect();
+      if (timer && window.cancelIdleCallback) window.cancelIdleCallback(timer);
+    };
   }, [enabled]);
 }
 function App() {
@@ -8706,6 +8735,8 @@ createRoot(document.getElementById("root")).render(
     <App />
   </ErrorBoundary>
 );
+
+
 
 
 
