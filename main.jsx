@@ -745,6 +745,31 @@ goukaPracticalWorkbenchPatchStyle.textContent = `
 `;
 document.head.appendChild(goukaPracticalWorkbenchPatchStyle);
 
+const goukaClearOpsPatchStyle = document.createElement("style");
+goukaClearOpsPatchStyle.textContent = `
+/* GOUKA clear operations: make daily work obvious */
+aside .brand{border-bottom:3px solid #18a83e!important;margin-bottom:12px!important;padding-bottom:14px!important;}
+aside button{font-size:15px!important;font-weight:950!important;letter-spacing:0!important;min-height:42px!important;border-bottom:2px solid #18a83e!important;}
+aside button.active{background:#18a83e!important;color:#fff!important;}
+.gouka-ops-summary{display:grid!important;grid-template-columns:1.15fr .85fr!important;gap:14px!important;margin:0 0 16px!important;}
+.gouka-ops-main{border:1px solid #cfd8d3!important;border-top:5px solid #18a83e!important;background:#fff!important;padding:16px!important;}
+.gouka-ops-main h2{font-size:24px!important;font-weight:950!important;margin:0 0 8px!important;color:#102033!important;}
+.gouka-ops-main p{font-size:14px!important;font-weight:800!important;color:#52606d!important;line-height:1.65!important;margin:0!important;}
+.gouka-ops-list{display:grid!important;gap:8px!important;margin-top:12px!important;}
+.gouka-ops-list div{display:flex!important;align-items:center!important;justify-content:space-between!important;border:1px solid #dfe5e2!important;background:#fbfcfb!important;padding:9px 10px!important;}
+.gouka-ops-list span{font-size:13px!important;font-weight:900!important;color:#52606d!important;}
+.gouka-ops-list b{font-size:15px!important;font-weight:950!important;color:#102033!important;}
+.gouka-helper-tools{border:1px solid #cfd8d3!important;border-top:5px solid #0d9fda!important;background:#fff!important;padding:16px!important;}
+.gouka-helper-tools h2{font-size:20px!important;font-weight:950!important;margin:0 0 6px!important;color:#102033!important;}
+.gouka-helper-tools p{font-size:13px!important;font-weight:800!important;color:#52606d!important;margin:0 0 10px!important;line-height:1.55!important;}
+.gouka-helper-grid{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:8px!important;}
+.gouka-helper-grid button{border:1px solid #cbd5e1!important;background:#f8fafc!important;color:#102033!important;border-radius:0!important;padding:10px!important;text-align:left!important;font-size:13px!important;font-weight:950!important;}
+.gouka-helper-grid button:hover{background:#f2fbff!important;border-color:#0d9fda!important;}
+@media(max-width:1100px){.gouka-ops-summary{grid-template-columns:1fr!important;}.gouka-helper-grid{grid-template-columns:repeat(4,minmax(0,1fr))!important;}}
+@media(max-width:760px){.gouka-helper-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;}}
+`;
+document.head.appendChild(goukaClearOpsPatchStyle);
+
 const goukaLedgerCardPatchStyle = document.createElement("style");
 goukaLedgerCardPatchStyle.textContent = "\n/* GOUKA ledger card view: easier to read one item at a time */\n.ledger-card-list{display:flex;flex-direction:column;gap:16px;margin-top:18px;}\n.ledger-card{background:#fff;border:1px solid #d6ded9;border-radius:0;box-shadow:none;display:grid;grid-template-columns:minmax(0,1fr) 180px;gap:0;overflow:hidden;}\n.ledger-card-main{padding:0;}\n.ledger-card-grid{display:grid;grid-template-columns:150px minmax(0,1fr);border-top:1px solid #dfe5e2;border-left:1px solid #dfe5e2;}\n.ledger-card-label{background:#18a83e;color:#fff;font-weight:950;text-align:center;padding:11px 10px;border-right:1px solid #fff;border-bottom:1px solid #fff;line-height:1.35;}\n.ledger-card-value{background:#fff;color:#102033;font-weight:750;padding:11px 12px;border-right:1px solid #dfe5e2;border-bottom:1px solid #dfe5e2;line-height:1.45;word-break:break-word;}\n.ledger-card-value.strong{font-size:16px;font-weight:950;}\n.ledger-card-section{grid-column:1/-1;background:#f2fbf5;color:#10852f;font-weight:950;padding:10px 12px;border-right:1px solid #dfe5e2;border-bottom:1px solid #dfe5e2;letter-spacing:.03em;}\n.ledger-card-image{border-left:1px solid #dfe5e2;background:#fbfcfb;padding:12px;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:10px;}\n.ledger-card-image .thumb{width:150px!important;height:150px!important;object-fit:cover!important;}\n.ledger-card-actions{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;width:100%;}\n.ledger-card-actions button{font-size:13px!important;padding:6px 10px!important;}\n.ledger-card-status{display:inline-flex;align-items:center;border:1px solid #cbd5e1;background:#f8fafc;border-radius:999px;padding:3px 10px;font-size:12px;font-weight:950;color:#334155;}\n.ledger-original-table{margin-top:18px;border:1px solid #d6ded9;background:#fff;padding:10px;}\n.ledger-original-table summary{cursor:pointer;font-weight:950;color:#10852f;padding:8px 4px;}\n@media(max-width:900px){.ledger-card{grid-template-columns:1fr}.ledger-card-image{border-left:0;border-top:1px solid #dfe5e2}.ledger-card-grid{grid-template-columns:118px minmax(0,1fr)}.ledger-card-label,.ledger-card-value{font-size:13px!important;padding:9px 8px!important}}\n";
 document.head.appendChild(goukaLedgerCardPatchStyle);
@@ -4175,11 +4200,7 @@ function App() {
     ["customsBatch", "报关批次"],
     ["ledger", "古物台账"],
     ["profit", "利润分析"],
-    ["tax", "消费税参考"],
     ["pdf", "PDF导出"],
-    ["suppliers", "供应商管理"],
-    ["dictionary", "字典管理"],
-    ["deleteLogs", "删除日志"],
     ["backup", "备份恢复"]
   ];
 
@@ -4354,6 +4375,13 @@ function Dashboard({ totals, items, setTab, exportBackup, customsBatches = [], o
     { label: "备份恢复", desc: "每天重要操作后备份", tab: "backup" }
   ];
 
+  const helperActions = [
+    { label: "消费税参考", tab: "tax" },
+    { label: "供应商管理", tab: "suppliers" },
+    { label: "字典管理", tab: "dictionary" },
+    { label: "删除日志", tab: "deleteLogs" }
+  ];
+
   const brandMap = items.reduce((a, x) => {
     const k = x.brand || "未填写";
     if (!a[k]) a[k] = { count: 0, value: 0, profit: 0 };
@@ -4434,6 +4462,27 @@ function Dashboard({ totals, items, setTab, exportBackup, customsBatches = [], o
           <p>库存预估差额</p>
           <h2>{jpy(expectedNetProfit)}</h2>
           <span>利润率 {expectedMargin.toFixed(1)}% · 当前库存 {activeStock} 件 · 有图 {withImages} 件</span>
+        </div>
+      </div>
+
+      <div className="gouka-ops-summary">
+        <div className="gouka-ops-main">
+          <h2>今天先处理这几件事</h2>
+          <p>系统已经把库存、出品、报关、销售里面最影响经营的事项提出来。先处理红黄提醒，再录新货、补售价、补图片和确认发货。</p>
+          <div className="gouka-ops-list">
+            <div><span>需要优先看</span><b>{urgentTodoScore} 件</b></div>
+            <div><span>当前库存</span><b>{activeStock} 件</b></div>
+            <div><span>库存资金占用</span><b>{jpy(inventoryCapital)}</b></div>
+          </div>
+        </div>
+        <div className="gouka-helper-tools">
+          <h2>辅助工具</h2>
+          <p>低频功能从左侧菜单收起来，放这里，需要时再打开。</p>
+          <div className="gouka-helper-grid">
+            {helperActions.map((action) => (
+              <button key={action.label} onClick={() => setTab(action.tab)}>{action.label}</button>
+            ))}
+          </div>
         </div>
       </div>
 
