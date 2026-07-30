@@ -225,6 +225,206 @@ button.primary, .primary, button.active {
 }
 .gouka-nbaa-flow-step.warn b { background:#f59e0b; }
 .gouka-nbaa-flow-step.danger b { background:#dc2626; }
+.gouka-command-center {
+  display:grid;
+  grid-template-columns:1.1fr .9fr .9fr;
+  gap:10px;
+  margin:14px 0;
+}
+.gouka-command-panel {
+  background:#fff;
+  border:1px solid #cfdcd3;
+  border-top:5px solid #18a63d;
+  padding:14px;
+  min-height:150px;
+}
+.gouka-command-panel h2 {
+  margin:0 0 4px;
+  color:#0b2341;
+  font-size:20px;
+}
+.gouka-command-panel p {
+  margin:0 0 10px;
+  color:#64748b;
+  font-size:13px;
+  line-height:1.55;
+}
+.gouka-priority-list {
+  display:grid;
+  gap:7px;
+}
+.gouka-priority-item {
+  display:grid;
+  grid-template-columns:72px minmax(0,1fr) auto;
+  align-items:center;
+  gap:8px;
+  border:1px solid #dbe6df;
+  background:#fbfdfb;
+  padding:8px 9px;
+  text-align:left;
+  min-height:42px;
+}
+.gouka-priority-item strong {
+  color:#0b2341;
+  font-size:14px;
+}
+.gouka-priority-item span {
+  color:#64748b;
+  font-size:12px;
+}
+.gouka-priority-item b {
+  color:#0b2341;
+  font-size:16px;
+}
+.gouka-priority-item.warn {
+  border-color:#f8c77a;
+  background:#fffaf0;
+}
+.gouka-priority-item.danger {
+  border-color:#fecaca;
+  background:#fff5f5;
+}
+.gouka-priority-item.warn b { color:#b45309; }
+.gouka-priority-item.danger b { color:#b91c1c; }
+.gouka-source-bars {
+  display:grid;
+  gap:9px;
+}
+.gouka-source-row {
+  display:grid;
+  grid-template-columns:82px minmax(0,1fr) 48px;
+  gap:8px;
+  align-items:center;
+  color:#0f172a;
+  font-weight:800;
+  font-size:13px;
+}
+.gouka-source-track {
+  height:10px;
+  background:#eef4ed;
+  border:1px solid #d5e0d8;
+  overflow:hidden;
+}
+.gouka-source-fill {
+  height:100%;
+  background:#18a63d;
+}
+.gouka-health-grid {
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:8px;
+}
+.gouka-health-cell {
+  border:1px solid #dbe6df;
+  background:#fbfdfb;
+  padding:9px;
+  min-height:58px;
+}
+.gouka-health-cell small {
+  display:block;
+  color:#64748b;
+  font-weight:800;
+  margin-bottom:4px;
+}
+.gouka-health-cell b {
+  color:#0b2341;
+  font-size:18px;
+}
+.gouka-health-cell.warn {
+  background:#fffaf0;
+  border-color:#f8c77a;
+}
+.gouka-health-cell.danger {
+  background:#fff5f5;
+  border-color:#fecaca;
+}
+.gouka-spotlight-panel {
+  background:#fff;
+  border:1px solid #cfdcd3;
+  border-top:5px solid #18a63d;
+  margin:14px 0;
+  padding:14px;
+}
+.gouka-spotlight-head {
+  display:flex;
+  justify-content:space-between;
+  gap:12px;
+  align-items:flex-end;
+  margin-bottom:10px;
+}
+.gouka-spotlight-head h2 {
+  margin:0;
+  color:#0b2341;
+  font-size:22px;
+}
+.gouka-spotlight-head p {
+  margin:4px 0 0;
+  color:#64748b;
+  font-size:13px;
+}
+.gouka-spotlight-list {
+  display:grid;
+  gap:8px;
+}
+.gouka-spotlight-item {
+  display:grid;
+  grid-template-columns:72px 1fr 120px 120px;
+  gap:10px;
+  align-items:center;
+  border:1px solid #dbe6df;
+  background:#fbfdfb;
+  padding:8px;
+  text-align:left;
+}
+.gouka-spotlight-img {
+  width:62px;
+  height:62px;
+  border:1px solid #d6e2da;
+  background:#f8fafc;
+  display:grid;
+  place-items:center;
+  color:#64748b;
+  font-size:12px;
+}
+.gouka-spotlight-img img {
+  width:100%;
+  height:100%;
+  object-fit:cover;
+}
+.gouka-spotlight-main strong {
+  display:block;
+  color:#0b2341;
+  font-size:15px;
+  margin-bottom:3px;
+}
+.gouka-spotlight-main span {
+  display:block;
+  color:#64748b;
+  font-size:12px;
+  line-height:1.45;
+}
+.gouka-spotlight-reason {
+  justify-self:start;
+  border:1px solid #f8c77a;
+  background:#fffaf0;
+  color:#92400e;
+  padding:5px 8px;
+  font-weight:900;
+  font-size:12px;
+}
+.gouka-spotlight-money {
+  text-align:right;
+}
+.gouka-spotlight-money small {
+  display:block;
+  color:#64748b;
+  font-size:11px;
+  margin-bottom:2px;
+}
+.gouka-spotlight-money b {
+  color:#0b2341;
+  font-size:15px;
+}
 .v3-kpi, .v3-money-card, .v3-panel, .gouka-alert-card, .gouka-workbench-btn, .inventory-summary-card {
   border-radius:0 !important;
   box-shadow:none !important;
@@ -273,10 +473,17 @@ button.primary, .primary, button.active {
 }
 @media(max-width:1100px){
   .gouka-nbaa-flow-grid { grid-template-columns:repeat(3,minmax(0,1fr)); }
+  .gouka-command-center { grid-template-columns:1fr; }
 }
 @media(max-width:680px){
   .gouka-nbaa-flow-grid { grid-template-columns:1fr; }
   main > header { padding:14px !important; }
+  .gouka-priority-item { grid-template-columns:1fr auto; }
+  .gouka-priority-item span { grid-column:1/-1; }
+  .gouka-spotlight-head { display:block; }
+  .gouka-spotlight-item { grid-template-columns:60px 1fr; }
+  .gouka-spotlight-reason,
+  .gouka-spotlight-money { grid-column:2; text-align:left; }
 }
 `;
 document.head.appendChild(goukaNbaaDirectionStyle);
@@ -4646,6 +4853,52 @@ function Dashboard({ totals, items, setTab, exportBackup, customsBatches = [], o
     { no: 5, title: "销售确认", desc: `${todoShipping} 件待发货确认`, tab: "sales", tone: todoShipping ? "danger" : "" },
     { no: 6, title: "台账/PDF", desc: "古物台账、商品PDF、审计资料导出", tab: "ledger", tone: "" }
   ];
+  function dashboardSourceGroupOf(item) {
+    const text = [item.source, item.platform, item.supplier, item.customsBatchId, item.auction?.platform, item.auction?.auctionCode].filter(Boolean).join(" ");
+    if (isJapaneseAuctionLike(item) || /NBAA|JBA|AUCNET|EcoRing|ECO Ring|Star Buyers|OBA|日本拍卖|日本拍賣|拍卖|落札/i.test(text)) return "日本拍卖";
+    if (/中国|China|CN|供应商|EMS|輸入|进口|import/i.test(text)) return "中国进货";
+    if (/Mercari|Yahoo|楽天|Rakuten|店舗|店铺|日本本地/i.test(text)) return "日本本地";
+    return "其他来源";
+  }
+  const dashboardSourceRows = ["中国进货", "日本拍卖", "日本本地", "其他来源"].map((label) => {
+    const count = activeItems.filter((x) => dashboardSourceGroupOf(x) === label).length;
+    return { label, count, percent: activeStock ? Math.round((count / activeStock) * 100) : 0 };
+  });
+  const priorityTasks = [
+    { label: "补售价", desc: "没有预计售价，利润和差额会不准", value: missingExpectedPriceCount, tab: "inventory", tone: missingExpectedPriceCount ? "danger" : "" },
+    { label: "补图片", desc: "没图会影响出品和查货", value: missingImageCount, tab: "inventory", tone: missingImageCount ? "warn" : "" },
+    { label: "待出品", desc: "入库后尽快准备上架", value: todoListing, tab: "listing", tone: todoListing ? "warn" : "" },
+    { label: "待报关", desc: "EMS和进口资料要先整理", value: todoCustoms, tab: "customsBatch", tone: todoCustoms ? "warn" : "" },
+    { label: "待发货", desc: "售出后确认发货记录", value: todoShipping, tab: "sales", tone: todoShipping ? "danger" : "" }
+  ].sort((a, b) => b.value - a.value).slice(0, 4);
+  const inventoryCoverage = activeStock ? Math.round((withImages / activeStock) * 100) : 100;
+  function spotlightReason(item) {
+    const age = stockAgeDays(item);
+    if (Number(item.saleJpy || 0) <= 0) return "补售价";
+    if (!(Array.isArray(item.images) && item.images.length)) return "补图片";
+    if (age >= 60) return "库存60日+";
+    if (age >= 30) return "库存30日+";
+    if (calcTax(item).costJpy >= 500000) return "高成本";
+    if (item.status === "报关准备") return "待报关";
+    if (item.status === "已入库" || item.status === "待出品") return "待出品";
+    return "关注";
+  }
+  function spotlightScore(item) {
+    const age = stockAgeDays(item);
+    return (
+      (Number(item.saleJpy || 0) <= 0 ? 900 : 0) +
+      (!(Array.isArray(item.images) && item.images.length) ? 700 : 0) +
+      (age >= 60 ? 500 : age >= 30 ? 300 : 0) +
+      (item.status === "报关准备" ? 260 : 0) +
+      (item.status === "已入库" || item.status === "待出品" ? 160 : 0) +
+      Math.min(220, Math.floor(Number(calcTax(item).costJpy || 0) / 10000))
+    );
+  }
+  const spotlightItems = activeItems
+    .map((item) => ({ item, score: spotlightScore(item), reason: spotlightReason(item) }))
+    .filter((row) => row.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 5);
 
   const brandMap = items.reduce((a, x) => {
     const k = x.brand || "未填写";
@@ -4727,6 +4980,72 @@ function Dashboard({ totals, items, setTab, exportBackup, customsBatches = [], o
           <p>库存预估差额</p>
           <h2>{jpy(expectedNetProfit)}</h2>
           <span>利润率 {expectedMargin.toFixed(1)}% · 当前库存 {activeStock} 件 · 有图 {withImages} 件</span>
+        </div>
+      </div>
+
+      <div className="gouka-command-center">
+        <div className="gouka-command-panel">
+          <h2>今日优先处理</h2>
+          <p>按影响经营的程度自动排序。先处理这里，再去看普通库存。</p>
+          <div className="gouka-priority-list">
+            {priorityTasks.map((task) => (
+              <button key={task.label} className={"gouka-priority-item " + (task.tone || "")} onClick={() => setTab(task.tab)}>
+                <strong>{task.label}</strong>
+                <span>{task.desc}</span>
+                <b>{task.value} 件</b>
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="gouka-command-panel">
+          <h2>库存来源构成</h2>
+          <p>中国进货、日本拍卖、日本本地分开看，后面几百件也不会混在一起。</p>
+          <div className="gouka-source-bars">
+            {dashboardSourceRows.map((row) => (
+              <div key={row.label} className="gouka-source-row">
+                <span>{row.label}</span>
+                <div className="gouka-source-track"><div className="gouka-source-fill" style={{ width: `${row.percent}%` }} /></div>
+                <b>{row.count}件</b>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="gouka-command-panel">
+          <h2>经营温度</h2>
+          <p>第一眼看库存压力、资料完整度和资金占用。</p>
+          <div className="gouka-health-grid">
+            <div className={"gouka-health-cell " + (inventoryCoverage < 80 ? "warn" : "")}><small>图片完整率</small><b>{inventoryCoverage}%</b></div>
+            <div className={"gouka-health-cell " + (over30 ? "warn" : "")}><small>30日以上</small><b>{over30} 件</b></div>
+            <div className={"gouka-health-cell " + (over60 ? "danger" : "")}><small>60日以上</small><b>{over60} 件</b></div>
+            <div className="gouka-health-cell"><small>资金占用</small><b>{jpy(inventoryCapital)}</b></div>
+          </div>
+        </div>
+      </div>
+
+      <div className="gouka-spotlight-panel">
+        <div className="gouka-spotlight-head">
+          <div>
+            <h2>重点商品雷达</h2>
+            <p>自动挑出最值得先处理的商品：缺售价、缺图片、库存久、成本高都会排到前面。</p>
+          </div>
+          <button className="ghost" onClick={() => setTab("inventory")}>去库存处理</button>
+        </div>
+        <div className="gouka-spotlight-list">
+          {spotlightItems.length ? spotlightItems.map(({ item, reason }) => (
+            <button key={item.id} className="gouka-spotlight-item" onClick={() => setTab("inventory")}>
+              <div className="gouka-spotlight-img">
+                {item.images?.[0] ? <img decoding="async" loading="lazy" src={item.images[0]} alt={item.item || item.id} /> : "无图"}
+              </div>
+              <div className="gouka-spotlight-main">
+                <strong>{item.brand || "未填品牌"} / {item.item || "未填商品名"}</strong>
+                <span>{item.id} · {dashboardSourceGroupOf(item)} · {item.purchaseDate || "未填日期"} · {stockAgeDays(item)}日</span>
+              </div>
+              <div className="gouka-spotlight-reason">{reason}</div>
+              <div className="gouka-spotlight-money"><small>库存成本</small><b>{jpy(calcTax(item).costJpy)}</b></div>
+            </button>
+          )) : (
+            <div className="note">目前没有特别紧急的库存问题。可以继续录入新商品或检查销售记录。</div>
+          )}
         </div>
       </div>
 
