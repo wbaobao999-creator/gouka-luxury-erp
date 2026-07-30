@@ -425,6 +425,74 @@ button.primary, .primary, button.active {
   color:#0b2341;
   font-size:15px;
 }
+.gouka-profit-guard {
+  background:#fff;
+  border:1px solid #cfdcd3;
+  border-top:5px solid #18a63d;
+  margin:14px 0;
+  padding:14px;
+}
+.gouka-profit-guard-head {
+  display:flex;
+  justify-content:space-between;
+  gap:12px;
+  align-items:flex-end;
+  margin-bottom:10px;
+}
+.gouka-profit-guard-head h2 {
+  margin:0;
+  color:#0b2341;
+  font-size:22px;
+}
+.gouka-profit-guard-head p {
+  margin:4px 0 0;
+  color:#64748b;
+  font-size:13px;
+}
+.gouka-profit-guard-grid {
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:10px;
+}
+.gouka-profit-guard-card {
+  border:1px solid #dbe6df;
+  background:#fbfdfb;
+  padding:11px;
+  text-align:left;
+  min-height:126px;
+}
+.gouka-profit-guard-card.warn {
+  background:#fffaf0;
+  border-color:#f8c77a;
+}
+.gouka-profit-guard-card.danger {
+  background:#fff5f5;
+  border-color:#fecaca;
+}
+.gouka-profit-guard-card small {
+  display:block;
+  color:#64748b;
+  font-weight:900;
+  margin-bottom:5px;
+}
+.gouka-profit-guard-card strong {
+  display:block;
+  color:#0b2341;
+  font-size:15px;
+  margin-bottom:6px;
+  line-height:1.35;
+}
+.gouka-profit-guard-card b {
+  color:#0b2341;
+  font-size:18px;
+}
+.gouka-profit-guard-card span {
+  display:block;
+  color:#64748b;
+  font-size:12px;
+  line-height:1.45;
+  margin-top:5px;
+}
 .v3-kpi, .v3-money-card, .v3-panel, .gouka-alert-card, .gouka-workbench-btn, .inventory-summary-card {
   border-radius:0 !important;
   box-shadow:none !important;
@@ -484,6 +552,8 @@ button.primary, .primary, button.active {
   .gouka-spotlight-item { grid-template-columns:60px 1fr; }
   .gouka-spotlight-reason,
   .gouka-spotlight-money { grid-column:2; text-align:left; }
+  .gouka-profit-guard-head { display:block; }
+  .gouka-profit-guard-grid { grid-template-columns:1fr; }
 }
 `;
 document.head.appendChild(goukaNbaaDirectionStyle);
@@ -4900,6 +4970,44 @@ function Dashboard({ totals, items, setTab, exportBackup, customsBatches = [], o
     .sort((a, b) => b.score - a.score)
     .slice(0, 5);
 
+  function profitGuardRow(item) {
+    const sales = calcSalesBreakdown(item || {});
+    const expectedSale = Number(sales.expectedSaleTaxIncluded || item.saleJpy || item.expectedSaleJpy || item.listingPriceJpy || 0);
+    const cost = Number(sales.inventoryCostJpy || calcTax(item).costJpy || 0);
+    const expectedProfit = expectedSale > 0 ? Number(sales.expectedProfitJpy || 0) : 0;
+    const expectedMargin = expectedSale > 0 ? (expectedProfit / Math.max(1, expectedSale / (1 + TAX_RATE))) * 100 : 0;
+    let reason = "";
+    let tone = "";
+    if (expectedSale <= 0 && cost >= 100000) {
+      reason = "高成本未设售价";
+      tone = "danger";
+    } else if (expectedSale <= 0) {
+      reason = "未设售价";
+      tone = "warn";
+    } else if (expectedProfit < 0) {
+      reason = "预计亏损";
+      tone = "danger";
+    } else if (expectedMargin > 0 && expectedMargin < 12) {
+      reason = "利润率偏低";
+      tone = "warn";
+    } else if (cost >= 500000 && expectedMargin < 18) {
+      reason = "高成本低利润";
+      tone = "warn";
+    }
+    if (!reason) return null;
+    const breakEven = Math.ceil(cost * (1 + TAX_RATE));
+    const suggestedSale = Math.ceil((cost * 1.25) / 1000) * 1000;
+    return { item, reason, tone, cost, expectedSale, expectedProfit, expectedMargin, breakEven, suggestedSale };
+  }
+  const profitGuardItems = activeItems
+    .map(profitGuardRow)
+    .filter(Boolean)
+    .sort((a, b) => {
+      const toneScore = (row) => row.tone === "danger" ? 2 : 1;
+      return toneScore(b) - toneScore(a) || b.cost - a.cost;
+    })
+    .slice(0, 6);
+
   const brandMap = items.reduce((a, x) => {
     const k = x.brand || "未填写";
     if (!a[k]) a[k] = { count: 0, value: 0, profit: 0 };
@@ -5045,6 +5153,30 @@ function Dashboard({ totals, items, setTab, exportBackup, customsBatches = [], o
             </button>
           )) : (
             <div className="note">目前没有特别紧急的库存问题。可以继续录入新商品或检查销售记录。</div>
+          )}
+        </div>
+      </div>
+
+      <div className="gouka-profit-guard">
+        <div className="gouka-profit-guard-head">
+          <div>
+            <h2>利润保护提醒</h2>
+            <p>卖货前先看这里：售价没填、预计亏损、利润率偏低、高成本风险商品会自动出现。</p>
+          </div>
+          <button className="ghost" onClick={() => setTab("inventory")}>去补售价</button>
+        </div>
+        <div className="gouka-profit-guard-grid">
+          {profitGuardItems.length ? profitGuardItems.map((row) => (
+            <button key={row.item.id} className={"gouka-profit-guard-card " + row.tone} onClick={() => setTab("inventory")}>
+              <small>{row.reason}</small>
+              <strong>{row.item.brand || "未填品牌"} / {row.item.item || "未填商品名"}</strong>
+              <b>{row.expectedSale ? jpy(row.expectedProfit) : "待定"}</b>
+              <span>{row.item.id} · {dashboardSourceGroupOf(row.item)}</span>
+              <span>成本 {jpy(row.cost)} · 当前售价 {row.expectedSale ? jpy(row.expectedSale) : "未填写"}</span>
+              <span>建议售价参考 {jpy(row.suggestedSale)} · 保本参考 {jpy(row.breakEven)}</span>
+            </button>
+          )) : (
+            <div className="note">目前没有明显的利润危险商品。</div>
           )}
         </div>
       </div>
