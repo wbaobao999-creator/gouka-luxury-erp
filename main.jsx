@@ -1111,7 +1111,7 @@ const goukaReadableTablePatchStyle = document.createElement("style");
 goukaReadableTablePatchStyle.textContent = "\n/* GOUKA readable table patch: clearer text for inventory and ledger tables */\nbody{font-family:\"Yu Gothic UI\",\"Meiryo\",\"Microsoft YaHei\",\"PingFang SC\",Arial,sans-serif!important;-webkit-font-smoothing:antialiased!important;text-rendering:optimizeLegibility!important;}\n.tablewrap table{font-size:14px!important;color:#102033!important;}\nth{font-size:13px!important;font-weight:950!important;letter-spacing:.02em!important;line-height:1.35!important;padding:11px 9px!important;}\ntd{font-size:14px!important;font-weight:650!important;line-height:1.55!important;color:#102033!important;padding:12px 10px!important;}\ntd small,td .muted,.note,.record-card-summary{font-size:12px!important;color:#475569!important;font-weight:750!important;}\ntbody tr:nth-child(even) td{background:#fbfdfc!important;}\ntbody tr:hover td{background:#eefaf2!important;}\n.product-name-clamp{font-size:14px!important;font-weight:750!important;line-height:1.5!important;max-width:520px!important;}\n.pill,.status,.inventory-pending{font-size:12px!important;font-weight:900!important;}\n.table-actions button{font-size:13px!important;font-weight:900!important;}\n.inventory-summary-card small{font-size:13px!important;font-weight:900!important;}\n.inventory-summary-card b{font-size:24px!important;font-weight:950!important;}\n.toolbar h2,.panel h2{font-size:25px!important;font-weight:950!important;}\n.search,input,select,textarea,button{font-size:14px!important;}\n@media(max-width:1200px){td{font-size:13px!important;padding:10px 8px!important;}th{font-size:12px!important;padding:9px 7px!important;}.tablewrap table{min-width:1120px!important;}}\n";
 document.head.appendChild(goukaReadableTablePatchStyle);
 const goukaHeaderTodoStyle = document.createElement("style");
-goukaHeaderTodoStyle.textContent = "\n.gouka-header-todo{display:inline-flex!important;align-items:center!important;gap:4px!important;border-radius:999px!important;border:1px solid #d7e2dd!important;background:#fff!important;color:#123047!important;padding:5px 9px!important;font-size:12px!important;font-weight:950!important;white-space:nowrap!important;}.gouka-header-todo.warn{border-color:#f8c77a!important;background:#fffaf0!important;color:#92400e!important;}.gouka-header-todo.danger{border-color:#fecaca!important;background:#fff5f5!important;color:#b91c1c!important;}.gouka-header-todo.good{border-color:#b7d7bd!important;background:#f2fbf5!important;color:#10852f!important;}@media(max-width:900px){.gouka-header-todo{width:auto!important;}.action-row{align-items:flex-start!important;}}\n";
+goukaHeaderTodoStyle.textContent = "\n.gouka-header-todo{display:inline-flex!important;align-items:center!important;justify-content:center!important;gap:4px!important;border-radius:999px!important;border:1px solid #d7e2dd!important;background:#fff!important;color:#123047!important;padding:5px 9px!important;font-size:12px!important;font-weight:950!important;white-space:nowrap!important;min-height:30px!important;line-height:1!important;cursor:pointer!important;}.gouka-header-todo:hover{transform:none!important;box-shadow:none!important;filter:brightness(.98)!important;}.gouka-header-todo.warn{border-color:#f8c77a!important;background:#fffaf0!important;color:#92400e!important;}.gouka-header-todo.danger{border-color:#fecaca!important;background:#fff5f5!important;color:#b91c1c!important;}.gouka-header-todo.good{border-color:#b7d7bd!important;background:#f2fbf5!important;color:#10852f!important;}@media(max-width:900px){.gouka-header-todo{width:auto!important;}.action-row{align-items:flex-start!important;}}\n";
 document.head.appendChild(goukaHeaderTodoStyle);
 const goukaTableWorkModePatchStyle = document.createElement("style");
 goukaTableWorkModePatchStyle.textContent = `
@@ -3554,6 +3554,7 @@ function App() {
   const [customsBatches, setCustomsBatches] = useState(loadCustomsBatches);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("全部");
+  const [inventoryQuickSignal, setInventoryQuickSignal] = useState({ signal: "全部", nonce: 0 });
   const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState(null);
   const [previewImage, setPreviewImage] = useState(null);
@@ -4734,6 +4735,13 @@ function App() {
     scrollMainTop();
   }
 
+  function openInventorySignal(signal) {
+    setQuery("");
+    setStatusFilter("全部");
+    setInventoryQuickSignal({ signal, nonce: Date.now() });
+    goTab("inventory");
+  }
+
   const menu = [
     ["dashboard", "控制台"],
     ["add", editingId ? "编辑商品" : "商品录入"],
@@ -4779,9 +4787,9 @@ function App() {
             <button className="ghost" onClick={syncToCloud}>手动同步</button>
             <button className="ghost" onClick={loadFromCloud}>手动读取</button>
             <button className={"ghost lang-toggle-btn " + (japaneseMode ? "active" : "")} onClick={toggleJapaneseMode}>{japaneseMode ? "中文表示" : "日本語表示"}</button>
-            <span className={"gouka-header-todo " + (headerTodo.missingPrice ? "danger" : "good")}>补售价 {headerTodo.missingPrice}</span>
-            <span className={"gouka-header-todo " + (headerTodo.toList ? "warn" : "good")}>待出品 {headerTodo.toList}</span>
-            <span className={"gouka-header-todo " + (headerTodo.toCustoms ? "warn" : "good")}>待报关 {headerTodo.toCustoms}</span>
+            <button className={"gouka-header-todo " + (headerTodo.missingPrice ? "danger" : "good")} onClick={() => openInventorySignal("未设预计售价")}>补售价 {headerTodo.missingPrice}</button>
+            <button className={"gouka-header-todo " + (headerTodo.toList ? "warn" : "good")} onClick={() => goTab("listing")}>待出品 {headerTodo.toList}</button>
+            <button className={"gouka-header-todo " + (headerTodo.toCustoms ? "warn" : "good")} onClick={() => goTab("customsBatch")}>待报关 {headerTodo.toCustoms}</button>
             <span className="pill sync-live-pill">{syncStatusText}</span>
             <span className="pill">Auto Save · {isOwner ? "管理者" : isTaxViewer ? "税理士" : "员工"}</span>
           </div>
@@ -4823,6 +4831,7 @@ function App() {
             setPreviewImage={setPreviewImage}
             setPreviewScale={setPreviewScale}
             exportItemPdf={canExportBusinessPdf ? exportItemPdf : null}
+            quickSignal={inventoryQuickSignal}
           />
         )}
         {tab === "ledger" && (canAccessTab("ledger") ? <Ledger items={filtered} setItems={canEditBusiness ? setItems : (() => {})} isOwner={isOwner} downloadCSV={downloadCSV} exportItemPdf={canExportBusinessPdf ? exportItemPdf : null} /> : <RestrictedPanel message={restrictedTabMessage} />)}
@@ -6222,7 +6231,7 @@ function InventoryMobileCards({ items, sourceGroupOf, sourceGroupBadge, stockDay
     </div>
   );
 }
-function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, downloadCSV, editItem, deleteItem, isOwner, canEdit = true, canExportPdf = true, canViewFinance = true, setPreviewImage, setPreviewScale, exportItemPdf }) {
+function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, downloadCSV, editItem, deleteItem, isOwner, canEdit = true, canExportPdf = true, canViewFinance = true, setPreviewImage, setPreviewScale, exportItemPdf, quickSignal }) {
   const [detailItem, setDetailItem] = useState(null);
   const [page, setPage] = useState(1);
   const [evidenceFilter, setEvidenceFilter] = useState("全部");
@@ -6232,6 +6241,14 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
   const allInventoryItems = sortGoukaItems(items || []);
   const evidenceOptions = ["全部", "缺资料", "需补充", "完整"];
   const stockSignalOptions = ["全部", "未设预计售价", "无图片", "库存30日以上", "库存365日以上"];
+  React.useEffect(() => {
+    if (!quickSignal?.nonce) return;
+    setEvidenceFilter("全部");
+    setSourceGroupFilter("全部来源");
+    setStockSignalFilter(quickSignal.signal || "全部");
+    setPage(1);
+  }, [quickSignal?.nonce]);
+
   function sourceGroupOf(item) {
     const trace = buildSourceTrace(item);
     const platform = String(item?.platform || "");
