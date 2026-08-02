@@ -1110,6 +1110,9 @@ document.head.appendChild(goukaStableWidePatchStyle);
 const goukaReadableTablePatchStyle = document.createElement("style");
 goukaReadableTablePatchStyle.textContent = "\n/* GOUKA readable table patch: clearer text for inventory and ledger tables */\nbody{font-family:\"Yu Gothic UI\",\"Meiryo\",\"Microsoft YaHei\",\"PingFang SC\",Arial,sans-serif!important;-webkit-font-smoothing:antialiased!important;text-rendering:optimizeLegibility!important;}\n.tablewrap table{font-size:14px!important;color:#102033!important;}\nth{font-size:13px!important;font-weight:950!important;letter-spacing:.02em!important;line-height:1.35!important;padding:11px 9px!important;}\ntd{font-size:14px!important;font-weight:650!important;line-height:1.55!important;color:#102033!important;padding:12px 10px!important;}\ntd small,td .muted,.note,.record-card-summary{font-size:12px!important;color:#475569!important;font-weight:750!important;}\ntbody tr:nth-child(even) td{background:#fbfdfc!important;}\ntbody tr:hover td{background:#eefaf2!important;}\n.product-name-clamp{font-size:14px!important;font-weight:750!important;line-height:1.5!important;max-width:520px!important;}\n.pill,.status,.inventory-pending{font-size:12px!important;font-weight:900!important;}\n.table-actions button{font-size:13px!important;font-weight:900!important;}\n.inventory-summary-card small{font-size:13px!important;font-weight:900!important;}\n.inventory-summary-card b{font-size:24px!important;font-weight:950!important;}\n.toolbar h2,.panel h2{font-size:25px!important;font-weight:950!important;}\n.search,input,select,textarea,button{font-size:14px!important;}\n@media(max-width:1200px){td{font-size:13px!important;padding:10px 8px!important;}th{font-size:12px!important;padding:9px 7px!important;}.tablewrap table{min-width:1120px!important;}}\n";
 document.head.appendChild(goukaReadableTablePatchStyle);
+const goukaHeaderTodoStyle = document.createElement("style");
+goukaHeaderTodoStyle.textContent = "\n.gouka-header-todo{display:inline-flex!important;align-items:center!important;gap:4px!important;border-radius:999px!important;border:1px solid #d7e2dd!important;background:#fff!important;color:#123047!important;padding:5px 9px!important;font-size:12px!important;font-weight:950!important;white-space:nowrap!important;}.gouka-header-todo.warn{border-color:#f8c77a!important;background:#fffaf0!important;color:#92400e!important;}.gouka-header-todo.danger{border-color:#fecaca!important;background:#fff5f5!important;color:#b91c1c!important;}.gouka-header-todo.good{border-color:#b7d7bd!important;background:#f2fbf5!important;color:#10852f!important;}@media(max-width:900px){.gouka-header-todo{width:auto!important;}.action-row{align-items:flex-start!important;}}\n";
+document.head.appendChild(goukaHeaderTodoStyle);
 const goukaTableWorkModePatchStyle = document.createElement("style");
 goukaTableWorkModePatchStyle.textContent = `
 /* GOUKA table work mode: easier daily checking for hundreds of items */
@@ -3760,6 +3763,14 @@ function App() {
   const canExportBusinessPdf = isOwner || isTaxViewer;
   const restrictedTabMessage = isTaxViewer ? "税理士窗口为只读审查模式。" : "员工入口没有此模块权限。";
   const computedItems = useMemo(() => sortGoukaItems(applyBatchAllocations(items, customsBatches)), [items, customsBatches]);
+  const headerTodo = useMemo(() => {
+    const active = computedItems.filter((x) => !isSoldStatus(x.status) && x.status !== "退货");
+    return {
+      missingPrice: active.filter((x) => Number(x.saleJpy || 0) <= 0).length,
+      toList: active.filter((x) => x.status === "已入库" || x.status === "待出品").length,
+      toCustoms: computedItems.filter((x) => x.status === "报关准备").length
+    };
+  }, [computedItems]);
 
   React.useEffect(() => {
     if (!canAccessTab(tab)) setTab(defaultTabForRole);
@@ -4707,7 +4718,7 @@ function App() {
     };
     setForm(nextForm);
     setEditingId(null);
-    setTab("add");
+    goTab("add");
     alert("AI草稿已填入商品录入页，请确认后点击添加到库存。");
   }
   function scrollMainTop() {
@@ -4720,7 +4731,7 @@ function App() {
 
   function goTab(nextTab) {
     setTab(nextTab);
-    if (nextTab === "add") scrollMainTop();
+    scrollMainTop();
   }
 
   const menu = [
@@ -4768,15 +4779,18 @@ function App() {
             <button className="ghost" onClick={syncToCloud}>手动同步</button>
             <button className="ghost" onClick={loadFromCloud}>手动读取</button>
             <button className={"ghost lang-toggle-btn " + (japaneseMode ? "active" : "")} onClick={toggleJapaneseMode}>{japaneseMode ? "中文表示" : "日本語表示"}</button>
+            <span className={"gouka-header-todo " + (headerTodo.missingPrice ? "danger" : "good")}>补售价 {headerTodo.missingPrice}</span>
+            <span className={"gouka-header-todo " + (headerTodo.toList ? "warn" : "good")}>待出品 {headerTodo.toList}</span>
+            <span className={"gouka-header-todo " + (headerTodo.toCustoms ? "warn" : "good")}>待报关 {headerTodo.toCustoms}</span>
             <span className="pill sync-live-pill">{syncStatusText}</span>
             <span className="pill">Auto Save · {isOwner ? "管理者" : isTaxViewer ? "税理士" : "员工"}</span>
           </div>
         </header>
         <RoleNotice role={role} />
 
-        {tab === "dashboard" && (canAccessTab("dashboard") ? <Dashboard totals={totals} items={computedItems} setTab={setTab} exportBackup={exportBackup} customsBatches={customsBatches} onCashflowSave={requestGlobalCloudSave} /> : <RestrictedPanel message={restrictedTabMessage} />)}
+        {tab === "dashboard" && (canAccessTab("dashboard") ? <Dashboard totals={totals} items={computedItems} setTab={goTab} exportBackup={exportBackup} customsBatches={customsBatches} onCashflowSave={requestGlobalCloudSave} /> : <RestrictedPanel message={restrictedTabMessage} />)}
         {tab === "ai" && <AiAssistant onApplyDraft={applyAiDraft} dictionaries={dictionaries} suppliers={suppliers} />}
-        {tab === "aiChat" && <AiChatAssistant items={computedItems} suppliers={suppliers} dictionaries={dictionaries} setTab={setTab} />}
+        {tab === "aiChat" && <AiChatAssistant items={computedItems} suppliers={suppliers} dictionaries={dictionaries} setTab={goTab} />}
         {tab === "add" && (
           <AddForm
             form={form}
