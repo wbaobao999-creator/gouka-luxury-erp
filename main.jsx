@@ -1113,9 +1113,6 @@ document.head.appendChild(goukaReadableTablePatchStyle);
 const goukaHeaderTodoStyle = document.createElement("style");
 goukaHeaderTodoStyle.textContent = "\n.gouka-header-todo{display:inline-flex!important;align-items:center!important;justify-content:center!important;gap:4px!important;border-radius:999px!important;border:1px solid #d7e2dd!important;background:#fff!important;color:#123047!important;padding:5px 9px!important;font-size:12px!important;font-weight:950!important;white-space:nowrap!important;min-height:30px!important;line-height:1!important;cursor:pointer!important;}.gouka-header-todo:hover{transform:none!important;box-shadow:none!important;filter:brightness(.98)!important;}.gouka-header-todo.warn{border-color:#f8c77a!important;background:#fffaf0!important;color:#92400e!important;}.gouka-header-todo.danger{border-color:#fecaca!important;background:#fff5f5!important;color:#b91c1c!important;}.gouka-header-todo.good{border-color:#b7d7bd!important;background:#f2fbf5!important;color:#10852f!important;}@media(max-width:900px){.gouka-header-todo{width:auto!important;}.action-row{align-items:flex-start!important;}}\n";
 document.head.appendChild(goukaHeaderTodoStyle);
-const goukaActiveFilterStyle = document.createElement("style");
-goukaActiveFilterStyle.textContent = "\n.gouka-active-filter{display:flex!important;justify-content:space-between!important;align-items:center!important;gap:10px!important;border:1px solid #b7d7bd!important;border-left:5px solid #18a63d!important;background:#f6fff9!important;padding:9px 10px!important;margin:0 0 12px!important;color:#123047!important;font-weight:850!important;}.gouka-active-filter span{font-size:13px!important;}.gouka-active-filter button{min-height:30px!important;padding:5px 10px!important;}@media(max-width:760px){.gouka-active-filter{display:block!important;}.gouka-active-filter button{margin-top:8px!important;width:100%!important;}}\n";
-document.head.appendChild(goukaActiveFilterStyle);
 const goukaTableWorkModePatchStyle = document.createElement("style");
 goukaTableWorkModePatchStyle.textContent = `
 /* GOUKA table work mode: easier daily checking for hundreds of items */
@@ -3771,8 +3768,6 @@ function App() {
     const active = computedItems.filter((x) => !isSoldStatus(x.status) && x.status !== "退货");
     return {
       missingPrice: active.filter((x) => Number(x.saleJpy || 0) <= 0).length,
-      noImage: active.filter((x) => !(Array.isArray(x.images) && x.images.length)).length,
-      over30: active.filter((x) => stockAgeDays(x) >= 30).length,
       toList: active.filter((x) => x.status === "已入库" || x.status === "待出品").length,
       toCustoms: computedItems.filter((x) => x.status === "报关准备").length
     };
@@ -4793,8 +4788,6 @@ function App() {
             <button className="ghost" onClick={loadFromCloud}>手动读取</button>
             <button className={"ghost lang-toggle-btn " + (japaneseMode ? "active" : "")} onClick={toggleJapaneseMode}>{japaneseMode ? "中文表示" : "日本語表示"}</button>
             <button className={"gouka-header-todo " + (headerTodo.missingPrice ? "danger" : "good")} onClick={() => openInventorySignal("未设预计售价")}>补售价 {headerTodo.missingPrice}</button>
-            <button className={"gouka-header-todo " + (headerTodo.noImage ? "warn" : "good")} onClick={() => openInventorySignal("无图片")}>无图片 {headerTodo.noImage}</button>
-            <button className={"gouka-header-todo " + (headerTodo.over30 ? "warn" : "good")} onClick={() => openInventorySignal("库存30日以上")}>30日+ {headerTodo.over30}</button>
             <button className={"gouka-header-todo " + (headerTodo.toList ? "warn" : "good")} onClick={() => goTab("listing")}>待出品 {headerTodo.toList}</button>
             <button className={"gouka-header-todo " + (headerTodo.toCustoms ? "warn" : "good")} onClick={() => goTab("customsBatch")}>待报关 {headerTodo.toCustoms}</button>
             <span className="pill sync-live-pill">{syncStatusText}</span>
@@ -4803,7 +4796,7 @@ function App() {
         </header>
         <RoleNotice role={role} />
 
-        {tab === "dashboard" && (canAccessTab("dashboard") ? <Dashboard totals={totals} items={computedItems} setTab={goTab} openInventorySignal={openInventorySignal} exportBackup={exportBackup} customsBatches={customsBatches} onCashflowSave={requestGlobalCloudSave} /> : <RestrictedPanel message={restrictedTabMessage} />)}
+        {tab === "dashboard" && (canAccessTab("dashboard") ? <Dashboard totals={totals} items={computedItems} setTab={goTab} exportBackup={exportBackup} customsBatches={customsBatches} onCashflowSave={requestGlobalCloudSave} /> : <RestrictedPanel message={restrictedTabMessage} />)}
         {tab === "ai" && <AiAssistant onApplyDraft={applyAiDraft} dictionaries={dictionaries} suppliers={suppliers} />}
         {tab === "aiChat" && <AiChatAssistant items={computedItems} suppliers={suppliers} dictionaries={dictionaries} setTab={goTab} />}
         {tab === "add" && (
@@ -4871,7 +4864,7 @@ function App() {
   );
 }
 
-function Dashboard({ totals, items, setTab, openInventorySignal = null, exportBackup, customsBatches = [], onCashflowSave = () => {} }) {
+function Dashboard({ totals, items, setTab, exportBackup, customsBatches = [], onCashflowSave = () => {} }) {
   const withImages = items.filter((x) => x.images && x.images.length).length;
   const activeItems = items.filter((x) => !isSoldStatus(x.status) && x.status !== "退货");
   const activeStock = activeItems.length;
@@ -4921,10 +4914,10 @@ function Dashboard({ totals, items, setTab, openInventorySignal = null, exportBa
   const urgentTodoScore = todoCustoms + todoListing + missingExpectedPriceCount + missingImageCount + over30 + todoShipping;
   const alertCards = [
     { label: "待出品", value: todoListing, hint: "入库后尽快上架", tone: todoListing ? "warn" : "", tab: "inventory" },
-    { label: "未设预计售价", value: missingExpectedPriceCount, hint: "影响利润预估", tone: missingExpectedPriceCount ? "danger" : "", tab: "inventory", signal: "未设预计售价" },
-    { label: "无图片", value: missingImageCount, hint: "影响出品效率", tone: missingImageCount ? "warn" : "", tab: "inventory", signal: "无图片" },
+    { label: "未设预计售价", value: missingExpectedPriceCount, hint: "影响利润预估", tone: missingExpectedPriceCount ? "danger" : "", tab: "inventory" },
+    { label: "无图片", value: missingImageCount, hint: "影响出品效率", tone: missingImageCount ? "warn" : "", tab: "inventory" },
     { label: "待报关", value: todoCustoms, hint: "检查报关资料", tone: todoCustoms ? "info" : "", tab: "customsBatch" },
-    { label: "库存超30天", value: over30, hint: "优先检查售价", tone: over30 ? "warn" : "", tab: "inventory", signal: "库存30日以上" },
+    { label: "库存超30天", value: over30, hint: "优先检查售价", tone: over30 ? "warn" : "", tab: "inventory" },
     { label: "待发货确认", value: todoShipping, hint: "销售后处理", tone: todoShipping ? "info" : "", tab: "sales" },
     { label: "365日以上", value: longTerm, hint: "长期库存预警", tone: longTerm ? "danger" : "", tab: "inventory" }
   ];
@@ -4947,7 +4940,7 @@ function Dashboard({ totals, items, setTab, openInventorySignal = null, exportBa
   ];
   const nbaaFlowSteps = [
     { no: 1, title: "商品录入", desc: "采购后先录品牌、商品名、来源和照片", tab: "add", tone: "" },
-    { no: 2, title: "补资料", desc: `${missingImageCount + missingExpectedPriceCount} 件需要补图或售价`, tab: "inventory", signal: missingExpectedPriceCount ? "未设预计售价" : missingImageCount ? "无图片" : "全部", tone: missingImageCount + missingExpectedPriceCount ? "warn" : "" },
+    { no: 2, title: "补资料", desc: `${missingImageCount + missingExpectedPriceCount} 件需要补图或售价`, tab: "inventory", tone: missingImageCount + missingExpectedPriceCount ? "warn" : "" },
     { no: 3, title: "出品准备", desc: `${todoListing} 件待出品或已入库`, tab: "listing", tone: todoListing ? "warn" : "" },
     { no: 4, title: "EMS报关", desc: `${todoCustoms} 件与报关相关`, tab: "customsBatch", tone: todoCustoms ? "warn" : "" },
     { no: 5, title: "销售确认", desc: `${todoShipping} 件待发货确认`, tab: "sales", tone: todoShipping ? "danger" : "" },
@@ -4965,22 +4958,12 @@ function Dashboard({ totals, items, setTab, openInventorySignal = null, exportBa
     return { label, count, percent: activeStock ? Math.round((count / activeStock) * 100) : 0 };
   });
   const priorityTasks = [
-    { label: "补售价", desc: "没有预计售价，利润和差额会不准", value: missingExpectedPriceCount, tab: "inventory", signal: "未设预计售价", tone: missingExpectedPriceCount ? "danger" : "" },
-    { label: "补图片", desc: "没图会影响出品和查货", value: missingImageCount, tab: "inventory", signal: "无图片", tone: missingImageCount ? "warn" : "" },
+    { label: "补售价", desc: "没有预计售价，利润和差额会不准", value: missingExpectedPriceCount, tab: "inventory", tone: missingExpectedPriceCount ? "danger" : "" },
+    { label: "补图片", desc: "没图会影响出品和查货", value: missingImageCount, tab: "inventory", tone: missingImageCount ? "warn" : "" },
     { label: "待出品", desc: "入库后尽快准备上架", value: todoListing, tab: "listing", tone: todoListing ? "warn" : "" },
     { label: "待报关", desc: "EMS和进口资料要先整理", value: todoCustoms, tab: "customsBatch", tone: todoCustoms ? "warn" : "" },
     { label: "待发货", desc: "售出后确认发货记录", value: todoShipping, tab: "sales", tone: todoShipping ? "danger" : "" }
   ].sort((a, b) => b.value - a.value).slice(0, 4);
-  function openInventoryBySignal(signal) {
-    if (openInventorySignal) openInventorySignal(signal);
-    else setTab("inventory");
-  }
-  function openInventoryByReason(reason) {
-    if (String(reason).includes("售价")) return openInventoryBySignal("未设预计售价");
-    if (String(reason).includes("图片")) return openInventoryBySignal("无图片");
-    if (String(reason).includes("60日") || String(reason).includes("30日") || String(reason).includes("库存")) return openInventoryBySignal("库存30日以上");
-    return setTab("inventory");
-  }
   const inventoryCoverage = activeStock ? Math.round((withImages / activeStock) * 100) : 100;
   function spotlightReason(item) {
     const age = stockAgeDays(item);
@@ -5137,7 +5120,7 @@ function Dashboard({ totals, items, setTab, openInventorySignal = null, exportBa
           <p>按影响经营的程度自动排序。先处理这里，再去看普通库存。</p>
           <div className="gouka-priority-list">
             {priorityTasks.map((task) => (
-              <button key={task.label} className={"gouka-priority-item " + (task.tone || "")} onClick={() => task.signal && openInventorySignal ? openInventorySignal(task.signal) : setTab(task.tab)}>
+              <button key={task.label} className={"gouka-priority-item " + (task.tone || "")} onClick={() => setTab(task.tab)}>
                 <strong>{task.label}</strong>
                 <span>{task.desc}</span>
                 <b>{task.value} 件</b>
@@ -5176,11 +5159,11 @@ function Dashboard({ totals, items, setTab, openInventorySignal = null, exportBa
             <h2>重点商品雷达</h2>
             <p>自动挑出最值得先处理的商品：缺售价、缺图片、库存久、成本高都会排到前面。</p>
           </div>
-          <button className="ghost" onClick={() => openInventoryBySignal("全部")}>去库存处理</button>
+          <button className="ghost" onClick={() => setTab("inventory")}>去库存处理</button>
         </div>
         <div className="gouka-spotlight-list">
           {spotlightItems.length ? spotlightItems.map(({ item, reason }) => (
-            <button key={item.id} className="gouka-spotlight-item" onClick={() => openInventoryByReason(reason)}>
+            <button key={item.id} className="gouka-spotlight-item" onClick={() => setTab("inventory")}>
               <div className="gouka-spotlight-img">
                 {item.images?.[0] ? <img decoding="async" loading="lazy" src={item.images[0]} alt={item.item || item.id} /> : "无图"}
               </div>
@@ -5203,11 +5186,11 @@ function Dashboard({ totals, items, setTab, openInventorySignal = null, exportBa
             <h2>利润保护提醒</h2>
             <p>卖货前先看这里：售价没填、预计亏损、利润率偏低、高成本风险商品会自动出现。</p>
           </div>
-          <button className="ghost" onClick={() => openInventoryBySignal("未设预计售价")}>去补售价</button>
+          <button className="ghost" onClick={() => setTab("inventory")}>去补售价</button>
         </div>
         <div className="gouka-profit-guard-grid">
           {profitGuardItems.length ? profitGuardItems.map((row) => (
-            <button key={row.item.id} className={"gouka-profit-guard-card " + row.tone} onClick={() => openInventoryByReason(row.reason)}>
+            <button key={row.item.id} className={"gouka-profit-guard-card " + row.tone} onClick={() => setTab("inventory")}>
               <small>{row.reason}</small>
               <strong>{row.item.brand || "未填品牌"} / {row.item.item || "未填商品名"}</strong>
               <b>{row.expectedSale ? jpy(row.expectedProfit) : "待定"}</b>
@@ -5231,7 +5214,7 @@ function Dashboard({ totals, items, setTab, openInventorySignal = null, exportBa
         </div>
         <div className="gouka-nbaa-flow-grid">
           {nbaaFlowSteps.map((step) => (
-            <button key={step.no} className={"gouka-nbaa-flow-step " + (step.tone || "")} onClick={() => step.signal && openInventorySignal ? openInventorySignal(step.signal) : setTab(step.tab)}>
+            <button key={step.no} className={"gouka-nbaa-flow-step " + (step.tone || "")} onClick={() => setTab(step.tab)}>
               <b>{step.no}</b>
               <strong>{step.title}</strong>
               <span>{step.desc}</span>
@@ -5270,7 +5253,7 @@ function Dashboard({ totals, items, setTab, openInventorySignal = null, exportBa
       </div>
       <div className="gouka-alert-board">
         {alertCards.map((card) => (
-          <button key={card.label} className={`gouka-alert-card ${card.tone || ""}`} onClick={() => card.signal && openInventorySignal ? openInventorySignal(card.signal) : setTab(card.tab)}>
+          <button key={card.label} className={`gouka-alert-card ${card.tone || ""}`} onClick={() => setTab(card.tab)}>
             <small>{card.label}</small>
             <b>{card.value} 件</b>
             <span>{card.hint}</span>
@@ -6444,12 +6427,6 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
         <button className="ghost" onClick={() => setStockSignalFilter("全部")}>清除库存信号</button>
         <span className="note">当前显示 {inventoryItems.length} 件 / 全部 {allInventoryItems.length} 件</span>
       </div>
-      {(stockSignalFilter !== "全部" || evidenceFilter !== "全部" || sourceGroupFilter !== "全部来源") && (
-        <div className="gouka-active-filter">
-          <span>当前筛选：来源 {sourceGroupFilter} · 资料 {evidenceFilter} · 库存信号 {stockSignalFilter} · 显示 {inventoryItems.length} 件</span>
-          <button className="ghost" onClick={() => { setSourceGroupFilter("全部来源"); setEvidenceFilter("全部"); setStockSignalFilter("全部"); }}>清除全部筛选</button>
-        </div>
-      )}
       <div className="inventory-summary-grid">
         <div className="inventory-summary-card"><small>中国进货</small><b>{sourceGroupSummary["中国进货"] || 0} 件</b></div>
         <div className="inventory-summary-card"><small>日本拍卖</small><b>{sourceGroupSummary["日本拍卖"] || 0} 件</b></div>
