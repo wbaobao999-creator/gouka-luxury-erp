@@ -1113,6 +1113,12 @@ document.head.appendChild(goukaReadableTablePatchStyle);
 const goukaHeaderTodoStyle = document.createElement("style");
 goukaHeaderTodoStyle.textContent = "\n.gouka-header-todo{display:inline-flex!important;align-items:center!important;justify-content:center!important;gap:4px!important;border-radius:999px!important;border:1px solid #d7e2dd!important;background:#fff!important;color:#123047!important;padding:5px 9px!important;font-size:12px!important;font-weight:950!important;white-space:nowrap!important;min-height:30px!important;line-height:1!important;cursor:pointer!important;}.gouka-header-todo:hover{transform:none!important;box-shadow:none!important;filter:brightness(.98)!important;}.gouka-header-todo.warn{border-color:#f8c77a!important;background:#fffaf0!important;color:#92400e!important;}.gouka-header-todo.danger{border-color:#fecaca!important;background:#fff5f5!important;color:#b91c1c!important;}.gouka-header-todo.good{border-color:#b7d7bd!important;background:#f2fbf5!important;color:#10852f!important;}@media(max-width:900px){.gouka-header-todo{width:auto!important;}.action-row{align-items:flex-start!important;}}\n";
 document.head.appendChild(goukaHeaderTodoStyle);
+const goukaActiveFilterStyle = document.createElement("style");
+goukaActiveFilterStyle.textContent = "\n.gouka-active-filter{display:flex!important;justify-content:space-between!important;align-items:center!important;gap:10px!important;border:1px solid #b7d7bd!important;border-left:5px solid #18a63d!important;background:#f6fff9!important;padding:9px 10px!important;margin:0 0 12px!important;color:#123047!important;font-weight:850!important;}.gouka-active-filter span{font-size:13px!important;}.gouka-active-filter button{min-height:30px!important;padding:5px 10px!important;}@media(max-width:760px){.gouka-active-filter{display:block!important;}.gouka-active-filter button{margin-top:8px!important;width:100%!important;}}\n";
+document.head.appendChild(goukaActiveFilterStyle);
+const goukaAddAssistStyle = document.createElement("style");
+goukaAddAssistStyle.textContent = "\n.gouka-add-assist{border:1px solid #b7d7bd!important;border-top:5px solid #18a63e!important;background:#fff!important;padding:12px!important;margin:0 0 14px!important;display:grid!important;grid-template-columns:1.1fr .9fr!important;gap:12px!important;}.gouka-add-assist h3{margin:0 0 6px!important;font-size:17px!important;font-weight:950!important;color:#102033!important;}.gouka-add-assist p{margin:0!important;font-size:13px!important;font-weight:800!important;color:#52606d!important;line-height:1.6!important;}.gouka-check-list{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:7px!important;}.gouka-check-item{border:1px solid #dfe5e2!important;background:#fbfcfb!important;padding:7px 9px!important;font-size:13px!important;font-weight:900!important;color:#334155!important;}.gouka-check-item.ok{border-color:#bbf7d0!important;background:#f0fdf4!important;color:#15803d!important;}.gouka-check-item.warn{border-color:#fed7aa!important;background:#fff7ed!important;color:#c2410c!important;}@media(max-width:900px){.gouka-add-assist{grid-template-columns:1fr!important}.gouka-check-list{grid-template-columns:1fr!important;}}\n";
+document.head.appendChild(goukaAddAssistStyle);
 const goukaTableWorkModePatchStyle = document.createElement("style");
 goukaTableWorkModePatchStyle.textContent = `
 /* GOUKA table work mode: easier daily checking for hundreds of items */
@@ -3764,10 +3770,18 @@ function App() {
   const canExportBusinessPdf = isOwner || isTaxViewer;
   const restrictedTabMessage = isTaxViewer ? "税理士窗口为只读审查模式。" : "员工入口没有此模块权限。";
   const computedItems = useMemo(() => sortGoukaItems(applyBatchAllocations(items, customsBatches)), [items, customsBatches]);
+  function appStockAgeDays(item) {
+    if (!item?.purchaseDate) return 0;
+    const d = new Date(item.purchaseDate);
+    if (Number.isNaN(d.getTime())) return 0;
+    return Math.max(0, Math.floor((Date.now() - d.getTime()) / 86400000));
+  }
   const headerTodo = useMemo(() => {
     const active = computedItems.filter((x) => !isSoldStatus(x.status) && x.status !== "退货");
     return {
       missingPrice: active.filter((x) => Number(x.saleJpy || 0) <= 0).length,
+      noImage: active.filter((x) => !(Array.isArray(x.images) && x.images.length)).length,
+      over30: active.filter((x) => appStockAgeDays(x) >= 30).length,
       toList: active.filter((x) => x.status === "已入库" || x.status === "待出品").length,
       toCustoms: computedItems.filter((x) => x.status === "报关准备").length
     };
@@ -4723,6 +4737,7 @@ function App() {
     alert("AI草稿已填入商品录入页，请确认后点击添加到库存。");
   }
   function scrollMainTop() {
+    if (document.activeElement && typeof document.activeElement.blur === "function") document.activeElement.blur();
     requestAnimationFrame(() => {
       const mainEl = document.querySelector("main");
       if (mainEl && typeof mainEl.scrollTo === "function") mainEl.scrollTo({ top: 0, left: 0, behavior: "auto" });
@@ -4788,6 +4803,8 @@ function App() {
             <button className="ghost" onClick={loadFromCloud}>手动读取</button>
             <button className={"ghost lang-toggle-btn " + (japaneseMode ? "active" : "")} onClick={toggleJapaneseMode}>{japaneseMode ? "中文表示" : "日本語表示"}</button>
             <button className={"gouka-header-todo " + (headerTodo.missingPrice ? "danger" : "good")} onClick={() => openInventorySignal("未设预计售价")}>补售价 {headerTodo.missingPrice}</button>
+            <button className={"gouka-header-todo " + (headerTodo.noImage ? "warn" : "good")} onClick={() => openInventorySignal("无图片")}>无图片 {headerTodo.noImage}</button>
+            <button className={"gouka-header-todo " + (headerTodo.over30 ? "warn" : "good")} onClick={() => openInventorySignal("库存30日以上")}>30日+ {headerTodo.over30}</button>
             <button className={"gouka-header-todo " + (headerTodo.toList ? "warn" : "good")} onClick={() => goTab("listing")}>待出品 {headerTodo.toList}</button>
             <button className={"gouka-header-todo " + (headerTodo.toCustoms ? "warn" : "good")} onClick={() => goTab("customsBatch")}>待报关 {headerTodo.toCustoms}</button>
             <span className="pill sync-live-pill">{syncStatusText}</span>
@@ -5564,6 +5581,15 @@ function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, 
   const brandItems = dictionaries.itemsByBrand?.[form.brand] || ["其他"];
   const supplierNames = suppliers.map((s) => s.name).filter(Boolean);
   const sourceOptions = Array.from(new Set([...(supplierNames || []), ...(dictionaries.sources || [])]));
+  const addChecks = [
+    { label: "采购日", ok: !!form.purchaseDate },
+    { label: "品牌", ok: !!form.brand },
+    { label: "商品名", ok: !!form.item },
+    { label: "图片", ok: Array.isArray(form.images) && form.images.length > 0 },
+    { label: "采购金额", ok: Number(form.purchaseCny || 0) > 0 || Number(form.purchaseJpy || 0) > 0 },
+    { label: "来源/仕入先", ok: !!form.source }
+  ];
+  const addMissingCount = addChecks.filter((x) => !x.ok).length;
 
   function setSourceFromSupplier(v) {
     const supplier = suppliers.find((s) => s.name === v);
@@ -5606,6 +5632,15 @@ function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, 
       <h2>
         <Plus size={20} /> {editingId ? `编辑商品：${editingId}` : "新增商品"}
       </h2>
+      <div className="gouka-add-assist">
+        <div>
+          <h3>{addMissingCount ? `录入检查：还差 ${addMissingCount} 项` : "录入检查：核心资料已齐"}</h3>
+          <p>先把采购日、品牌、商品名、图片、采购金额和来源填好，后面库存、古物台账、PDF和同步会更稳。</p>
+        </div>
+        <div className="gouka-check-list">
+          {addChecks.map((x) => <div key={x.label} className={"gouka-check-item " + (x.ok ? "ok" : "warn")}>{x.ok ? "已填" : "未填"} · {x.label}</div>)}
+        </div>
+      </div>
       <p className="note addform-guide">建议按顺序录入：采购基础 → 商品识别 → 成本税费 → 来源台账 → 报关/拍卖 → 图片备注。带金额的字段会实时影响库存成本和预估差额。</p>
 
       <div className="formgrid">
@@ -6427,6 +6462,12 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
         <button className="ghost" onClick={() => setStockSignalFilter("全部")}>清除库存信号</button>
         <span className="note">当前显示 {inventoryItems.length} 件 / 全部 {allInventoryItems.length} 件</span>
       </div>
+      {(stockSignalFilter !== "全部" || evidenceFilter !== "全部" || sourceGroupFilter !== "全部来源") && (
+        <div className="gouka-active-filter">
+          <span>当前筛选：来源 {sourceGroupFilter} · 资料 {evidenceFilter} · 库存信号 {stockSignalFilter} · 显示 {inventoryItems.length} 件</span>
+          <button className="ghost" onClick={() => { setSourceGroupFilter("全部来源"); setEvidenceFilter("全部"); setStockSignalFilter("全部"); }}>清除全部筛选</button>
+        </div>
+      )}
       <div className="inventory-summary-grid">
         <div className="inventory-summary-card"><small>中国进货</small><b>{sourceGroupSummary["中国进货"] || 0} 件</b></div>
         <div className="inventory-summary-card"><small>日本拍卖</small><b>{sourceGroupSummary["日本拍卖"] || 0} 件</b></div>
@@ -9226,6 +9267,86 @@ function displayOptionLabel(option) {
     "Chopard": "萧邦 / Chopard",
     "Rolex": "劳力士 / Rolex",
     "OMEGA": "欧米茄 / OMEGA",
+    "Classic Flap Bag": "经典翻盖包 / Classic Flap Bag",
+    "Mini Flap Bag": "迷你翻盖包 / Mini Flap Bag",
+    "Double Flap": "双盖包 / Double Flap",
+    "Boy Chanel": "Boy Chanel 包 / Boy Chanel",
+    "Chanel 19": "Chanel 19 包 / Chanel 19",
+    "Chanel 22": "Chanel 22 包 / Chanel 22",
+    "Coco Handle": "Coco Handle 手柄包 / Coco Handle",
+    "Wallet on Chain": "链条钱包 / Wallet on Chain",
+    "WOC": "链条钱包 / WOC",
+    "Vanity Bag": "化妆箱包 / Vanity Bag",
+    "Business Affinity": "Business Affinity 包 / Business Affinity",
+    "Deauville": "Deauville 托特包 / Deauville",
+    "Camera Bag": "相机包 / Camera Bag",
+    "Shopping Tote": "购物托特包 / Shopping Tote",
+    "Backpack": "双肩包 / Backpack",
+    "Wallet": "钱包 / Wallet",
+    "Long Wallet": "长钱包 / Long Wallet",
+    "Card Holder": "卡包 / Card Holder",
+    "Key Case": "钥匙包 / Key Case",
+    "Brooch": "胸针 / Brooch",
+    "Earrings": "耳环 / Earrings",
+    "Necklace": "项链 / Necklace",
+    "Bracelet": "手链 / Bracelet",
+    "Birkin": "铂金包 / Birkin",
+    "Kelly": "凯莉包 / Kelly",
+    "Kelly Sellier": "外缝凯莉 / Kelly Sellier",
+    "Kelly Retourne": "内缝凯莉 / Kelly Retourne",
+    "Constance": "康康包 / Constance",
+    "Picotin": "菜篮子 / Picotin",
+    "Garden Party": "花园派对 / Garden Party",
+    "Evelyne": "伊芙琳 / Evelyne",
+    "Lindy": "琳迪包 / Lindy",
+    "Bolide": "保龄球包 / Bolide",
+    "Herbag": "Herbag 包 / Herbag",
+    "Bearn Wallet": "Bearn 钱包 / Bearn Wallet",
+    "Kelly Wallet": "Kelly 钱包 / Kelly Wallet",
+    "Constance Wallet": "Constance 钱包 / Constance Wallet",
+    "Silk Scarf": "丝巾 / Silk Scarf",
+    "Twilly": "Twilly 丝带 / Twilly",
+    "Belt": "腰带 / Belt",
+    "Neverfull": "Neverfull 购物袋 / Neverfull",
+    "Speedy": "Speedy 枕头包 / Speedy",
+    "Alma": "Alma 贝壳包 / Alma",
+    "OnTheGo": "OnTheGo 托特包 / OnTheGo",
+    "Keepall": "旅行袋 / Keepall",
+    "Pochette": "小手包 / Pochette",
+    "Pochette Accessoires": "配件小包 / Pochette Accessoires",
+    "Noe": "水桶包 / Noe",
+    "Capucines": "Capucines 包 / Capucines",
+    "Twist": "Twist 包 / Twist",
+    "Multi Pochette": "多合一小包 / Multi Pochette",
+    "Pochette Metis": "邮差包 / Pochette Metis",
+    "Palm Springs": "Palm Springs 双肩包 / Palm Springs",
+    "Zippy Wallet": "拉链钱包 / Zippy Wallet",
+    "Sarah Wallet": "Sarah 钱包 / Sarah Wallet",
+    "Dionysus": "酒神包 / Dionysus",
+    "Marmont": "Marmont 包 / Marmont",
+    "GG Marmont": "GG Marmont 包 / GG Marmont",
+    "Jackie": "Jackie 包 / Jackie",
+    "Bamboo": "竹节包 / Bamboo",
+    "Ophidia": "Ophidia 包 / Ophidia",
+    "Lady Dior": "戴妃包 / Lady Dior",
+    "Book Tote": "Book Tote 托特包 / Book Tote",
+    "Saddle Bag": "马鞍包 / Saddle Bag",
+    "Galleria": "杀手包 / Galleria",
+    "Re-Edition": "复刻尼龙包 / Re-Edition",
+    "Peekaboo": "Peekaboo 包 / Peekaboo",
+    "Baguette": "法棍包 / Baguette",
+    "Luggage": "笑脸包 / Luggage",
+    "Belt Bag": "鲶鱼包 / Belt Bag",
+    "Puzzle": "Puzzle 包 / Puzzle",
+    "LOVE Ring": "LOVE 戒指 / LOVE Ring",
+    "LOVE Bracelet": "LOVE 手镯 / LOVE Bracelet",
+    "Alhambra": "四叶草 / Alhambra",
+    "Vintage Alhambra": "复古四叶草 / Vintage Alhambra",
+    "Submariner": "水鬼 / Submariner",
+    "Datejust": "日志型 / Datejust",
+    "Daytona": "迪通拿 / Daytona",
+    "Speedmaster": "超霸 / Speedmaster",
+    "Seamaster": "海马 / Seamaster",
     "Caviar Leather": "鱼子酱牛皮 / Caviar Leather",
     "Lambskin Leather": "小羊皮 / Lambskin Leather",
     "Calfskin Leather": "小牛皮 / Calfskin Leather",
