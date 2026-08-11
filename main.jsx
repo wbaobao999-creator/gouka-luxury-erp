@@ -1119,6 +1119,9 @@ document.head.appendChild(goukaActiveFilterStyle);
 const goukaAddAssistStyle = document.createElement("style");
 goukaAddAssistStyle.textContent = "\n.gouka-add-assist{border:1px solid #b7d7bd!important;border-top:5px solid #18a63e!important;background:#fff!important;padding:12px!important;margin:0 0 14px!important;display:grid!important;grid-template-columns:1.1fr .9fr!important;gap:12px!important;}.gouka-add-assist h3{margin:0 0 6px!important;font-size:17px!important;font-weight:950!important;color:#102033!important;}.gouka-add-assist p{margin:0!important;font-size:13px!important;font-weight:800!important;color:#52606d!important;line-height:1.6!important;}.gouka-check-list{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:7px!important;}.gouka-check-item{border:1px solid #dfe5e2!important;background:#fbfcfb!important;padding:7px 9px!important;font-size:13px!important;font-weight:900!important;color:#334155!important;}.gouka-check-item.ok{border-color:#bbf7d0!important;background:#f0fdf4!important;color:#15803d!important;}.gouka-check-item.warn{border-color:#fed7aa!important;background:#fff7ed!important;color:#c2410c!important;}@media(max-width:900px){.gouka-add-assist{grid-template-columns:1fr!important}.gouka-check-list{grid-template-columns:1fr!important;}}\n";
 document.head.appendChild(goukaAddAssistStyle);
+const goukaInventoryActionStyle = document.createElement("style");
+goukaInventoryActionStyle.textContent = "\n.inventory-summary-card.clickable{cursor:pointer!important;text-align:left!important;width:100%!important;display:block!important;transition:background .12s ease,border-color .12s ease!important;}.inventory-summary-card.clickable:hover{background:#f2fbf5!important;border-color:#18a83e!important;color:#102033!important;}.inventory-summary-card.clickable:focus{outline:3px solid rgba(24,168,62,.2)!important;outline-offset:2px!important;}.inventory-action-hint{display:block!important;margin-top:5px!important;font-size:11px!important;font-weight:900!important;color:#10852f!important;}.inventory-summary-card.warn .inventory-action-hint{color:#b45309!important;}.inventory-summary-card.good .inventory-action-hint{color:#10852f!important;}\n";
+document.head.appendChild(goukaInventoryActionStyle);
 const goukaTableWorkModePatchStyle = document.createElement("style");
 goukaTableWorkModePatchStyle.textContent = `
 /* GOUKA table work mode: easier daily checking for hundreds of items */
@@ -1970,9 +1973,9 @@ function makePlatformTitle(form, platform) {
   return base;
 }
 
-function copyText(text) {
+function copyText(text, message = "已复制") {
   navigator.clipboard?.writeText(text);
-  alert("已复制标题");
+  alert(message);
 }
 
 function localDateString(date = new Date()) {
@@ -3812,7 +3815,7 @@ function App() {
       schema: {
         productRecord: true,
         auctionField: "auction",
-        pageSize: 50,
+        pageSize: 30,
         thumbnailPx: 72
       },
       counts: {
@@ -6272,10 +6275,10 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
   const [evidenceFilter, setEvidenceFilter] = useState("全部");
   const [stockSignalFilter, setStockSignalFilter] = useState("全部");
   const [sourceGroupFilter, setSourceGroupFilter] = useState("全部来源");
-  const pageSize = 50;
+  const pageSize = 30;
   const allInventoryItems = sortGoukaItems(items || []);
   const evidenceOptions = ["全部", "缺资料", "需补充", "完整"];
-  const stockSignalOptions = ["全部", "未设预计售价", "无图片", "库存30日以上", "库存365日以上"];
+  const stockSignalOptions = ["全部", "待出品处理", "未设预计售价", "无图片", "库存30日以上", "库存365日以上"];
   React.useEffect(() => {
     if (!quickSignal?.nonce) return;
     setEvidenceFilter("全部");
@@ -6313,6 +6316,7 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
   function passesStockSignal(x) {
     if (stockSignalFilter === "全部") return true;
     const sales = calcSalesBreakdown(x);
+    if (stockSignalFilter === "待出品处理") return x.status === "已入库" || x.status === "待出品";
     if (stockSignalFilter === "未设预计售价") return !sales.sold && Number(sales.expectedSaleTaxIncluded || 0) <= 0;
     if (stockSignalFilter === "无图片") return !(Array.isArray(x.images) && x.images.length);
     if (stockSignalFilter === "库存30日以上") return !sales.sold && stockDays(x) >= 30;
@@ -6345,6 +6349,46 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
     a[group] = (a[group] || 0) + 1;
     return a;
   }, {});
+
+  function showSourceGroup(group) {
+    setQuery("");
+    setStatusFilter("全部");
+    setSourceGroupFilter(group);
+    setEvidenceFilter("全部");
+    setStockSignalFilter("全部");
+    setPage(1);
+  }
+
+  function showStockSignal(signal) {
+    setQuery("");
+    setStatusFilter("全部");
+    setSourceGroupFilter("全部来源");
+    setEvidenceFilter("全部");
+    setStockSignalFilter(signal);
+    setPage(1);
+  }
+
+  function showEvidence(status) {
+    setQuery("");
+    setStatusFilter("全部");
+    setSourceGroupFilter("全部来源");
+    setEvidenceFilter(status);
+    setStockSignalFilter("全部");
+    setPage(1);
+  }
+
+  function showAllInventory() {
+    setQuery("");
+    setStatusFilter("全部");
+    setSourceGroupFilter("全部来源");
+    setEvidenceFilter("全部");
+    setStockSignalFilter("全部");
+    setPage(1);
+  }
+
+  function goInventoryPage(next) {
+    setPage(Math.min(totalPages, Math.max(1, next)));
+  }
 
   const inventorySummary = inventoryItems.reduce((a, x) => {
     const sales = calcSalesBreakdown(x);
@@ -6408,6 +6452,7 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
       saleDisplay,
       profitDisplay,
       <div className="table-actions">
+        <button className="ghost" onClick={() => copyText(x.id, `已复制商品编号：${x.id}`)}>复制编号</button>
         <button className="ghost" onClick={() => setDetailItem(x)}>详情</button>
         {canExportPdf && <button className="ghost" onClick={() => exportItemPdf?.(x)}>PDF</button>}
         {canEdit && editItem && (
@@ -6423,6 +6468,19 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
       </div>
     ];
   });
+
+  const inventoryPager = inventoryItems.length > pageSize ? (
+    <div className="table-pager inventory-pager">
+      <button className="ghost" disabled={currentPage <= 1} onClick={() => goInventoryPage(1)}>首页</button>
+      <button className="ghost" disabled={currentPage <= 1} onClick={() => goInventoryPage(currentPage - 1)}>上一页</button>
+      <span className="pill">第 {currentPage} / {totalPages} 页</span>
+      <span className="pill">{inventoryItems.length ? (currentPage - 1) * pageSize + 1 : 0} - {Math.min(currentPage * pageSize, inventoryItems.length)} / {inventoryItems.length} 件</span>
+      <button className="ghost" disabled={currentPage >= totalPages} onClick={() => goInventoryPage(currentPage + 1)}>下一页</button>
+      <button className="ghost" disabled={currentPage >= totalPages} onClick={() => goInventoryPage(totalPages)}>末页</button>
+    </div>
+  ) : (
+    <div className="table-pager inventory-pager single"><span className="pill">共 {inventoryItems.length} 件 / 默认每页 {pageSize} 件</span></div>
+  );
 
   return (
     <div className="panel">
@@ -6469,23 +6527,23 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
         </div>
       )}
       <div className="inventory-summary-grid">
-        <div className="inventory-summary-card"><small>中国进货</small><b>{sourceGroupSummary["中国进货"] || 0} 件</b></div>
-        <div className="inventory-summary-card"><small>日本拍卖</small><b>{sourceGroupSummary["日本拍卖"] || 0} 件</b></div>
-        <div className="inventory-summary-card"><small>日本本地</small><b>{sourceGroupSummary["日本本地"] || 0} 件</b></div>
-        <div className="inventory-summary-card"><small>其他来源</small><b>{sourceGroupSummary["其他来源"] || 0} 件</b></div>
-        <div className="inventory-summary-card"><small>当前库存</small><b>{inventorySummary.count} 件</b></div>
+        <button type="button" className="inventory-summary-card clickable" onClick={() => showSourceGroup("中国进货")}><small>中国进货</small><b>{sourceGroupSummary["中国进货"] || 0} 件</b><span className="inventory-action-hint">点击筛选</span></button>
+        <button type="button" className="inventory-summary-card clickable" onClick={() => showSourceGroup("日本拍卖")}><small>日本拍卖</small><b>{sourceGroupSummary["日本拍卖"] || 0} 件</b><span className="inventory-action-hint">点击筛选</span></button>
+        <button type="button" className="inventory-summary-card clickable" onClick={() => showSourceGroup("日本本地")}><small>日本本地</small><b>{sourceGroupSummary["日本本地"] || 0} 件</b><span className="inventory-action-hint">点击筛选</span></button>
+        <button type="button" className="inventory-summary-card clickable" onClick={() => showSourceGroup("其他来源")}><small>其他来源</small><b>{sourceGroupSummary["其他来源"] || 0} 件</b><span className="inventory-action-hint">点击筛选</span></button>
+        <button type="button" className="inventory-summary-card clickable" onClick={showAllInventory}><small>当前库存</small><b>{inventorySummary.count} 件</b><span className="inventory-action-hint">显示全部</span></button>
         <div className="inventory-summary-card"><small>库存数量</small><b>{inventorySummary.qty} 点</b></div>
         <div className="inventory-summary-card"><small>库存总成本</small><b>{jpy(inventorySummary.cost)}</b></div>
         <div className="inventory-summary-card good"><small>预计/实际利润合计</small><b>{jpy(inventorySummary.profit)}</b></div>
-        <div className="inventory-summary-card"><small>待出品</small><b>{inventorySummary.toList} 件</b></div>
-        <div className="inventory-summary-card warn"><small>未设预计售价</small><b>{inventorySummary.missingPrice} 件</b></div>
-        <div className="inventory-summary-card warn"><small>无图片</small><b>{inventorySummary.noImage} 件</b></div>
-        <div className="inventory-summary-card"><small>库存30日以上</small><b>{inventorySummary.over30} 件</b></div>
+        <button type="button" className="inventory-summary-card clickable" onClick={() => showStockSignal("待出品处理")}><small>待出品</small><b>{inventorySummary.toList} 件</b><span className="inventory-action-hint">点击筛选</span></button>
+        <button type="button" className="inventory-summary-card clickable warn" onClick={() => showStockSignal("未设预计售价")}><small>未设预计售价</small><b>{inventorySummary.missingPrice} 件</b><span className="inventory-action-hint">点击处理</span></button>
+        <button type="button" className="inventory-summary-card clickable warn" onClick={() => showStockSignal("无图片")}><small>无图片</small><b>{inventorySummary.noImage} 件</b><span className="inventory-action-hint">点击处理</span></button>
+        <button type="button" className="inventory-summary-card clickable" onClick={() => showStockSignal("库存30日以上")}><small>库存30日以上</small><b>{inventorySummary.over30} 件</b><span className="inventory-action-hint">点击筛选</span></button>
         <div className="inventory-summary-card"><small>报关相关</small><b>{inventorySummary.toCustoms} 件</b></div>
-        <div className="inventory-summary-card warn"><small>缺资料</small><b>{inventorySummary.evidenceMissing} 件</b></div>
-        <div className="inventory-summary-card"><small>需补充</small><b>{inventorySummary.evidencePartial} 件</b></div>
-        <div className="inventory-summary-card good"><small>资料完整</small><b>{inventorySummary.evidenceComplete} 件</b></div>
-        <div className="inventory-summary-card warn"><small>长期库存（365日以上）</small><b>{inventorySummary.longTerm} 件</b></div>
+        <button type="button" className="inventory-summary-card clickable warn" onClick={() => showEvidence("缺资料")}><small>缺资料</small><b>{inventorySummary.evidenceMissing} 件</b><span className="inventory-action-hint">点击处理</span></button>
+        <button type="button" className="inventory-summary-card clickable" onClick={() => showEvidence("需补充")}><small>需补充</small><b>{inventorySummary.evidencePartial} 件</b><span className="inventory-action-hint">点击查看</span></button>
+        <button type="button" className="inventory-summary-card clickable good" onClick={() => showEvidence("完整")}><small>资料完整</small><b>{inventorySummary.evidenceComplete} 件</b><span className="inventory-action-hint">点击查看</span></button>
+        <button type="button" className="inventory-summary-card clickable warn" onClick={() => showStockSignal("库存365日以上")}><small>长期库存（365日以上）</small><b>{inventorySummary.longTerm} 件</b><span className="inventory-action-hint">点击处理</span></button>
       </div>
       <p className="note">库存管理只显示日常查货字段：库龄、库位、来源、资料状态、库存成本、售价和利润。可按资料状态和库存信号筛出缺资料、未设售价、无图片或长期库存；税务、报关、销售明细请点「详情」进入 Product Record。</p>
       <InventoryMobileCards
@@ -6504,7 +6562,9 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
         canEdit={canEdit}
         canExportPdf={canExportPdf}
       />
-      <Table headers={headers} rows={rows} />
+      {inventoryPager}
+      <Table headers={headers} rows={rows} showPager={false} />
+      {inventoryPager}
 
       {detailItem && (
         <div className="image-modal" onClick={() => setDetailItem(null)}>
@@ -9167,8 +9227,8 @@ function Toolbar({ title, query, setQuery, statusFilter, setStatusFilter, onDown
   );
 }
 
-function Table({ headers, rows }) {
-  const pageSize = 50;
+function Table({ headers, rows, showPager = true }) {
+  const pageSize = 30;
   const safeRows = Array.isArray(rows) ? rows : [];
   const [page, setPage] = useState(1);
   const totalPages = Math.max(1, Math.ceil(safeRows.length / pageSize));
@@ -9194,12 +9254,12 @@ function Table({ headers, rows }) {
       <button className="ghost" disabled={currentPage >= totalPages} onClick={() => goPage(totalPages)}>末页</button>
     </div>
   ) : (
-    <div className="table-pager single"><span className="pill">共 {safeRows.length} 件 / 默认每页 50 件</span></div>
+    <div className="table-pager single"><span className="pill">共 {safeRows.length} 件 / 默认每页 30 件</span></div>
   );
 
   return (
     <>
-      {pager}
+      {showPager && pager}
       <div className="table-scroll-hint"><span>横向滚动可以查看全部字段，右侧操作列会固定在旁边。</span></div>
       <div className="tablewrap">
         <table>
@@ -9215,7 +9275,7 @@ function Table({ headers, rows }) {
           </tbody>
         </table>
       </div>
-      {pager}
+      {showPager && pager}
     </>
   );
 }
