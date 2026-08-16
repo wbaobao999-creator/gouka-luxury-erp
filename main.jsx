@@ -7909,10 +7909,15 @@ function TaxReport({ items, totals, customsBatches, downloadCSV }) {
 function ListingManagement({ items, updateListingItem, editItem, setPreviewImage, setPreviewScale }) {
   const [query, setQuery] = useState("");
   const [platformFilter, setPlatformFilter] = useState("全部");
+  const [brandFilter, setBrandFilter] = useState("全部");
+  const [sourceFilter, setSourceFilter] = useState("全部来源");
+  const [signalFilter, setSignalFilter] = useState("全部");
+  const [expandedStatus, setExpandedStatus] = useState({});
   const [editingPlatformId, setEditingPlatformId] = useState(null);
   const [platformDraft, setPlatformDraft] = useState({ platform: "", customPlatform: "", saleJpy: "", soldPriceJpy: "" });
 
   const q = query.toLowerCase();
+  const listingColumnLimit = 12;
   const kanbanStatuses = ["已入库", "待出品", "已出品", "已售出", "已发货"];
   const kanbanMeta = {
     "已入库": "入库后尚未安排出品",
@@ -7922,12 +7927,49 @@ function ListingManagement({ items, updateListingItem, editItem, setPreviewImage
     "已发货": "发货完成，进入销售归档"
   };
   const platforms = ["全部", ...LISTING_PLATFORMS];
+  const brands = ["全部", ...Array.from(new Set((items || []).map((x) => x.brand).filter(Boolean))).sort()];
+  const sourceOptions = ["全部来源", "中国进货", "日本拍卖", "日本本地", "其他来源"];
+  const signalOptions = ["全部", "未设售价", "无图片", "无平台", "库存30日+", "有平台"];
+
+  function listingSourceGroup(item) {
+    const trace = buildSourceTrace(item);
+    const platform = String(item?.platform || "");
+    const source = String(item?.source || item?.purchaseType || trace?.supplier || trace?.kind || "");
+    const text = [platform, source, item?.supplier, item?.sourceCountry, item?.customsBatchId].filter(Boolean).join(" ");
+    if (isJapaneseAuctionLike(item) || /NBAA|JBA|AUCNET|EcoRing|ECO Ring|Star Buyers|OBA|日本拍卖|拍卖/i.test(text)) return "日本拍卖";
+    if (/中国|China|CN|供应商|EMS|輸入|进口|import/i.test(text)) return "中国进货";
+    if (/Mercari|Yahoo|楽天|Rakuten|店舗|店铺|日本本地/i.test(text)) return "日本本地";
+    return "其他来源";
+  }
+
+  function listingStockAgeDays(item) {
+    const date = item?.purchaseDate || item?.createdAt || item?.created_at;
+    if (!date) return 0;
+    const d = new Date(date);
+    if (Number.isNaN(d.getTime())) return 0;
+    return Math.max(0, Math.floor((Date.now() - d.getTime()) / 86400000));
+  }
+
+  function passesListingSignal(item) {
+    if (signalFilter === "全部") return true;
+    const price = Number(item.saleJpy || item.expectedSaleJpy || item.listingPriceJpy || 0);
+    const hasImage = Array.isArray(item.images) && item.images.length > 0;
+    const hasPlatform = Boolean(item.platform);
+    if (signalFilter === "未设售价") return price <= 0;
+    if (signalFilter === "无图片") return !hasImage;
+    if (signalFilter === "无平台") return !hasPlatform;
+    if (signalFilter === "有平台") return hasPlatform;
+    if (signalFilter === "库存30日+") return listingStockAgeDays(item) >= 30 && item.status !== "已售出" && item.status !== "已发货";
+    return true;
+  }
 
   const filteredItems = sortGoukaItems(items || []).filter((x) => {
-    const text = [x.id, x.brand, x.item, x.material, x.color, x.platform, x.status, x.memo].join(" ").toLowerCase();
+    const text = [x.id, x.brand, x.item, x.material, x.color, x.platform, x.status, x.memo, x.supplier, x.source].join(" ").toLowerCase();
     const matchText = !q || text.includes(q);
     const matchPlatform = platformFilter === "全部" || x.platform === platformFilter;
-    return matchText && matchPlatform;
+    const matchBrand = brandFilter === "全部" || x.brand === brandFilter;
+    const matchSource = sourceFilter === "全部来源" || listingSourceGroup(x) === sourceFilter;
+    return matchText && matchPlatform && matchBrand && matchSource && passesListingSignal(x);
   });
 
   function itemsByStatus(status) {
@@ -8001,6 +8043,26 @@ function ListingManagement({ items, updateListingItem, editItem, setPreviewImage
     );
   }
 
+  function visibleStatusItems(status) {
+    const list = itemsByStatus(status);
+    return expandedStatus[status] ? list : list.slice(0, listingColumnLimit);
+  }
+
+  function renderColumnMoreButton(status) {
+    const list = itemsByStatus(status);
+    if (list.length <= listingColumnLimit) return null;
+    const expanded = Boolean(expandedStatus[status]);
+    return (
+      <button
+        className="ghost"
+        style={{width:"100%", marginTop:"8px"}}
+        onClick={() => setExpandedStatus((prev) => ({ ...prev, [status]: !expanded }))}
+      >
+        {expanded ? "收起" : `再显示 ${list.length - listingColumnLimit} 件`}
+      </button>
+    );
+  }
+
   const counts = kanbanStatuses.reduce((a, st) => ({ ...a, [st]: itemsByStatus(st).length }), {});
 
   return (
@@ -8025,9 +8087,23 @@ function ListingManagement({ items, updateListingItem, editItem, setPreviewImage
           <select value={platformFilter} onChange={(e) => setPlatformFilter(e.target.value)}>
             {platforms.map((p) => <option key={p}>{p}</option>)}
           </select>
-          <button onClick={() => { setQuery(""); setPlatformFilter("全部"); }}>清除</button>
+          <select value={brandFilter} onChange={(e) => setBrandFilter(e.target.value)}>
+            {brands.map((p) => <option key={p}>{p}</option>)}
+          </select>
+          <select value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)}>
+            {sourceOptions.map((p) => <option key={p}>{p}</option>)}
+          </select>
+          <select value={signalFilter} onChange={(e) => setSignalFilter(e.target.value)}>
+            {signalOptions.map((p) => <option key={p}>{p}</option>)}
+          </select>
+          <button onClick={() => { setQuery(""); setPlatformFilter("全部"); setBrandFilter("全部"); setSourceFilter("全部来源"); setSignalFilter("全部"); setExpandedStatus({}); }}>清除</button>
         </div>
       </div>
+      {(query || platformFilter !== "全部" || brandFilter !== "全部" || sourceFilter !== "全部来源" || signalFilter !== "全部") && (
+        <div className="gouka-active-filter" style={{marginBottom:"12px"}}>
+          <span>当前筛选：平台 {platformFilter} · 品牌 {brandFilter} · 来源 {sourceFilter} · 信号 {signalFilter} · 显示 {filteredItems.length} 件</span>
+        </div>
+      )}
 
       <div style={{display:"grid", gridTemplateColumns:"repeat(5, minmax(220px, 1fr))", gap:"12px", alignItems:"start", overflowX:"auto", paddingBottom:"8px"}}>
         {kanbanStatuses.map((status, idx) => (
@@ -8041,12 +8117,13 @@ function ListingManagement({ items, updateListingItem, editItem, setPreviewImage
             </div>
             {status === "已入库" ? (
               <div className="listing-compact-list">
-                {itemsByStatus(status).map((item) => renderStockCompactRow(item))}
+                {visibleStatusItems(status).map((item) => renderStockCompactRow(item))}
                 {!itemsByStatus(status).length && <p className="note">暂无商品</p>}
+                {renderColumnMoreButton(status)}
               </div>
             ) : (
             <div style={{display:"flex", flexDirection:"column", gap:"10px"}}>
-              {itemsByStatus(status).map((item) => {
+              {visibleStatusItems(status).map((item) => {
                 const t = calcTax(item);
                 const prevStatus = idx > 0 ? kanbanStatuses[idx - 1] : "";
                 const nextStatus = idx < kanbanStatuses.length - 1 ? kanbanStatuses[idx + 1] : "";
@@ -8101,6 +8178,7 @@ function ListingManagement({ items, updateListingItem, editItem, setPreviewImage
                 );
               })}
               {!itemsByStatus(status).length && <p className="note">暂无商品</p>}
+              {renderColumnMoreButton(status)}
             </div>
             )}
           </div>
