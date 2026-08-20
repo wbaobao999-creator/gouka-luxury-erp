@@ -93,8 +93,24 @@ goukaNbaaHomeTemplateStyle.textContent = `
 .gouka-home-focus-btn small{display:block!important;color:#64748b!important;font-weight:900!important;margin-bottom:4px!important;}
 .gouka-home-focus-btn b{display:block!important;color:#102033!important;font-size:23px!important;font-weight:950!important;line-height:1.1!important;}
 .gouka-home-focus-btn span{display:block!important;font-size:12px!important;color:#52606d!important;font-weight:800!important;margin-top:4px!important;}
+.gouka-simple-home{background:#fff!important;border:1px solid #d6ded9!important;border-top:5px solid #18a83e!important;padding:18px!important;margin-bottom:16px!important;}
+.gouka-simple-home-head{display:flex!important;justify-content:space-between!important;gap:16px!important;align-items:flex-start!important;border-bottom:1px solid #dfe5e2!important;padding-bottom:14px!important;margin-bottom:14px!important;}
+.gouka-simple-home h2{margin:0 0 6px!important;color:#102033!important;font-size:25px!important;font-weight:950!important;}
+.gouka-simple-home p{margin:0!important;color:#52606d!important;font-size:14px!important;font-weight:800!important;line-height:1.6!important;}
+.gouka-simple-home-total{min-width:210px!important;background:#f2fbf5!important;border:1px solid #b7d7bd!important;padding:10px 12px!important;text-align:right!important;}
+.gouka-simple-home-total small{display:block!important;color:#64748b!important;font-weight:900!important;margin-bottom:4px!important;}
+.gouka-simple-home-total b{display:block!important;color:#102033!important;font-size:24px!important;font-weight:950!important;}
+.gouka-simple-actions{display:grid!important;grid-template-columns:repeat(5,minmax(0,1fr))!important;gap:10px!important;}
+.gouka-simple-action{background:#fff!important;border:1px solid #d6ded9!important;border-left:5px solid #18a83e!important;text-align:left!important;padding:13px 12px!important;min-height:92px!important;color:#102033!important;}
+.gouka-simple-action:hover{background:#f5fff8!important;border-color:#18a83e!important;color:#102033!important;}
+.gouka-simple-action.warn{border-left-color:#f59e0b!important;background:#fffdf7!important;}
+.gouka-simple-action.danger{border-left-color:#dc2626!important;background:#fff7f7!important;}
+.gouka-simple-action strong{display:block!important;font-size:17px!important;font-weight:950!important;margin-bottom:6px!important;color:#102033!important;}
+.gouka-simple-action b{display:block!important;font-size:22px!important;font-weight:950!important;color:#102033!important;line-height:1.1!important;}
+.gouka-simple-action span{display:block!important;font-size:12px!important;color:#52606d!important;font-weight:800!important;margin-top:5px!important;}
 @media(max-width:1100px){.gouka-nbaa-home-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;}.gouka-home-focus-row{grid-template-columns:repeat(2,minmax(0,1fr))!important;}.gouka-nbaa-guide-body{grid-template-columns:1fr!important;}.gouka-nbaa-guide-title{font-size:22px!important;}}
-@media(max-width:700px){.gouka-nbaa-home{padding:10px!important;}.gouka-nbaa-home-grid,.gouka-home-focus-row{grid-template-columns:1fr!important;}.gouka-nbaa-guide-body{padding:12px!important;}.gouka-nbaa-home-card strong{font-size:21px!important;}}
+@media(max-width:1100px){.gouka-simple-actions{grid-template-columns:repeat(2,minmax(0,1fr))!important;}.gouka-simple-home-head{display:block!important;}.gouka-simple-home-total{text-align:left!important;margin-top:12px!important;}}
+@media(max-width:700px){.gouka-nbaa-home{padding:10px!important;}.gouka-nbaa-home-grid,.gouka-home-focus-row,.gouka-simple-actions{grid-template-columns:1fr!important;}.gouka-nbaa-guide-body{padding:12px!important;}.gouka-nbaa-home-card strong{font-size:21px!important;}.gouka-simple-home{padding:14px!important;}}
 `;
 document.head.appendChild(goukaNbaaHomeTemplateStyle);
 
@@ -5175,51 +5191,43 @@ function Dashboard({ totals, items, setTab, exportBackup, customsBatches = [], o
 
   return (
     <section className="v3-dashboard">
-      <div className="gouka-nbaa-home">
-        <div className="gouka-nbaa-guide">
-          <div className="gouka-nbaa-guide-title">豪嘉ERP 日常业务入口</div>
-          <div className="gouka-nbaa-guide-body">
-            <div className="gouka-nbaa-guide-box">
-              <h3>今日处理顺序</h3>
-              <p>先看待办，再处理出品、报关、销售和补资料。库存多的时候，不要从全部商品里硬翻，先按入口进入对应页面。</p>
-              <div className="gouka-nbaa-guide-mini">
-                <div>待出品 {todoListing} 件</div>
-                <div>待报关 {todoCustoms} 件</div>
-                <div>未设售价 {missingExpectedPriceCount} 件</div>
-                <div>无图片 {missingImageCount} 件</div>
-              </div>
-            </div>
-            <div className="gouka-nbaa-guide-box">
-              <h3>月末检查提示</h3>
-              <p>月末重点看销售记录、消费税参考、库存资金和 PDF 导出。长期库存和高成本商品先调整售价，避免资金一直压在库存里。</p>
-              <div className="gouka-nbaa-guide-mini">
-                <div>库存 {activeStock} 件</div>
-                <div>30日+ {over30} 件</div>
-                <div>库存资金 {jpy(inventoryCapital)}</div>
-                <div>{consumptionTaxDashboard.title} {consumptionTaxDashboard.value}</div>
-              </div>
-            </div>
+      <div className="gouka-simple-home">
+        <div className="gouka-simple-home-head">
+          <div>
+            <h2>今天先处理这几件事</h2>
+            <p>入口只保留日常最常用的操作。新增、查库存、出品、报关、销售先走这里，分析和备份放在下面慢慢看。</p>
+          </div>
+          <div className="gouka-simple-home-total">
+            <small>当前库存资金</small>
+            <b>{jpy(inventoryCapital)}</b>
           </div>
         </div>
-        <div className="gouka-nbaa-home-grid">
-          {nbaaHomeCards.map((card) => (
-            <button key={card.en} className={"gouka-nbaa-home-card " + (card.tone || "")} onClick={() => setTab(card.tab)}>
-              <strong>{card.en}</strong>
-              {card.count ? <em>{card.count}</em> : null}
-              <b>{card.jp}</b>
-              <span>{card.cn}</span>
-              <i className="gouka-nbaa-home-plus">+</i>
-            </button>
-          ))}
-        </div>
-        <div className="gouka-home-focus-row">
-          {nbaaFocusButtons.map((btn) => (
-            <button key={btn.label} className={"gouka-home-focus-btn " + (btn.tone || "")} onClick={() => setTab(btn.tab)}>
-              <small>{btn.label}</small>
-              <b>{btn.value} 件</b>
-              <span>{btn.desc}</span>
-            </button>
-          ))}
+        <div className="gouka-simple-actions">
+          <button className="gouka-simple-action" onClick={() => setTab("add")}>
+            <strong>新增商品</strong>
+            <b>录入</b>
+            <span>采购后先录商品、图片、成本</span>
+          </button>
+          <button className={"gouka-simple-action " + (missingExpectedPriceCount || missingImageCount ? "warn" : "")} onClick={() => setTab("inventory")}>
+            <strong>库存管理</strong>
+            <b>{activeStock} 件</b>
+            <span>补售价 {missingExpectedPriceCount} 件 / 补图片 {missingImageCount} 件</span>
+          </button>
+          <button className={"gouka-simple-action " + (todoListing ? "warn" : "")} onClick={() => setTab("listing")}>
+            <strong>出品管理</strong>
+            <b>{todoListing} 件</b>
+            <span>已入库后准备上架销售</span>
+          </button>
+          <button className={"gouka-simple-action " + (todoCustoms ? "warn" : "")} onClick={() => setTab("customsBatch")}>
+            <strong>报关批次</strong>
+            <b>{todoCustoms} 件</b>
+            <span>EMS、进口资料、申报整理</span>
+          </button>
+          <button className={"gouka-simple-action " + (todoShipping ? "danger" : "")} onClick={() => setTab("sales")}>
+            <strong>销售记录</strong>
+            <b>{todoShipping} 件</b>
+            <span>成交、回款、发货确认</span>
+          </button>
         </div>
       </div>
 
