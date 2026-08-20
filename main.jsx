@@ -108,9 +108,18 @@ goukaNbaaHomeTemplateStyle.textContent = `
 .gouka-simple-action strong{display:block!important;font-size:17px!important;font-weight:950!important;margin-bottom:6px!important;color:#102033!important;}
 .gouka-simple-action b{display:block!important;font-size:22px!important;font-weight:950!important;color:#102033!important;line-height:1.1!important;}
 .gouka-simple-action span{display:block!important;font-size:12px!important;color:#52606d!important;font-weight:800!important;margin-top:5px!important;}
+.gouka-simple-sync-note{display:flex!important;justify-content:space-between!important;gap:12px!important;align-items:center!important;background:#f8fafc!important;border:1px solid #dfe5e2!important;margin-top:12px!important;padding:10px 12px!important;color:#334155!important;font-size:13px!important;font-weight:850!important;line-height:1.5!important;}
+.gouka-simple-sync-note b{color:#10852f!important;font-weight:950!important;}
+.gouka-simple-mini-metrics{display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr))!important;gap:10px!important;margin-top:12px!important;}
+.gouka-simple-mini-metric{background:#fff!important;border:1px solid #d6ded9!important;border-top:4px solid #18a83e!important;padding:10px 12px!important;min-height:70px!important;}
+.gouka-simple-mini-metric.warn{border-top-color:#f59e0b!important;background:#fffdf7!important;}
+.gouka-simple-mini-metric.danger{border-top-color:#dc2626!important;background:#fff7f7!important;}
+.gouka-simple-mini-metric small{display:block!important;color:#64748b!important;font-weight:900!important;margin-bottom:4px!important;}
+.gouka-simple-mini-metric b{display:block!important;color:#102033!important;font-size:20px!important;font-weight:950!important;}
+.v3-dashboard>.v3-hero,.v3-dashboard>.gouka-command-center,.v3-dashboard>.gouka-spotlight-panel,.v3-dashboard>.gouka-profit-guard,.v3-dashboard>.gouka-nbaa-flow,.v3-dashboard>.gouka-ops-summary,.v3-dashboard>.gouka-alert-title,.v3-dashboard>.gouka-alert-board,.v3-dashboard>.gouka-workbench-title,.v3-dashboard>.gouka-workbench-grid{display:none!important;}
 @media(max-width:1100px){.gouka-nbaa-home-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;}.gouka-home-focus-row{grid-template-columns:repeat(2,minmax(0,1fr))!important;}.gouka-nbaa-guide-body{grid-template-columns:1fr!important;}.gouka-nbaa-guide-title{font-size:22px!important;}}
-@media(max-width:1100px){.gouka-simple-actions{grid-template-columns:repeat(2,minmax(0,1fr))!important;}.gouka-simple-home-head{display:block!important;}.gouka-simple-home-total{text-align:left!important;margin-top:12px!important;}}
-@media(max-width:700px){.gouka-nbaa-home{padding:10px!important;}.gouka-nbaa-home-grid,.gouka-home-focus-row,.gouka-simple-actions{grid-template-columns:1fr!important;}.gouka-nbaa-guide-body{padding:12px!important;}.gouka-nbaa-home-card strong{font-size:21px!important;}.gouka-simple-home{padding:14px!important;}}
+@media(max-width:1100px){.gouka-simple-actions{grid-template-columns:repeat(2,minmax(0,1fr))!important;}.gouka-simple-mini-metrics{grid-template-columns:repeat(2,minmax(0,1fr))!important;}.gouka-simple-home-head{display:block!important;}.gouka-simple-home-total{text-align:left!important;margin-top:12px!important;}}
+@media(max-width:700px){.gouka-nbaa-home{padding:10px!important;}.gouka-nbaa-home-grid,.gouka-home-focus-row,.gouka-simple-actions,.gouka-simple-mini-metrics{grid-template-columns:1fr!important;}.gouka-simple-sync-note{display:block!important;}.gouka-nbaa-guide-body{padding:12px!important;}.gouka-nbaa-home-card strong{font-size:21px!important;}.gouka-simple-home{padding:14px!important;}}
 `;
 document.head.appendChild(goukaNbaaHomeTemplateStyle);
 
@@ -3297,8 +3306,8 @@ const GOUKA_JA_TEXT = {
   "退出登录": "ログアウト",
   "豪嘉ERP｜中古奢侈品管理系统": "豪嘉ERP｜中古ブランド品管理システム",
   "商品档案・日本拍卖・库存管理・EMS报关・销售利润・消费税参考": "商品台帳・日本オークション・在庫管理・EMS通関・販売利益・消費税参考",
-  "手动同步": "手動同期",
-  "手动读取": "手動読込",
+  "保存到云端": "クラウドへ保存",
+  "从云端读取": "クラウドから読込",
   "管理者": "管理者",
   "员工": "スタッフ",
   "税理士": "税理士",
@@ -4856,8 +4865,8 @@ function App() {
             <p>商品档案・日本拍卖・库存管理・EMS报关・销售利润・消费税参考</p>
           </div>
           <div className="action-row">
-            <button className="ghost" onClick={syncToCloud}>手动同步</button>
-            <button className="ghost" onClick={loadFromCloud}>手动读取</button>
+            <button className="ghost" onClick={syncToCloud}>保存到云端</button>
+            <button className="ghost" onClick={loadFromCloud}>从云端读取</button>
             <button className={"ghost lang-toggle-btn " + (japaneseMode ? "active" : "")} onClick={toggleJapaneseMode}>{japaneseMode ? "中文表示" : "日本語表示"}</button>
             <button className={"gouka-header-todo " + (headerTodo.missingPrice ? "danger" : "good")} onClick={() => openInventorySignal("未设预计售价")}>补售价 {headerTodo.missingPrice}</button>
             <button className={"gouka-header-todo " + (headerTodo.noImage ? "warn" : "good")} onClick={() => openInventorySignal("无图片")}>无图片 {headerTodo.noImage}</button>
@@ -5228,6 +5237,28 @@ function Dashboard({ totals, items, setTab, exportBackup, customsBatches = [], o
             <b>{todoShipping} 件</b>
             <span>成交、回款、发货确认</span>
           </button>
+        </div>
+        <div className="gouka-simple-mini-metrics">
+          <div className="gouka-simple-mini-metric">
+            <small>库存总数</small>
+            <b>{activeStock} 件</b>
+          </div>
+          <div className={"gouka-simple-mini-metric " + (over30 ? "warn" : "")}>
+            <small>库存30日以上</small>
+            <b>{over30} 件</b>
+          </div>
+          <div className={"gouka-simple-mini-metric " + (missingExpectedPriceCount ? "warn" : "")}>
+            <small>未设售价</small>
+            <b>{missingExpectedPriceCount} 件</b>
+          </div>
+          <div className={"gouka-simple-mini-metric " + (missingImageCount ? "warn" : "")}>
+            <small>无图片</small>
+            <b>{missingImageCount} 件</b>
+          </div>
+        </div>
+        <div className="gouka-simple-sync-note">
+          <span><b>同步查看：</b>公司电脑、家里电脑、手机打开同一个网址后会读取云端资料。</span>
+          <span>如果刚改完没看到，点右上角「从云端读取」确认一次。</span>
         </div>
       </div>
 
