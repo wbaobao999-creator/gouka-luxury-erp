@@ -60,6 +60,44 @@ img.thumb,
 `;
 document.head.appendChild(goukaPerformanceImagePolishStyle);
 
+const goukaNbaaHomeTemplateStyle = document.createElement("style");
+goukaNbaaHomeTemplateStyle.textContent = `
+/* GOUKA NBAA home template: large business guide + operation tiles */
+.gouka-nbaa-home{background:#e3e8e4!important;border:1px solid #d4ded7!important;padding:16px!important;margin-bottom:16px!important;}
+.gouka-nbaa-guide{background:#fff!important;border:1px solid #d6ded9!important;margin-bottom:14px!important;overflow:hidden!important;}
+.gouka-nbaa-guide-title{background:#52c5a0!important;color:#fff!important;text-align:center!important;font-size:28px!important;font-weight:950!important;letter-spacing:.04em!important;padding:14px 16px!important;}
+.gouka-nbaa-guide-body{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:16px!important;padding:18px 22px!important;}
+.gouka-nbaa-guide-box{background:#f8faf9!important;border:1px solid #dfe5e2!important;padding:14px!important;min-height:112px!important;}
+.gouka-nbaa-guide-box h3{margin:0 0 8px!important;font-size:18px!important;color:#0b2341!important;font-weight:950!important;}
+.gouka-nbaa-guide-box p{margin:0!important;color:#52606d!important;font-size:14px!important;line-height:1.7!important;font-weight:750!important;}
+.gouka-nbaa-guide-mini{display:grid!important;grid-template-columns:1fr 1fr!important;gap:8px!important;margin-top:12px!important;}
+.gouka-nbaa-guide-mini div{border:1px solid #d9dfdc!important;background:#fff!important;padding:9px 10px!important;font-weight:900!important;color:#334155!important;}
+.gouka-nbaa-home-grid{display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:12px!important;}
+.gouka-nbaa-home-card{position:relative!important;background:#fff!important;border:1px solid #d6ded9!important;border-radius:0!important;text-align:left!important;min-height:116px!important;padding:18px 48px 16px 18px!important;box-shadow:none!important;color:#102033!important;}
+.gouka-nbaa-home-card:hover{background:#f5fff8!important;border-color:#18a83e!important;color:#102033!important;}
+.gouka-nbaa-home-card strong{display:block!important;font-size:25px!important;line-height:1.05!important;font-weight:950!important;letter-spacing:.03em!important;color:#1f2933!important;margin-bottom:8px!important;}
+.gouka-nbaa-home-card b{display:block!important;font-size:15px!important;font-weight:950!important;color:#102033!important;margin-bottom:6px!important;}
+.gouka-nbaa-home-card span{display:block!important;color:#64748b!important;font-size:13px!important;line-height:1.5!important;font-weight:750!important;}
+.gouka-nbaa-home-card em{position:absolute!important;right:14px!important;top:12px!important;min-width:38px!important;height:28px!important;display:inline-grid!important;place-items:center!important;border:1px solid #b7d7bd!important;background:#f2fbf5!important;color:#10852f!important;border-radius:999px!important;font-style:normal!important;font-size:13px!important;font-weight:950!important;padding:0 8px!important;}
+.gouka-nbaa-home-card.warn em{background:#fff7ed!important;border-color:#fed7aa!important;color:#b45309!important;}
+.gouka-nbaa-home-card.danger em{background:#fff1f2!important;border-color:#fecdd3!important;color:#be123c!important;}
+.gouka-nbaa-home-plus{position:absolute!important;right:16px!important;bottom:10px!important;color:#d1d5db!important;font-size:36px!important;font-weight:300!important;line-height:1!important;}
+.gouka-nbaa-home-card.primary{border-left:6px solid #18a83e!important;}
+.gouka-nbaa-home-card.warn{border-left:6px solid #f59e0b!important;}
+.gouka-nbaa-home-card.danger{border-left:6px solid #dc2626!important;}
+.gouka-home-focus-row{display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr))!important;gap:10px!important;margin:12px 0 0!important;}
+.gouka-home-focus-btn{background:#fff!important;border:1px solid #d6ded9!important;border-left:5px solid #18a83e!important;text-align:left!important;padding:12px!important;min-height:78px!important;color:#102033!important;}
+.gouka-home-focus-btn:hover{background:#f5fff8!important;border-color:#18a83e!important;color:#102033!important;}
+.gouka-home-focus-btn.warn{border-left-color:#f59e0b!important;}
+.gouka-home-focus-btn.danger{border-left-color:#dc2626!important;}
+.gouka-home-focus-btn small{display:block!important;color:#64748b!important;font-weight:900!important;margin-bottom:4px!important;}
+.gouka-home-focus-btn b{display:block!important;color:#102033!important;font-size:23px!important;font-weight:950!important;line-height:1.1!important;}
+.gouka-home-focus-btn span{display:block!important;font-size:12px!important;color:#52606d!important;font-weight:800!important;margin-top:4px!important;}
+@media(max-width:1100px){.gouka-nbaa-home-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;}.gouka-home-focus-row{grid-template-columns:repeat(2,minmax(0,1fr))!important;}.gouka-nbaa-guide-body{grid-template-columns:1fr!important;}.gouka-nbaa-guide-title{font-size:22px!important;}}
+@media(max-width:700px){.gouka-nbaa-home{padding:10px!important;}.gouka-nbaa-home-grid,.gouka-home-focus-row{grid-template-columns:1fr!important;}.gouka-nbaa-guide-body{padding:12px!important;}.gouka-nbaa-home-card strong{font-size:21px!important;}}
+`;
+document.head.appendChild(goukaNbaaHomeTemplateStyle);
+
 const nbaaStyle = document.createElement("style");
 nbaaStyle.textContent = ".nbaa-sheet{background:#eef4ed;border:1px solid #b7d7bd;border-radius:4px;padding:12px}.nbaa-main{display:grid;grid-template-columns:minmax(0,1fr) 190px;gap:12px}.nbaa-grid{display:grid;grid-template-columns:140px minmax(0,1fr);border-top:1px solid #d7d7d7;border-left:1px solid #d7d7d7;background:#fff}.nbaa-section{grid-column:1/-1;background:#e9f8ec;color:#10852f;font-weight:800;padding:9px 10px;border-right:1px solid #d7d7d7;border-bottom:1px solid #d7d7d7}.nbaa-label{background:#19a83d;color:#fff;font-weight:800;text-align:center;padding:9px 8px;border-right:1px solid #d7d7d7;border-bottom:1px solid #d7d7d7;min-height:38px}.nbaa-value{background:#fff;color:#0f172a;padding:9px 10px;border-bottom:1px solid #d7d7d7;min-height:38px;word-break:break-word}.nbaa-image-pane{background:#fff;border:1px solid #d7d7d7;padding:8px;align-self:start}.nbaa-main-image,.nbaa-no-image{width:160px;height:160px;object-fit:cover;border:1px solid #e5e7eb;background:#f8fafc;display:grid;place-items:center;color:#64748b}.nbaa-thumbs{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.nbaa-thumbs img{width:72px;height:72px;object-fit:cover;border:1px solid #e5e7eb}.nbaa-record .toolbar{margin-bottom:12px}@media(max-width:760px){.nbaa-main{grid-template-columns:1fr}.nbaa-grid{grid-template-columns:116px minmax(0,1fr)}.nbaa-image-pane{width:max-content;max-width:100%}}";
 document.head.appendChild(nbaaStyle);
@@ -4958,6 +4996,27 @@ function Dashboard({ totals, items, setTab, exportBackup, customsBatches = [], o
     { label: "字典管理", tab: "dictionary" },
     { label: "删除日志", tab: "deleteLogs" }
   ];
+  const japanAuctionTotal = items.filter((x) => isJapaneseAuctionLike(x)).length;
+  const nbaaFocusButtons = [
+    { label: "先补售价", value: missingExpectedPriceCount, desc: "利润预估最先看这里", tab: "inventory", tone: missingExpectedPriceCount ? "danger" : "" },
+    { label: "先补图片", value: missingImageCount, desc: "没图会影响出品速度", tab: "inventory", tone: missingImageCount ? "warn" : "" },
+    { label: "先做出品", value: todoListing, desc: "入库后转销售入口", tab: "listing", tone: todoListing ? "warn" : "" },
+    { label: "先做报关", value: todoCustoms, desc: "EMS与进口资料整理", tab: "customsBatch", tone: todoCustoms ? "warn" : "" }
+  ];
+  const nbaaHomeCards = [
+    { en: "MY PAGE", jp: "控制台", cn: "今日待办、经营提醒、库存资金", tab: "dashboard", tone: urgentTodoScore ? "warn" : "primary", count: `${urgentTodoScore}件` },
+    { en: "ENTRY", jp: "商品录入", cn: "采购后先录商品、照片和成本", tab: "add", tone: "primary", count: "录入" },
+    { en: "TENDER", jp: "日本拍卖", cn: "NBAA、OBA、EcoRing 落札资料", tab: "auction", count: `${japanAuctionTotal}件` },
+    { en: "WINNING BID", jp: "库存管理", cn: `当前库存 ${activeStock} 件，补售价和图片`, tab: "inventory", tone: over30 ? "warn" : "", count: `${activeStock}件` },
+    { en: "SELL", jp: "出品管理", cn: `待出品 ${todoListing} 件，平台和售价处理`, tab: "listing", tone: todoListing ? "warn" : "", count: `${todoListing}件` },
+    { en: "PAYMENT", jp: "销售记录", cn: `待发货确认 ${todoShipping} 件，成交和回款`, tab: "sales", tone: todoShipping ? "danger" : "", count: `${todoShipping}件` },
+    { en: "IMPORT", jp: "报关批次", cn: `待报关 ${todoCustoms} 件，EMS 与进口资料`, tab: "customsBatch", tone: todoCustoms ? "warn" : "", count: `${todoCustoms}件` },
+    { en: "REGISTER", jp: "古物台账", cn: "古物营业法台账、履历和更正", tab: "ledger", count: "台账" },
+    { en: "PDF", jp: "PDF输出", cn: "商品档案、报关资料、台账导出", tab: "pdf", count: "PDF" },
+    { en: "BACKUP", jp: "备份恢复", cn: "每天收工前备份，保护数据", tab: "backup", count: "备份" },
+    { en: "AUCTION VALUES", jp: "利润分析", cn: "品牌、供应商、库存利润检查", tab: "profit", count: jpy(expectedNetProfit) },
+    { en: "TAX", jp: "消费税参考", cn: "进项、销项、留抵与纳付参考", tab: "tax", count: consumptionTaxDashboard.value }
+  ];
   const nbaaFlowSteps = [
     { no: 1, title: "商品录入", desc: "采购后先录品牌、商品名、来源和照片", tab: "add", tone: "" },
     { no: 2, title: "补资料", desc: `${missingImageCount + missingExpectedPriceCount} 件需要补图或售价`, tab: "inventory", tone: missingImageCount + missingExpectedPriceCount ? "warn" : "" },
@@ -5116,6 +5175,54 @@ function Dashboard({ totals, items, setTab, exportBackup, customsBatches = [], o
 
   return (
     <section className="v3-dashboard">
+      <div className="gouka-nbaa-home">
+        <div className="gouka-nbaa-guide">
+          <div className="gouka-nbaa-guide-title">豪嘉ERP 日常业务入口</div>
+          <div className="gouka-nbaa-guide-body">
+            <div className="gouka-nbaa-guide-box">
+              <h3>今日处理顺序</h3>
+              <p>先看待办，再处理出品、报关、销售和补资料。库存多的时候，不要从全部商品里硬翻，先按入口进入对应页面。</p>
+              <div className="gouka-nbaa-guide-mini">
+                <div>待出品 {todoListing} 件</div>
+                <div>待报关 {todoCustoms} 件</div>
+                <div>未设售价 {missingExpectedPriceCount} 件</div>
+                <div>无图片 {missingImageCount} 件</div>
+              </div>
+            </div>
+            <div className="gouka-nbaa-guide-box">
+              <h3>月末检查提示</h3>
+              <p>月末重点看销售记录、消费税参考、库存资金和 PDF 导出。长期库存和高成本商品先调整售价，避免资金一直压在库存里。</p>
+              <div className="gouka-nbaa-guide-mini">
+                <div>库存 {activeStock} 件</div>
+                <div>30日+ {over30} 件</div>
+                <div>库存资金 {jpy(inventoryCapital)}</div>
+                <div>{consumptionTaxDashboard.title} {consumptionTaxDashboard.value}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="gouka-nbaa-home-grid">
+          {nbaaHomeCards.map((card) => (
+            <button key={card.en} className={"gouka-nbaa-home-card " + (card.tone || "")} onClick={() => setTab(card.tab)}>
+              <strong>{card.en}</strong>
+              {card.count ? <em>{card.count}</em> : null}
+              <b>{card.jp}</b>
+              <span>{card.cn}</span>
+              <i className="gouka-nbaa-home-plus">+</i>
+            </button>
+          ))}
+        </div>
+        <div className="gouka-home-focus-row">
+          {nbaaFocusButtons.map((btn) => (
+            <button key={btn.label} className={"gouka-home-focus-btn " + (btn.tone || "")} onClick={() => setTab(btn.tab)}>
+              <small>{btn.label}</small>
+              <b>{btn.value} 件</b>
+              <span>{btn.desc}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div className="v3-hero">
         <div>
           <span className="v3-kicker">GOUKA ERP</span>
