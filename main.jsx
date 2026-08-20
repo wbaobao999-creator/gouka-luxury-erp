@@ -1355,6 +1355,46 @@ const goukaProductRecordPolishStyle = document.createElement("style");
 goukaProductRecordPolishStyle.textContent = "\n/* GOUKA Product Record polish: clearer internal file view */\n.product-record-page{background:#f5f8f6!important;border:1px solid #d6ded9!important;border-top:5px solid #18a83e!important;border-radius:0!important;padding:18px!important;color:#102033!important;}\n.product-record-head{grid-template-columns:280px minmax(0,1fr)!important;gap:16px!important;align-items:stretch!important;}\n.product-record-photo{background:#fff!important;border:1px solid #d6ded9!important;border-radius:0!important;padding:12px!important;}\n.product-record-main-image,.product-record-no-image{border-radius:0!important;border:1px solid #cfd8d3!important;aspect-ratio:1/1!important;background:#fbfcfb!important;}\n.product-record-thumbs{gap:6px!important;}\n.product-record-thumbs img{width:58px!important;height:58px!important;border-radius:0!important;}\n.product-record-identity{border-radius:0!important;border:1px solid #d6ded9!important;background:#fff!important;padding:18px!important;}\n.product-record-kicker{display:inline-flex!important;background:#18a83e!important;color:#fff!important;padding:4px 10px!important;font-size:12px!important;letter-spacing:.08em!important;font-weight:950!important;}\n.product-record-title{font-size:30px!important;line-height:1.2!important;margin:12px 0 14px!important;color:#102033!important;font-weight:950!important;}\n.product-record-meta{grid-template-columns:repeat(4,minmax(0,1fr))!important;gap:8px!important;}\n.product-record-summary{border-top:1px solid #dfe5e2!important;margin-top:14px!important;padding-top:12px!important;}\n.product-record-summary h3,.product-record-status-panel h3,.record-card h3{font-size:17px!important;color:#102033!important;border-left:6px solid #18a83e!important;padding-left:10px!important;font-weight:950!important;}\n.record-field-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:8px!important;}\n.record-field{border:1px solid #dfe5e2!important;border-radius:0!important;background:#fff!important;padding:0!important;min-height:54px!important;overflow:hidden!important;}\n.record-field label{display:block!important;background:#18a83e!important;color:#fff!important;font-size:12px!important;font-weight:950!important;padding:6px 9px!important;margin:0!important;letter-spacing:.02em!important;}\n.record-field div{padding:9px 10px!important;font-size:14px!important;font-weight:800!important;line-height:1.45!important;color:#102033!important;}\n.record-field.full{grid-column:1/-1!important;}\n.record-card{border-radius:0!important;border:1px solid #d6ded9!important;background:#fff!important;padding:14px!important;}\n.record-card-head{border-bottom:1px solid #dfe5e2!important;padding-bottom:8px!important;margin-bottom:12px!important;}\n.record-card-toggle{border-radius:0!important;font-weight:950!important;color:#10852f!important;border-color:#18a83e!important;}\n.product-record-status-grid{display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:8px!important;}\n.product-record-status-item{border:1px solid #dfe5e2!important;background:#fff!important;padding:10px!important;min-height:64px!important;}\n.product-record-status-item span{display:block!important;font-size:12px!important;color:#52606d!important;font-weight:950!important;margin-bottom:5px!important;}\n.product-record-status-item b{display:block!important;font-size:14px!important;color:#102033!important;line-height:1.35!important;}\n.product-record-status-item.ok{border-left:5px solid #18a83e!important;background:#f6fff9!important;}\n.product-record-status-item.warn{border-left:5px solid #f59e0b!important;background:#fffdf7!important;}\n.product-record-status-item.auction{border-left:5px solid #0d9fda!important;background:#f2fbff!important;}\n.product-record-status-item.import{border-left:5px solid #1f4f93!important;background:#f5f8ff!important;}\n.product-record-actions{border-top:1px solid #dfe5e2!important;margin-top:14px!important;padding-top:12px!important;}\n.timeline-step{border-radius:0!important;background:#fff!important;border:1px solid #dfe5e2!important;}\n.timeline-step.done{background:#f2fbf5!important;border-color:#18a83e!important;color:#10852f!important;}\n.image-modal .panel .product-record-page{max-width:100%!important;}\n@media(max-width:1100px){.product-record-head{grid-template-columns:1fr!important}.product-record-meta,.product-record-status-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}}\n@media(max-width:700px){.product-record-meta,.product-record-status-grid,.record-field-grid{grid-template-columns:1fr!important}.product-record-title{font-size:24px!important}}\n";
 document.head.appendChild(goukaProductRecordPolishStyle);
 
+const goukaEasyOpenPatchStyle = document.createElement("style");
+goukaEasyOpenPatchStyle.textContent = `
+/* GOUKA easy open patch: simpler navigation and less trapped scrolling */
+aside .menu-group-label{
+  font-size:11px!important;
+  color:#64748b!important;
+  font-weight:950!important;
+  letter-spacing:.08em!important;
+  margin:14px 0 5px!important;
+  padding:0 4px!important;
+}
+aside .menu-group-label:first-of-type{margin-top:4px!important;}
+.tablewrap{
+  max-height:none!important;
+  overflow-x:auto!important;
+  overflow-y:visible!important;
+}
+.tablewrap thead th{top:0!important;}
+.table-pager{
+  position:relative!important;
+  left:auto!important;
+  justify-content:flex-end!important;
+  border:0!important;
+}
+.inventory-pager{
+  margin:12px 0!important;
+}
+.inventory-summary-grid{
+  margin-bottom:12px!important;
+}
+@media(max-width:760px){
+  aside .menu-group-label{font-size:12px!important;margin-top:10px!important;}
+  aside button{min-height:44px!important;}
+  main>header .action-row{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;width:100%!important;}
+  main>header .action-row .pill{grid-column:1/-1!important;text-align:center!important;}
+  .inventory-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;}
+}
+`;
+document.head.appendChild(goukaEasyOpenPatchStyle);
+
 
 
 
@@ -3287,6 +3327,8 @@ function sortGoukaItems(items) {
 const GOUKA_JA_TEXT = {
   "豪嘉株式会社": "豪嘉株式会社",
   "GOUKA ERP": "GOUKA ERP",
+  "日常处理": "日常処理",
+  "更多工具": "その他ツール",
   "控制台": "ダッシュボード",
   "商品录入": "商品登録",
   "日本拍卖": "日本オークション",
@@ -4823,16 +4865,19 @@ function App() {
     goTab("inventory");
   }
 
-  const menu = [
+  const dailyMenu = [
     ["dashboard", "控制台"],
     ["add", editingId ? "编辑商品" : "商品录入"],
-    ["auction", "日本拍卖"],
     ["inventory", "库存管理"],
     ["listing", "出品管理"],
     ["sales", "销售记录"],
-    ["customs", "EMS报关"],
     ["customsBatch", "报关批次"],
-    ["ledger", "古物台账"],
+    ["ledger", "古物台账"]
+  ];
+
+  const toolMenu = [
+    ["auction", "日本拍卖"],
+    ["customs", "EMS报关"],
     ["profit", "利润分析"],
     ["pdf", "PDF导出"],
     ["backup", "备份恢复"]
@@ -4849,7 +4894,14 @@ function App() {
           </div>
         </div>
 
-        {menu.filter(([k]) => canAccessTab(k)).map(([k, v]) => (
+        <div className="menu-group-label">日常处理</div>
+        {dailyMenu.filter(([k]) => canAccessTab(k)).map(([k, v]) => (
+          <button key={k} className={tab === k ? "active" : ""} onClick={() => goTab(k)}>
+            {v}
+          </button>
+        ))}
+        <div className="menu-group-label">更多工具</div>
+        {toolMenu.filter(([k]) => canAccessTab(k)).map(([k, v]) => (
           <button key={k} className={tab === k ? "active" : ""} onClick={() => goTab(k)}>
             {v}
           </button>
@@ -8063,7 +8115,7 @@ function ListingManagement({ items, updateListingItem, editItem, setPreviewImage
   const [platformDraft, setPlatformDraft] = useState({ platform: "", customPlatform: "", saleJpy: "", soldPriceJpy: "" });
 
   const q = query.toLowerCase();
-  const listingColumnLimit = 12;
+  const listingColumnLimit = 8;
   const kanbanStatuses = ["已入库", "待出品", "已出品", "已售出", "已发货"];
   const kanbanMeta = {
     "已入库": "入库后尚未安排出品",
