@@ -112,10 +112,13 @@ goukaNbaaHomeTemplateStyle.textContent = `
 .gouka-simple-sync-note b{color:#10852f!important;font-weight:950!important;}
 .gouka-simple-mini-metrics{display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr))!important;gap:10px!important;margin-top:12px!important;}
 .gouka-simple-mini-metric{background:#fff!important;border:1px solid #d6ded9!important;border-top:4px solid #18a83e!important;padding:10px 12px!important;min-height:70px!important;}
+.gouka-simple-mini-metric.clickable{width:100%!important;text-align:left!important;cursor:pointer!important;color:#102033!important;}
+.gouka-simple-mini-metric.clickable:hover{background:#f5fff8!important;border-color:#18a83e!important;color:#102033!important;}
 .gouka-simple-mini-metric.warn{border-top-color:#f59e0b!important;background:#fffdf7!important;}
 .gouka-simple-mini-metric.danger{border-top-color:#dc2626!important;background:#fff7f7!important;}
 .gouka-simple-mini-metric small{display:block!important;color:#64748b!important;font-weight:900!important;margin-bottom:4px!important;}
 .gouka-simple-mini-metric b{display:block!important;color:#102033!important;font-size:20px!important;font-weight:950!important;}
+.gouka-simple-mini-metric span{display:block!important;margin-top:5px!important;font-size:11px!important;font-weight:950!important;color:#10852f!important;}
 .v3-dashboard>.v3-hero,.v3-dashboard>.gouka-command-center,.v3-dashboard>.gouka-spotlight-panel,.v3-dashboard>.gouka-profit-guard,.v3-dashboard>.gouka-nbaa-flow,.v3-dashboard>.gouka-ops-summary,.v3-dashboard>.gouka-alert-title,.v3-dashboard>.gouka-alert-board,.v3-dashboard>.gouka-workbench-title,.v3-dashboard>.gouka-workbench-grid{display:none!important;}
 @media(max-width:1100px){.gouka-nbaa-home-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;}.gouka-home-focus-row{grid-template-columns:repeat(2,minmax(0,1fr))!important;}.gouka-nbaa-guide-body{grid-template-columns:1fr!important;}.gouka-nbaa-guide-title{font-size:22px!important;}}
 @media(max-width:1100px){.gouka-simple-actions{grid-template-columns:repeat(2,minmax(0,1fr))!important;}.gouka-simple-mini-metrics{grid-template-columns:repeat(2,minmax(0,1fr))!important;}.gouka-simple-home-head{display:block!important;}.gouka-simple-home-total{text-align:left!important;margin-top:12px!important;}}
@@ -4931,7 +4934,7 @@ function App() {
         </header>
         <RoleNotice role={role} />
 
-        {tab === "dashboard" && (canAccessTab("dashboard") ? <Dashboard totals={totals} items={computedItems} setTab={goTab} exportBackup={exportBackup} customsBatches={customsBatches} onCashflowSave={requestGlobalCloudSave} /> : <RestrictedPanel message={restrictedTabMessage} />)}
+        {tab === "dashboard" && (canAccessTab("dashboard") ? <Dashboard totals={totals} items={computedItems} setTab={goTab} openInventorySignal={openInventorySignal} exportBackup={exportBackup} customsBatches={customsBatches} onCashflowSave={requestGlobalCloudSave} /> : <RestrictedPanel message={restrictedTabMessage} />)}
         {tab === "ai" && <AiAssistant onApplyDraft={applyAiDraft} dictionaries={dictionaries} suppliers={suppliers} />}
         {tab === "aiChat" && <AiChatAssistant items={computedItems} suppliers={suppliers} dictionaries={dictionaries} setTab={goTab} />}
         {tab === "add" && (
@@ -4999,7 +5002,7 @@ function App() {
   );
 }
 
-function Dashboard({ totals, items, setTab, exportBackup, customsBatches = [], onCashflowSave = () => {} }) {
+function Dashboard({ totals, items, setTab, openInventorySignal = null, exportBackup, customsBatches = [], onCashflowSave = () => {} }) {
   const withImages = items.filter((x) => x.images && x.images.length).length;
   const activeItems = items.filter((x) => !isSoldStatus(x.status) && x.status !== "退货");
   const activeStock = activeItems.length;
@@ -5073,6 +5076,10 @@ function Dashboard({ totals, items, setTab, exportBackup, customsBatches = [], o
     { label: "字典管理", tab: "dictionary" },
     { label: "删除日志", tab: "deleteLogs" }
   ];
+  function goInventory(signal = "全部") {
+    if (openInventorySignal) openInventorySignal(signal);
+    else setTab("inventory");
+  }
   const japanAuctionTotal = items.filter((x) => isJapaneseAuctionLike(x)).length;
   const nbaaFocusButtons = [
     { label: "先补售价", value: missingExpectedPriceCount, desc: "利润预估最先看这里", tab: "inventory", tone: missingExpectedPriceCount ? "danger" : "" },
@@ -5269,7 +5276,7 @@ function Dashboard({ totals, items, setTab, exportBackup, customsBatches = [], o
             <b>录入</b>
             <span>采购后先录商品、图片、成本</span>
           </button>
-          <button className={"gouka-simple-action " + (missingExpectedPriceCount || missingImageCount ? "warn" : "")} onClick={() => setTab("inventory")}>
+          <button className={"gouka-simple-action " + (missingExpectedPriceCount || missingImageCount ? "warn" : "")} onClick={() => goInventory("全部")}>
             <strong>库存管理</strong>
             <b>{activeStock} 件</b>
             <span>补售价 {missingExpectedPriceCount} 件 / 补图片 {missingImageCount} 件</span>
@@ -5295,18 +5302,21 @@ function Dashboard({ totals, items, setTab, exportBackup, customsBatches = [], o
             <small>库存总数</small>
             <b>{activeStock} 件</b>
           </div>
-          <div className={"gouka-simple-mini-metric " + (over30 ? "warn" : "")}>
+          <button type="button" className={"gouka-simple-mini-metric clickable " + (over30 ? "warn" : "")} onClick={() => goInventory("库存30日以上")}>
             <small>库存30日以上</small>
             <b>{over30} 件</b>
-          </div>
-          <div className={"gouka-simple-mini-metric " + (missingExpectedPriceCount ? "warn" : "")}>
+            <span>点击处理</span>
+          </button>
+          <button type="button" className={"gouka-simple-mini-metric clickable " + (missingExpectedPriceCount ? "warn" : "")} onClick={() => goInventory("未设预计售价")}>
             <small>未设售价</small>
             <b>{missingExpectedPriceCount} 件</b>
-          </div>
-          <div className={"gouka-simple-mini-metric " + (missingImageCount ? "warn" : "")}>
+            <span>点击处理</span>
+          </button>
+          <button type="button" className={"gouka-simple-mini-metric clickable " + (missingImageCount ? "warn" : "")} onClick={() => goInventory("无图片")}>
             <small>无图片</small>
             <b>{missingImageCount} 件</b>
-          </div>
+            <span>点击处理</span>
+          </button>
         </div>
         <div className="gouka-simple-sync-note">
           <span><b>同步查看：</b>公司电脑、家里电脑、手机打开同一个网址后会读取云端资料。</span>
