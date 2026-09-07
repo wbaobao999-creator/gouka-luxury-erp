@@ -876,6 +876,9 @@ button:disabled { opacity:.55; cursor:not-allowed; }
 .image-modal .panel { box-shadow:0 20px 70px rgba(15,23,42,.25); }
 input:focus, select:focus, textarea:focus { outline:none; border-color:#16a34a !important; box-shadow:0 0 0 3px rgba(22,163,74,.14); }
 .pill { border-color:#d9e7dc; background:#fff; font-weight:900; }
+.fx-money-box { grid-column: span 3; display:grid; grid-template-columns:1.15fr .75fr .8fr 1fr; gap:10px; align-items:end; padding:10px; border:1px solid #dbe7ef; background:#fbfdfc; }
+.fx-money-box label { margin:0; }
+.fx-money-box small { grid-column:1 / -1; color:#52606d; font-weight:800; line-height:1.45; }
 .status, .evidence-badge, .inventory-group-badge { letter-spacing:0; }
 @media print {
   aside, main > header .action-row, .toolbar-right, .filter-row, .inventory-group-toolbar, .table-pager, .table-scroll-hint, .table-actions button { display:none !important; }
@@ -887,6 +890,7 @@ input:focus, select:focus, textarea:focus { outline:none; border-color:#16a34a !
 }
 @media (max-width: 760px) {
   .table-scroll-hint { display:none; }
+  .fx-money-box { grid-column:1 / -1; grid-template-columns:1fr; }
   main > header { border-top:0; }
   .panel { border-radius:10px; }
 }
@@ -1435,6 +1439,14 @@ function amountToJpy(amount, currency, rate) {
   return Number(amount || 0) * Number(rate || defaultRateFor(currency));
 }
 
+function amountToJpyWithFallback(amount, currency, rate, fallbackJpy = 0) {
+  const hasAmount = amount !== "" && amount !== null && amount !== undefined;
+  if (!hasAmount) return Math.round(Number(fallbackJpy || 0));
+  const cur = currency || "JPY";
+  const fx = cur === "JPY" ? 1 : Number(rate || defaultRateFor(cur) || 1);
+  return Math.round(Number(amount || 0) * fx);
+}
+
 function smartAmountToJpy(amount, currency, rate, saleJpy = 0) {
   const raw = Number(amount || 0);
   const fx = Number(rate || defaultRateFor(currency));
@@ -1688,10 +1700,9 @@ function mergeRecoveredImportBatches(existingBatches = [], items = []) {
   return recovered.length ? [...list, ...recovered] : list;
 }
 
-function makeCustomsBatchId(batches) {
-  const d = new Date();
-  const ym = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}`;
-  const prefix = `EMS-${ym}-`;
+function makeCustomsBatchId(batches, dateValue = localDateString()) {
+  const ymd = normalizeDateStringForInput(dateValue).replaceAll("-", "");
+  const prefix = `EMS-${ymd}-`;
   const nums = (batches || [])
     .map((x) => String(x.id || ""))
     .filter((id) => id.startsWith(prefix))
@@ -2089,6 +2100,17 @@ function localDateString(date = new Date()) {
   const m = String(date.getMonth() + 1).padStart(2, "0");
   const d = String(date.getDate()).padStart(2, "0");
   return y + "-" + m + "-" + d;
+}
+
+function normalizeDateStringForInput(value, fallback = localDateString()) {
+  const raw = String(value || "").trim();
+  if (!raw) return fallback;
+  const compact = raw.match(/^(\d{4})(\d{2})(\d{2})$/);
+  if (compact) return `${compact[1]}-${compact[2]}-${compact[3]}`;
+  const normalized = raw.replace(/[/.]/g, "-");
+  const parts = normalized.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (!parts) return fallback;
+  return `${parts[1]}-${String(parts[2]).padStart(2, "0")}-${String(parts[3]).padStart(2, "0")}`;
 }
 
 function currentMonth() {
@@ -2553,9 +2575,15 @@ const emptyForm = {
   saleJpy: "",
   shippingJpy: "",
   dutyJpy: "",
+  dutyAmount: "",
+  dutyCurrency: "JPY",
+  dutyRateToJpy: 1,
   customsFeeJpy: "",
   platformFeeJpy: "",
   otherCostJpy: "",
+  otherCostAmount: "",
+  otherCostCurrency: "JPY",
+  otherCostRateToJpy: 1,
   source: "",
   address: "",
   idCheck: "Supplier invoice",
@@ -2668,9 +2696,15 @@ function normalizeItem(x) {
     declaredRateToJpy: x.declaredRateToJpy || x.rate || defaultRateFor(x.declaredCurrency || "CNY"),
     shippingJpy: x.shippingJpy || 0,
     dutyJpy: x.dutyJpy || 0,
+    dutyAmount: x.dutyAmount || x.dutyJpy || "",
+    dutyCurrency: x.dutyCurrency || "JPY",
+    dutyRateToJpy: x.dutyRateToJpy || 1,
     customsFeeJpy: x.customsFeeJpy || 0,
     platformFeeJpy: x.platformFeeJpy || 0,
     otherCostJpy: x.otherCostJpy || 0,
+    otherCostAmount: x.otherCostAmount || x.otherCostJpy || "",
+    otherCostCurrency: x.otherCostCurrency || "JPY",
+    otherCostRateToJpy: x.otherCostRateToJpy || 1,
     customsBatchId: x.customsBatchId || "",
     productTitle: x.productTitle || makeAutoTitle(x),
     imageCount: Number(x.imageCount || (Array.isArray(x.images) ? x.images.length : 0)),
@@ -3622,25 +3656,44 @@ function useGoukaJapaneseDisplay(enabled) {
 
     let queued = false;
     let timer = null;
+    const pendingRoots = new Set();
     const run = () => {
       queued = false;
       timer = null;
-      applyGoukaJapaneseDisplay(goukaJapaneseRoot());
+      const roots = Array.from(pendingRoots).filter((node) => node && node.isConnected);
+      pendingRoots.clear();
+      if (!roots.length || roots.length > 24) {
+        applyGoukaJapaneseDisplay(goukaJapaneseRoot());
+        return;
+      }
+      roots.forEach((node) => {
+        if (node.nodeType === 3) {
+          applyGoukaJapaneseDisplay(node.parentElement || goukaJapaneseRoot());
+        } else if (node.nodeType === 1) {
+          applyGoukaJapaneseDisplay(node);
+        }
+      });
     };
-    const schedule = () => {
+    const schedule = (node = null) => {
+      if (node) pendingRoots.add(node);
       if (queued) return;
       queued = true;
-      const idle = window.requestIdleCallback || ((cb) => window.setTimeout(cb, 80));
-      timer = idle(run, { timeout: 260 });
+      const idle = window.requestIdleCallback || ((cb) => window.setTimeout(cb, 160));
+      timer = idle(run, { timeout: 520 });
     };
 
-    schedule();
+    schedule(goukaJapaneseRoot());
     const root = document.getElementById("root") || document.body;
-    const observer = new MutationObserver(schedule);
+    const observer = new MutationObserver((mutations) => {
+      mutations.forEach((mutation) => {
+        mutation.addedNodes.forEach((node) => schedule(node));
+      });
+    });
     observer.observe(root, { childList: true, subtree: true });
     return () => {
       observer.disconnect();
       if (timer && window.cancelIdleCallback) window.cancelIdleCallback(timer);
+      pendingRoots.clear();
     };
   }, [enabled]);
 }
@@ -4209,6 +4262,18 @@ function App() {
       productTitle: form.productTitle || makeAutoTitle(form) || `${form.brand || "未识别品牌"} ${form.item || "未识别商品"}`,
       images: Array.isArray(form.images) ? form.images : []
     };
+    const dutyJpyValue = amountToJpyWithFallback(
+      safeForm.dutyAmount,
+      safeForm.dutyCurrency || "JPY",
+      safeForm.dutyRateToJpy,
+      safeForm.dutyJpy
+    );
+    const otherCostJpyValue = amountToJpyWithFallback(
+      safeForm.otherCostAmount,
+      safeForm.otherCostCurrency || "JPY",
+      safeForm.otherCostRateToJpy,
+      safeForm.otherCostJpy
+    );
 
     if (editingId) {
       const cloudImages = await uploadItemImages(editingId, safeForm.images || []);
@@ -4234,10 +4299,16 @@ function App() {
           rate: Number(safeForm.purchaseRateToJpy || safeForm.rate || 0),
           saleJpy: Number(safeForm.saleJpy || 0),
           shippingJpy: Number(form.shippingJpy || 0),
-          dutyJpy: Number(form.dutyJpy || 0),
+          dutyJpy: dutyJpyValue,
+          dutyAmount: safeForm.dutyAmount || "",
+          dutyCurrency: safeForm.dutyCurrency || "JPY",
+          dutyRateToJpy: Number(safeForm.dutyRateToJpy || defaultRateFor(safeForm.dutyCurrency || "JPY")),
           customsFeeJpy: Number(form.customsFeeJpy || 0),
           platformFeeJpy: Number(form.platformFeeJpy || 0),
-          otherCostJpy: Number(form.otherCostJpy || 0),
+          otherCostJpy: otherCostJpyValue,
+          otherCostAmount: safeForm.otherCostAmount || "",
+          otherCostCurrency: safeForm.otherCostCurrency || "JPY",
+          otherCostRateToJpy: Number(safeForm.otherCostRateToJpy || defaultRateFor(safeForm.otherCostCurrency || "JPY")),
           images: safeForm.images || [],
           soldDate: form.soldDate || "",
           soldPlatform: form.soldPlatform || "",
@@ -4279,10 +4350,16 @@ function App() {
         rate: Number(safeForm.purchaseRateToJpy || safeForm.rate || 0),
         saleJpy: Number(safeForm.saleJpy || 0),
         shippingJpy: Number(safeForm.shippingJpy || 0),
-        dutyJpy: Number(safeForm.dutyJpy || 0),
+        dutyJpy: dutyJpyValue,
+        dutyAmount: safeForm.dutyAmount || "",
+        dutyCurrency: safeForm.dutyCurrency || "JPY",
+        dutyRateToJpy: Number(safeForm.dutyRateToJpy || defaultRateFor(safeForm.dutyCurrency || "JPY")),
         customsFeeJpy: Number(safeForm.customsFeeJpy || 0),
         platformFeeJpy: Number(safeForm.platformFeeJpy || 0),
-        otherCostJpy: Number(safeForm.otherCostJpy || 0),
+        otherCostJpy: otherCostJpyValue,
+        otherCostAmount: safeForm.otherCostAmount || "",
+        otherCostCurrency: safeForm.otherCostCurrency || "JPY",
+        otherCostRateToJpy: Number(safeForm.otherCostRateToJpy || defaultRateFor(safeForm.otherCostCurrency || "JPY")),
         images: safeForm.images || [],
         soldDate: safeForm.soldDate || "",
         soldPlatform: safeForm.soldPlatform || "",
@@ -4973,7 +5050,7 @@ function App() {
           />
         )}
         {tab === "ledger" && (canAccessTab("ledger") ? <Ledger items={filtered} setItems={canEditBusiness ? setItems : (() => {})} isOwner={isOwner} downloadCSV={downloadCSV} exportItemPdf={canExportBusinessPdf ? exportItemPdf : null} /> : <RestrictedPanel message={restrictedTabMessage} />)}
-        {tab === "customsBatch" && (canAccessTab("customsBatch") ? <CustomsBatchPanel batches={customsBatches} setBatches={isOwner ? setCustomsBatches : (() => {})} items={computedItems} setItems={isOwner ? setItems : null} downloadCSV={downloadCSV} /> : <RestrictedPanel message={restrictedTabMessage} />)}
+        {tab === "customsBatch" && (canAccessTab("customsBatch") ? <CustomsBatchPanel batches={customsBatches} setBatches={isOwner ? setCustomsBatches : (() => {})} items={computedItems} setItems={isOwner ? setItems : null} downloadCSV={downloadCSV} canEdit={isOwner} onGlobalSave={requestGlobalCloudSave} /> : <RestrictedPanel message={restrictedTabMessage} />)}
         {tab === "customs" && (canAccessTab("customs") ? <Customs items={filtered} customsBatches={customsBatches} downloadCSV={downloadCSV} /> : <RestrictedPanel message={restrictedTabMessage} />)}
         {tab === "profit" && (canAccessTab("profit") ? <Profit items={filtered} /> : <RestrictedPanel message={restrictedTabMessage} />)}
         {tab === "tax" && (canAccessTab("tax") ? <TaxReport items={filtered} totals={totals} customsBatches={customsBatches} downloadCSV={downloadCSV} /> : <RestrictedPanel message={restrictedTabMessage} />)}
@@ -5788,6 +5865,29 @@ function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, 
   function setDeclaredCurrency(v) {
     setForm({ ...form, declaredCurrency: v, declaredRateToJpy: defaultRateFor(v) });
   }
+  function setFxCurrency(currencyKey, rateKey, jpyKey, amountKey, v) {
+    const rate = v === "JPY" ? 1 : defaultRateFor(v);
+    setForm((prev) => ({
+      ...prev,
+      [currencyKey]: v,
+      [rateKey]: rate,
+      [jpyKey]: amountToJpyWithFallback(prev[amountKey], v, rate, prev[jpyKey])
+    }));
+  }
+  function setFxAmount(amountKey, currencyKey, rateKey, jpyKey, v) {
+    setForm((prev) => ({
+      ...prev,
+      [amountKey]: v,
+      [jpyKey]: amountToJpyWithFallback(v, prev[currencyKey] || "JPY", prev[rateKey], prev[jpyKey])
+    }));
+  }
+  function setFxRate(rateKey, amountKey, currencyKey, jpyKey, v) {
+    setForm((prev) => ({
+      ...prev,
+      [rateKey]: v,
+      [jpyKey]: amountToJpyWithFallback(prev[amountKey], prev[currencyKey] || "JPY", v, prev[jpyKey])
+    }));
+  }
   const preview = calcTax(form);
   const brandItems = dictionaries.itemsByBrand?.[form.brand] || ["其他"];
   const supplierNames = suppliers.map((s) => s.name).filter(Boolean);
@@ -5887,10 +5987,14 @@ function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, 
         <Input label="预计销售额 JPY（税込）/ 预估卖价" type="number" value={form.saleJpy} onChange={(v) => set("saleJpy", v)} />
 
         <Input label="EMS/国际运费 JPY / Shipping" type="number" value={form.shippingJpy || ""} onChange={(v) => set("shippingJpy", v)} />
-        <Input label="关税 JPY / Duty" type="number" value={form.dutyJpy || ""} onChange={(v) => set("dutyJpy", v)} />
+        <Select label="关税币种 / Duty Currency" value={form.dutyCurrency || "JPY"} onChange={(v) => setFxCurrency("dutyCurrency", "dutyRateToJpy", "dutyJpy", "dutyAmount", v)} options={CURRENCY_OPTIONS} />
+        <Input label={`关税金额 ${form.dutyCurrency || "JPY"} / Duty`} type="number" value={form.dutyAmount ?? form.dutyJpy ?? ""} onChange={(v) => setFxAmount("dutyAmount", "dutyCurrency", "dutyRateToJpy", "dutyJpy", v)} />
+        <Input label={`${form.dutyCurrency || "JPY"}→JPY 汇率 / Duty Rate`} type="number" value={form.dutyRateToJpy || defaultRateFor(form.dutyCurrency || "JPY")} onChange={(v) => setFxRate("dutyRateToJpy", "dutyAmount", "dutyCurrency", "dutyJpy", v)} />
         <Input label="报关代行费 JPY / Customs Fee" type="number" value={form.customsFeeJpy || ""} onChange={(v) => set("customsFeeJpy", v)} />
         <Input label="拍卖/平台手续费 JPY / Platform Fee" type="number" value={form.platformFeeJpy || ""} onChange={(v) => set("platformFeeJpy", v)} />
-        <Input label="其他费用 JPY / Other Cost" type="number" value={form.otherCostJpy || ""} onChange={(v) => set("otherCostJpy", v)} />
+        <Select label="其他费用币种 / Other Currency" value={form.otherCostCurrency || "JPY"} onChange={(v) => setFxCurrency("otherCostCurrency", "otherCostRateToJpy", "otherCostJpy", "otherCostAmount", v)} options={CURRENCY_OPTIONS} />
+        <Input label={`其他费用金额 ${form.otherCostCurrency || "JPY"} / Other Cost`} type="number" value={form.otherCostAmount ?? form.otherCostJpy ?? ""} onChange={(v) => setFxAmount("otherCostAmount", "otherCostCurrency", "otherCostRateToJpy", "otherCostJpy", v)} />
+        <Input label={`${form.otherCostCurrency || "JPY"}→JPY 汇率 / Other Rate`} type="number" value={form.otherCostRateToJpy || defaultRateFor(form.otherCostCurrency || "JPY")} onChange={(v) => setFxRate("otherCostRateToJpy", "otherCostAmount", "otherCostCurrency", "otherCostJpy", v)} />
 
         <FormSectionTitle title="3. 来源与古物台账 / 仕入信息" subtitle="供应商、地址、本人确认方式会进入古物台账。这里尽量填完整，后面查账会轻松很多。" />
 
@@ -7049,6 +7153,19 @@ function Ledger({ items, setItems, isOwner, downloadCSV, exportItemPdf }) {
     const matchDate = !ledgerDate || x.purchaseDate === ledgerDate;
     return matchText && matchDate;
   });
+  const ledgerPageSize = 30;
+  const [ledgerPage, setLedgerPage] = useState(1);
+  const ledgerTotalPages = Math.max(1, Math.ceil(filteredItems.length / ledgerPageSize));
+  const ledgerStart = (ledgerPage - 1) * ledgerPageSize;
+  const ledgerPageItems = filteredItems.slice(ledgerStart, ledgerStart + ledgerPageSize);
+
+  React.useEffect(() => {
+    setLedgerPage(1);
+  }, [ledgerQuery, ledgerDate]);
+
+  React.useEffect(() => {
+    if (ledgerPage > ledgerTotalPages) setLedgerPage(ledgerTotalPages);
+  }, [ledgerPage, ledgerTotalPages]);
 
   const headers = [
     "图片", "商品编号", "取引日", "No", "区分", "品牌", "商品名", "特徴", "数量", "取引区分",
@@ -7105,6 +7222,18 @@ function Ledger({ items, setItems, isOwner, downloadCSV, exportItemPdf }) {
       </div>
     ];
   });
+  const ledgerPager = filteredItems.length > ledgerPageSize ? (
+    <div className="table-pager">
+      <button onClick={() => setLedgerPage(1)} disabled={ledgerPage <= 1}>首页</button>
+      <button onClick={() => setLedgerPage((p) => Math.max(1, p - 1))} disabled={ledgerPage <= 1}>上一页</button>
+      <span className="pill">第 {ledgerPage} / {ledgerTotalPages} 页</span>
+      <span className="pill">{filteredItems.length ? ledgerStart + 1 : 0} - {Math.min(ledgerStart + ledgerPageSize, filteredItems.length)} / {filteredItems.length} 件</span>
+      <button onClick={() => setLedgerPage((p) => Math.min(ledgerTotalPages, p + 1))} disabled={ledgerPage >= ledgerTotalPages}>下一页</button>
+      <button onClick={() => setLedgerPage(ledgerTotalPages)} disabled={ledgerPage >= ledgerTotalPages}>末页</button>
+    </div>
+  ) : (
+    <div className="table-pager single"><span className="pill">共 {filteredItems.length} 件 / 默认每页 {ledgerPageSize} 件</span></div>
+  );
 
   return (
     <div className="panel">
@@ -7123,10 +7252,11 @@ function Ledger({ items, setItems, isOwner, downloadCSV, exportItemPdf }) {
         </div>
       </div>
       <p className="note">
-        当前显示 {filteredItems.length} 件 / 全部 {items.length} 件。古物台账不支持物理删除，只能作废或更正；日本拍卖商品点击「拍卖详情」进入 Product Record。
+        当前显示第 {filteredItems.length ? ledgerStart + 1 : 0} - {Math.min(ledgerStart + ledgerPageSize, filteredItems.length)} 件 / 筛选 {filteredItems.length} 件 / 全部 {items.length} 件。古物台账不支持物理删除，只能作废或更正；日本拍卖商品点击「拍卖详情」进入 Product Record。
       </p>
+      {ledgerPager}
       <div className="ledger-card-list">
-        {(Array.isArray(filteredItems) ? filteredItems : []).map((x, i) => {
+        {(Array.isArray(ledgerPageItems) ? ledgerPageItems : []).map((x, i) => {
           const auction = ledgerAuction(x);
           const tax = calcTax(x);
           const feature = [x.material, x.color, x.origin].filter(Boolean).join(" / ");
@@ -7138,7 +7268,7 @@ function Ledger({ items, setItems, isOwner, downloadCSV, exportItemPdf }) {
             <div className="ledger-card" key={x.id || i}>
               <div className="ledger-card-main">
                 <div className="ledger-card-grid">
-                  <div className="ledger-card-section">古物台账记录 No.{i + 1}</div>
+                  <div className="ledger-card-section">古物台账记录 No.{ledgerStart + i + 1}</div>
                   <div className="ledger-card-label">商品编号</div><div className="ledger-card-value strong">{x.id}</div>
                   <div className="ledger-card-label">取引日</div><div className="ledger-card-value">{x.purchaseDate || "—"}</div>
                   <div className="ledger-card-label">区分</div><div className="ledger-card-value">{x.category || "—"}</div>
@@ -7176,6 +7306,7 @@ function Ledger({ items, setItems, isOwner, downloadCSV, exportItemPdf }) {
           );
         })}
       </div>
+      {ledgerPager}
       <details className="ledger-original-table">
         <summary>打开原始横表</summary>
         <Table headers={headers} rows={rows} />
@@ -7192,8 +7323,8 @@ function Ledger({ items, setItems, isOwner, downloadCSV, exportItemPdf }) {
   );
 }
 
-function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downloadCSV }) {
-  const emptyBatch = { id: "", name: "", emsNo: "", customsDeclarationNo: "", importDate: localDateString(), declaredTotalJpy: "", goodsValueJpy: "", goodsCount: "", grossWeightKg: "", dutyJpy: "", importConsumptionTaxJpy: "", localConsumptionTaxJpy: "", shippingJpy: "", internationalShippingAmount: "", internationalShippingCurrency: "JPY", internationalShippingRateToJpy: "1", internationalShippingJpy: "", customsFeeJpy: "", agencyFeeJpy: "", otherCostJpy: "", attachments: [], attachmentsText: "", memo: "" };
+function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downloadCSV, canEdit = true, onGlobalSave = () => {} }) {
+  const emptyBatch = { id: "", name: "", emsNo: "", customsDeclarationNo: "", importDate: localDateString(), declaredTotalJpy: "", goodsValueJpy: "", goodsValueAmount: "", goodsValueCurrency: "JPY", goodsValueRateToJpy: "1", goodsCount: "", grossWeightKg: "", dutyJpy: "", dutyAmount: "", dutyCurrency: "JPY", dutyRateToJpy: "1", importConsumptionTaxJpy: "", importConsumptionTaxAmount: "", importConsumptionTaxCurrency: "JPY", importConsumptionTaxRateToJpy: "1", localConsumptionTaxJpy: "", localConsumptionTaxAmount: "", localConsumptionTaxCurrency: "JPY", localConsumptionTaxRateToJpy: "1", shippingJpy: "", internationalShippingAmount: "", internationalShippingCurrency: "JPY", internationalShippingRateToJpy: "1", internationalShippingJpy: "", customsFeeJpy: "", agencyFeeJpy: "", agencyFeeAmount: "", agencyFeeCurrency: "JPY", agencyFeeRateToJpy: "1", otherCostJpy: "", otherCostAmount: "", otherCostCurrency: "JPY", otherCostRateToJpy: "1", attachments: [], attachmentsText: "", memo: "" };
   const [form, setForm] = useState(emptyBatch);
   const [editingId, setEditingId] = useState(null);
   const [activeBatchId, setActiveBatchId] = useState("");
@@ -7205,6 +7336,67 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
   const shippingCurrency = form.internationalShippingCurrency || form.shippingCurrency || "JPY";
   const shippingRateToJpy = Number(form.internationalShippingRateToJpy || form.shippingRateToJpy || (shippingCurrency === "JPY" ? 1 : defaultRateFor(shippingCurrency)) || 1);
   const shippingJpyPreview = Math.round(Number(form.internationalShippingJpy || form.shippingJpy || 0) || shippingAmount * shippingRateToJpy);
+  const batchCurrencyOptions = ["JPY", "CNY", "USD"];
+
+  function fxAmount(amountKey, jpyKey) {
+    const raw = form[amountKey];
+    if (raw !== "" && raw !== null && raw !== undefined) return raw;
+    return form[jpyKey] || "";
+  }
+
+  function fxRate(currencyKey, rateKey) {
+    const currency = form[currencyKey] || "JPY";
+    return Number(form[rateKey] || (currency === "JPY" ? 1 : defaultRateFor(currency)) || 1);
+  }
+
+  function fxToJpy(amountKey, currencyKey, rateKey, jpyKey) {
+    const amount = Number(fxAmount(amountKey, jpyKey) || 0);
+    const currency = form[currencyKey] || "JPY";
+    const rate = fxRate(currencyKey, rateKey);
+    return Math.round(currency === "JPY" ? amount : amount * rate);
+  }
+
+  function setFxAmount(amountKey, currencyKey, rateKey, jpyKey, value) {
+    setForm((prev) => {
+      const currency = prev[currencyKey] || "JPY";
+      const rate = Number(prev[rateKey] || (currency === "JPY" ? 1 : defaultRateFor(currency)) || 1);
+      const jpy = Math.round(Number(value || 0) * rate);
+      return { ...prev, [amountKey]: value, [jpyKey]: jpy };
+    });
+  }
+
+  function setFxCurrency(amountKey, currencyKey, rateKey, jpyKey, value) {
+    setForm((prev) => {
+      const rate = value === "JPY" ? 1 : defaultRateFor(value);
+      const amount = Number(prev[amountKey] || prev[jpyKey] || 0);
+      return { ...prev, [currencyKey]: value, [rateKey]: rate, [jpyKey]: Math.round(amount * rate) };
+    });
+  }
+
+  function setFxRate(amountKey, rateKey, jpyKey, value) {
+    setForm((prev) => {
+      const amount = Number(prev[amountKey] || prev[jpyKey] || 0);
+      return { ...prev, [rateKey]: value, [jpyKey]: Math.round(amount * Number(value || 0)) };
+    });
+  }
+
+  function FxMoneyInput({ label, amountKey, currencyKey, rateKey, jpyKey, note = "" }) {
+    const currency = form[currencyKey] || "JPY";
+    const jpyValue = fxToJpy(amountKey, currencyKey, rateKey, jpyKey);
+    return (
+      <div className="fx-money-box">
+        <Input label={label + " 金额"} type="number" value={fxAmount(amountKey, jpyKey)} onChange={(v) => setFxAmount(amountKey, currencyKey, rateKey, jpyKey, v)} />
+        <label>{label + " 币种"}
+          <select value={currency} onChange={(e) => setFxCurrency(amountKey, currencyKey, rateKey, jpyKey, e.target.value)}>
+            {batchCurrencyOptions.map((x) => <option key={x} value={x}>{x}</option>)}
+          </select>
+        </label>
+        <Input label={`${currency}→JPY 汇率`} type="number" value={form[rateKey] || fxRate(currencyKey, rateKey)} onChange={(v) => setFxRate(amountKey, rateKey, jpyKey, v)} />
+        <Input label={label + " JPY（自动）"} type="number" value={jpyValue || ""} onChange={(v) => set(jpyKey, v)} />
+        {note && <small>{note}</small>}
+      </div>
+    );
+  }
 
   function reset() {
     setForm(emptyBatch);
@@ -7213,38 +7405,61 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
   }
 
   function saveBatch() {
+    if (!canEdit) {
+      alert("当前账号是只读权限，不能新增或修改报关批次。请用管理者账号登录。");
+      return;
+    }
+    const importDate = normalizeDateStringForInput(form.importDate || localDateString());
+    const batchId = String(editingId || form.id || makeCustomsBatchId(batches, importDate)).trim();
+    if (!batchId) {
+      alert("Import Batch ID 生成失败，请填写进口日期后再试。");
+      return;
+    }
+    const goodsValueJpy = fxToJpy("goodsValueAmount", "goodsValueCurrency", "goodsValueRateToJpy", "goodsValueJpy");
+    const dutyJpy = fxToJpy("dutyAmount", "dutyCurrency", "dutyRateToJpy", "dutyJpy");
+    const importConsumptionTaxJpy = fxToJpy("importConsumptionTaxAmount", "importConsumptionTaxCurrency", "importConsumptionTaxRateToJpy", "importConsumptionTaxJpy");
+    const localConsumptionTaxJpy = fxToJpy("localConsumptionTaxAmount", "localConsumptionTaxCurrency", "localConsumptionTaxRateToJpy", "localConsumptionTaxJpy");
+    const agencyFeeJpy = fxToJpy("agencyFeeAmount", "agencyFeeCurrency", "agencyFeeRateToJpy", "agencyFeeJpy");
+    const otherCostJpy = fxToJpy("otherCostAmount", "otherCostCurrency", "otherCostRateToJpy", "otherCostJpy");
     const shippingJpy = Math.round(Number(form.internationalShippingJpy || form.shippingJpy || 0) || Number(form.internationalShippingAmount || 0) * Number(form.internationalShippingRateToJpy || 1));
     const next = normalizeImportBatch({
       ...form,
-      id: editingId || form.id || makeCustomsBatchId(batches),
-      name: form.name || form.id || editingId || "进口批次",
-      declaredTotalJpy: Number(form.declaredTotalJpy || form.goodsValueJpy || 0),
-      goodsValueJpy: Number(form.goodsValueJpy || form.declaredTotalJpy || 0),
+      id: batchId,
+      importBatchId: batchId,
+      name: form.name || batchId,
+      importDate,
+      declaredTotalJpy: goodsValueJpy,
+      goodsValueJpy,
       goodsCount: Number(form.goodsCount || form.itemCount || 0),
       itemCount: Number(form.goodsCount || form.itemCount || 0),
       grossWeightKg: Number(form.grossWeightKg || 0),
-      dutyJpy: Number(form.dutyJpy || 0),
-      importConsumptionTaxJpy: Number(form.importConsumptionTaxJpy || 0),
-      localConsumptionTaxJpy: Number(form.localConsumptionTaxJpy || 0),
+      dutyJpy,
+      importConsumptionTaxJpy,
+      localConsumptionTaxJpy,
       internationalShippingAmount: Number(form.internationalShippingAmount || 0),
       internationalShippingCurrency: form.internationalShippingCurrency || "JPY",
       internationalShippingRateToJpy: Number(form.internationalShippingRateToJpy || 1),
       shippingJpy,
       internationalShippingJpy: shippingJpy,
-      customsFeeJpy: Number(form.agencyFeeJpy || form.customsFeeJpy || 0),
-      agencyFeeJpy: Number(form.agencyFeeJpy || form.customsFeeJpy || 0),
-      otherCostJpy: Number(form.otherCostJpy || 0),
-      attachments: normalizeBatchAttachments(form)
+      customsFeeJpy: agencyFeeJpy,
+      agencyFeeJpy,
+      otherCostJpy,
+      attachments: normalizeBatchAttachments(form),
+      createdAt: form.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString()
     });
     setBatches((prev) => {
       const list = Array.isArray(prev) ? prev : (Array.isArray(batches) ? batches : []);
       const exists = list.some((b) => normalizeImportBatch(b).id === next.id);
-      return exists
+      const nextList = exists
         ? list.map((b) => normalizeImportBatch(b).id === next.id ? next : b)
         : [next, ...list];
+      safeLocalSet(CUSTOMS_BATCH_KEY, nextList, "报关批次数据");
+      return nextList;
     });
     setActiveBatchId(next.id);
-    alert(editingId ? "报关批次已更新" : "报关批次已保存");
+    window.setTimeout(onGlobalSave, 0);
+    alert(editingId ? "报关批次已更新：" + next.id : "报关批次已新增：" + next.id);
     reset();
   }
 
@@ -7252,6 +7467,24 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
     const batch = normalizeImportBatch(b);
     setForm({
       ...batch,
+      goodsValueAmount: batch.goodsValueAmount || batch.goodsValueJpy || batch.declaredTotalJpy || "",
+      goodsValueCurrency: batch.goodsValueCurrency || "JPY",
+      goodsValueRateToJpy: batch.goodsValueRateToJpy || (batch.goodsValueCurrency === "JPY" ? 1 : defaultRateFor(batch.goodsValueCurrency || "JPY")),
+      dutyAmount: batch.dutyAmount || batch.dutyJpy || "",
+      dutyCurrency: batch.dutyCurrency || "JPY",
+      dutyRateToJpy: batch.dutyRateToJpy || (batch.dutyCurrency === "JPY" ? 1 : defaultRateFor(batch.dutyCurrency || "JPY")),
+      importConsumptionTaxAmount: batch.importConsumptionTaxAmount || batch.importConsumptionTaxJpy || "",
+      importConsumptionTaxCurrency: batch.importConsumptionTaxCurrency || "JPY",
+      importConsumptionTaxRateToJpy: batch.importConsumptionTaxRateToJpy || (batch.importConsumptionTaxCurrency === "JPY" ? 1 : defaultRateFor(batch.importConsumptionTaxCurrency || "JPY")),
+      localConsumptionTaxAmount: batch.localConsumptionTaxAmount || batch.localConsumptionTaxJpy || "",
+      localConsumptionTaxCurrency: batch.localConsumptionTaxCurrency || "JPY",
+      localConsumptionTaxRateToJpy: batch.localConsumptionTaxRateToJpy || (batch.localConsumptionTaxCurrency === "JPY" ? 1 : defaultRateFor(batch.localConsumptionTaxCurrency || "JPY")),
+      agencyFeeAmount: batch.agencyFeeAmount || batch.agencyFeeJpy || batch.customsFeeJpy || "",
+      agencyFeeCurrency: batch.agencyFeeCurrency || "JPY",
+      agencyFeeRateToJpy: batch.agencyFeeRateToJpy || (batch.agencyFeeCurrency === "JPY" ? 1 : defaultRateFor(batch.agencyFeeCurrency || "JPY")),
+      otherCostAmount: batch.otherCostAmount || batch.otherCostJpy || "",
+      otherCostCurrency: batch.otherCostCurrency || "JPY",
+      otherCostRateToJpy: batch.otherCostRateToJpy || (batch.otherCostCurrency === "JPY" ? 1 : defaultRateFor(batch.otherCostCurrency || "JPY")),
       internationalShippingAmount: batch.internationalShippingAmount || batch.internationalShippingJpy || "",
       internationalShippingCurrency: batch.internationalShippingCurrency || "JPY",
       internationalShippingRateToJpy: batch.internationalShippingRateToJpy || (batch.internationalShippingCurrency === "JPY" ? 1 : defaultRateFor(batch.internationalShippingCurrency || "JPY")),
@@ -7271,14 +7504,29 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
       customsDeclarationNo: "41566568140",
       importDate: "2026-07-02",
       goodsValueJpy: "15522668",
+      goodsValueAmount: "15522668",
+      goodsValueCurrency: "JPY",
+      goodsValueRateToJpy: "1",
       declaredTotalJpy: "15522668",
       goodsCount: "40",
       itemCount: "40",
       grossWeightKg: "33.90",
       dutyJpy: "1252000",
+      dutyAmount: "1252000",
+      dutyCurrency: "JPY",
+      dutyRateToJpy: "1",
       importConsumptionTaxJpy: "1308000",
+      importConsumptionTaxAmount: "1308000",
+      importConsumptionTaxCurrency: "JPY",
+      importConsumptionTaxRateToJpy: "1",
       localConsumptionTaxJpy: "368800",
+      localConsumptionTaxAmount: "368800",
+      localConsumptionTaxCurrency: "JPY",
+      localConsumptionTaxRateToJpy: "1",
       agencyFeeJpy: "12000",
+      agencyFeeAmount: "12000",
+      agencyFeeCurrency: "JPY",
+      agencyFeeRateToJpy: "1",
       customsFeeJpy: "12000",
       internationalShippingAmount: "5400",
       internationalShippingCurrency: "CNY",
@@ -7286,6 +7534,9 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
       internationalShippingJpy: "128250",
       shippingJpy: "128250",
       otherCostJpy: "0",
+      otherCostAmount: "0",
+      otherCostCurrency: "JPY",
+      otherCostRateToJpy: "1",
       memo: [
         "2026-07-02 EMS进口批次",
         "EMS：EB861106815CN",
@@ -7460,7 +7711,12 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
     return { count: arr.length, declared, allocatedCost, costTotal, nonCostTaxTotal, declaredCount };
   }
 
-  const normalizedBatches = dedupeImportBatchesForDisplay(batches);
+  const normalizedBatches = dedupeImportBatchesForDisplay(batches).sort((a, b) => {
+    const dateA = normalizeDateStringForInput(a.importDate || a.createdAt || "", "0000-00-00");
+    const dateB = normalizeDateStringForInput(b.importDate || b.createdAt || "", "0000-00-00");
+    if (dateA !== dateB) return dateB.localeCompare(dateA);
+    return String(b.id || "").localeCompare(String(a.id || ""));
+  });
   const summary = normalizedBatches.reduce((a, b) => {
     const st = batchStats(b);
     a.batchCount += 1;
@@ -7565,6 +7821,7 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
     <div className="panel">
       <h2>进口批次（Import Batch）</h2>
       <p className="note">一票报关对应一个 Import Batch。商品只关联批次；关税、代理费、国际运费按规则分摊到库存成本；进口消费税、地方消费税不进库存成本，只进入消费税管理中心。</p>
+      {!canEdit && <p className="note danger-note">当前为只读账号：可以查看报关批次，但不能新增、编辑、删除或分摊成本。</p>}
       <div className="import-summary-grid">
         <Card title="商品数量" value={pageSummary.goodsCount + " 件"} />
         <Card title="货值合计" value={jpy(pageSummary.goodsValueJpy)} />
@@ -7711,18 +7968,18 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
         <Input label="EMS单号" value={form.emsNo || ""} onChange={(v) => set("emsNo", v)} />
         <Input label="报关编号" value={form.customsDeclarationNo || ""} onChange={(v) => set("customsDeclarationNo", v)} />
         <Input label="进口日期" type="date" value={form.importDate || ""} onChange={(v) => set("importDate", v)} />
-        <Input label="货值 JPY" type="number" value={form.goodsValueJpy || form.declaredTotalJpy || ""} onChange={(v) => { set("goodsValueJpy", v); set("declaredTotalJpy", v); }} />
+        <FxMoneyInput label="货值" amountKey="goodsValueAmount" currencyKey="goodsValueCurrency" rateKey="goodsValueRateToJpy" jpyKey="goodsValueJpy" note="报关申报货值，可填 CNY / JPY / USD。" />
         <Input label="商品件数" type="number" value={form.goodsCount || form.itemCount || ""} onChange={(v) => { set("goodsCount", v); set("itemCount", v); }} />
         <Input label="重量 kg" type="number" value={form.grossWeightKg || ""} onChange={(v) => set("grossWeightKg", v)} />
-        <Input label="关税 JPY（进成本）" type="number" value={form.dutyJpy || ""} onChange={(v) => set("dutyJpy", v)} />
-        <Input label="进口消费税 JPY（不进成本）" type="number" value={form.importConsumptionTaxJpy || ""} onChange={(v) => set("importConsumptionTaxJpy", v)} />
-        <Input label="地方消费税 JPY（不进成本）" type="number" value={form.localConsumptionTaxJpy || ""} onChange={(v) => set("localConsumptionTaxJpy", v)} />
-        <Input label="代理费 JPY（进成本）" type="number" value={form.agencyFeeJpy || form.customsFeeJpy || ""} onChange={(v) => { set("agencyFeeJpy", v); set("customsFeeJpy", v); }} />
+        <FxMoneyInput label="关税（进成本）" amountKey="dutyAmount" currencyKey="dutyCurrency" rateKey="dutyRateToJpy" jpyKey="dutyJpy" />
+        <FxMoneyInput label="进口消费税（不进成本）" amountKey="importConsumptionTaxAmount" currencyKey="importConsumptionTaxCurrency" rateKey="importConsumptionTaxRateToJpy" jpyKey="importConsumptionTaxJpy" />
+        <FxMoneyInput label="地方消费税（不进成本）" amountKey="localConsumptionTaxAmount" currencyKey="localConsumptionTaxCurrency" rateKey="localConsumptionTaxRateToJpy" jpyKey="localConsumptionTaxJpy" />
+        <FxMoneyInput label="代理费（进成本）" amountKey="agencyFeeAmount" currencyKey="agencyFeeCurrency" rateKey="agencyFeeRateToJpy" jpyKey="agencyFeeJpy" />
         <Input label="国际运费金额" type="number" value={form.internationalShippingAmount || ""} onChange={(v) => { set("internationalShippingAmount", v); set("internationalShippingJpy", Math.round(Number(v || 0) * shippingRateToJpy)); set("shippingJpy", Math.round(Number(v || 0) * shippingRateToJpy)); }} />
         <label>国际运费币种<select value={shippingCurrency} onChange={(e) => { const cur = e.target.value; const rate = cur === "JPY" ? 1 : defaultRateFor(cur); setForm((prev) => ({ ...prev, internationalShippingCurrency: cur, internationalShippingRateToJpy: rate, internationalShippingJpy: Math.round(Number(prev.internationalShippingAmount || 0) * rate), shippingJpy: Math.round(Number(prev.internationalShippingAmount || 0) * rate) })); }}><option value="CNY">CNY</option><option value="JPY">JPY</option><option value="USD">USD</option></select></label>
         <Input label="国际运费汇率" type="number" value={form.internationalShippingRateToJpy || ""} onChange={(v) => { set("internationalShippingRateToJpy", v); set("internationalShippingJpy", Math.round(shippingAmount * Number(v || 0))); set("shippingJpy", Math.round(shippingAmount * Number(v || 0))); }} />
         <Input label="国际运费 JPY（自动）" type="number" value={shippingJpyPreview || ""} onChange={(v) => { set("internationalShippingJpy", v); set("shippingJpy", v); }} />
-        <Input label="其他费用 JPY（进成本）" type="number" value={form.otherCostJpy || ""} onChange={(v) => set("otherCostJpy", v)} />
+        <FxMoneyInput label="其他费用（进成本）" amountKey="otherCostAmount" currencyKey="otherCostCurrency" rateKey="otherCostRateToJpy" jpyKey="otherCostJpy" />
         <label>附件类型<select value={attachmentType} onChange={(e) => setAttachmentType(e.target.value)}>{attachmentTypes.map((x) => <option key={x} value={x}>{x}</option>)}</select></label>
         <label className="file-upload-box">附件导入（PDF / 图片 / 报关库存表）
           <input type="file" accept="application/pdf,image/*,.pdf,.jpg,.jpeg,.png,.webp,.xls,.xlsx,.csv" multiple onChange={(e) => handleBatchFiles(e.target.files)} />
@@ -7749,7 +8006,7 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
         <label>备注<textarea value={form.memo || ""} onChange={(e) => set("memo", e.target.value)} placeholder="例：7月报关单、Invoice、Packing List 对应保存" /></label>
       </div>
       <div className="action-row">
-        <button className="primary" onClick={saveBatch}>{editingId ? "保存批次" : "新增批次"}</button>
+        <button className="primary" onClick={saveBatch} disabled={!canEdit}>{editingId ? "保存批次" : "新增批次"}</button>
         {editingId && <button className="ghost" onClick={reset}>取消编辑</button>}
         <button className="ghost" onClick={fillSampleBatch}>填入7月样例</button>
         <button className="ghost" onClick={() => downloadCSV([headers, ...rows], "gouka_import_batches.csv")}>CSV导出</button>
