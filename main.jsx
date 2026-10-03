@@ -5979,15 +5979,12 @@ function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, 
       <h2>
         <Plus size={20} /> {editingId ? `编辑商品：${editingId}` : "新增商品"}
       </h2>
-      <div className="gouka-add-assist">
-        <div>
-          <h3>{addMissingCount ? `录入检查：还差 ${addMissingCount} 项` : "录入检查：核心资料已齐"}</h3>
-          
-        </div>
+      <details className="erp-fold gouka-add-assist">
+        <summary>{addMissingCount ? "录入检查：还差 " + addMissingCount + " 项" : "录入检查：核心资料已齐"}</summary>
         <div className="gouka-check-list">
           {addChecks.map((x) => <div key={x.label} className={"gouka-check-item " + (x.ok ? "ok" : "warn")}>{x.ok ? "已填" : "未填"} · {x.label}</div>)}
         </div>
-      </div>
+      </details>
 
       <div className="formgrid">
         <FormSectionTitle title="1. 采购基础 / 商品信息" subtitle="先填采购日期、品类、品牌、商品名。中文为主，括号内保留日文/英文，方便日本员工查看。" />
