@@ -6922,8 +6922,8 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
       <div className="erp-inventory-viewbar">
         <span>当前显示 {inventoryItems.length} 件</span>
         <div className="erp-view-switch" role="group" aria-label="库存列表视图">
-          <button aria-pressed={inventoryView === "daily"} onClick={() => setInventoryView("daily")}>日常列表</button>
-          <button aria-pressed={inventoryView === "full"} onClick={() => setInventoryView("full")}>完整明细</button>
+          <button className={inventoryView === "daily" ? "active" : "ghost"} aria-pressed={inventoryView === "daily"} onClick={() => setInventoryView("daily")}>日常列表</button>
+          <button className={inventoryView === "full" ? "active" : "ghost"} aria-pressed={inventoryView === "full"} onClick={() => setInventoryView("full")}>完整明细</button>
         </div>
       </div>
       {inventoryPager}
@@ -8781,8 +8781,8 @@ function ListingManagement({ items, updateListingItem, editItem, setPreviewImage
     <div className="panel">
       <h2><Package size={20} /> 出品管理</h2>
       <div className="erp-view-switch erp-listing-tabs" role="group" aria-label="出品流程">
-        {kanbanStatuses.map((status) => <button key={status} aria-pressed={listingView === status} onClick={() => { setListingView(status); setEditingPlatformId(null); }}>{status} {counts[status] || 0}</button>)}
-        <button aria-pressed={listingView === "全部流程"} onClick={() => { setListingView("全部流程"); setEditingPlatformId(null); }}>全部流程</button>
+        {kanbanStatuses.map((status) => <button key={status} className={listingView === status ? "active" : "ghost"} aria-pressed={listingView === status} onClick={() => { setListingView(status); setEditingPlatformId(null); }}>{status} {counts[status] || 0}</button>)}
+        <button className={listingView === "全部流程" ? "active" : "ghost"} aria-pressed={listingView === "全部流程"} onClick={() => { setListingView("全部流程"); setEditingPlatformId(null); }}>全部流程</button>
       </div>
 
       <div className="toolbar" style={{marginBottom:"16px"}}>
