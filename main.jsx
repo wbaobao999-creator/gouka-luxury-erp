@@ -8907,6 +8907,10 @@ function SalesReport({ items, updateListingItem, downloadCSV }) {
   const [salesDraft, setSalesDraft] = useState(null);
   const [detailSales, setDetailSales] = useState(null);
 
+  React.useEffect(() => {
+    if (editingSalesId) document.querySelector(".sales-center-form")?.scrollIntoView({ block: "start" });
+  }, [editingSalesId]);
+
   const salesStatuses = ["销售准备", "已成交", "已发货", "已签收", "已回款", "已完成", "已取消", "已退款"];
   const platformOptions = LISTING_PLATFORMS || ["Mercari", "Yahoo", "楽天", "NBAA", "ECO Ring", "OBA", "店铺", "其他"];
 
