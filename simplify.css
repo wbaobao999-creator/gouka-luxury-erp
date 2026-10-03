@@ -43,3 +43,6 @@
   .erp-listing-column .listing-compact-row { flex-wrap: wrap; }
   .erp-listing-column .listing-compact-actions { width: 100%; flex-wrap: wrap; }
 }
+
+.erp-listing-column .listing-compact-row { border-radius: 6px; }
+.erp-listing-column .listing-compact-main b { white-space: normal; }
