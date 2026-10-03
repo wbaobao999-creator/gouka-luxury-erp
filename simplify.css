@@ -21,3 +21,36 @@
 }
 
 .erp-empty-state { padding: 28px 12px !important; text-align: center; color: #64746c; }
+
+/* Daily tasks and full detail share the same records and handlers. */
+.erp-header-todos { position: relative; }
+.erp-header-todos > summary { cursor: pointer; padding: 8px 10px; border: 1px solid #d7e0dc; border-radius: 4px; font-size: 13px; font-weight: 600; white-space: nowrap; }
+.erp-todo-menu { position: absolute; right: 0; top: 100%; z-index: 30; min-width: 190px; padding: 8px; background: #fff; border: 1px solid #d7e0dc; box-shadow: 0 4px 12px #0002; display: grid; gap: 6px; }
+.erp-todo-menu button { width: 100%; text-align: left; }
+.erp-inventory-viewbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 12px 0; font-size: 13px; }
+.erp-listing-tabs { margin: 16px 0; }
+.erp-listing-board { display: grid; grid-template-columns: minmax(0,1fr); gap: 12px; align-items: start; }
+.erp-listing-board.all { grid-template-columns: repeat(5,minmax(220px,1fr)); overflow-x: auto; padding-bottom: 8px; }
+.erp-listing-column { background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px; min-width: 0; }
+.erp-listing-column[hidden] { display: none; }
+.erp-listing-column .listing-compact-row { min-width: 0; }
+.erp-listing-column .listing-compact-main { overflow-wrap: anywhere; }
+.sales-center-form:has(.sales-draft-grid) { scroll-margin-top: 16px; }
+@media (max-width:700px) {
+  .erp-todo-menu { position: static; box-shadow: none; margin-top: 6px; }
+  .erp-header-todos { max-width: 100%; }
+  .erp-inventory-viewbar .erp-view-switch { display: none; }
+  .erp-listing-column .listing-compact-row { flex-wrap: wrap; }
+  .erp-listing-column .listing-compact-actions { width: 100%; flex-wrap: wrap; }
+}
+
+.erp-listing-column .listing-compact-row { border-radius: 6px; }
+.erp-listing-column .listing-compact-main b { white-space: normal; }
+
+@media (max-width:700px) {
+  .sales-center > .grid4 { grid-template-columns: repeat(2,minmax(0,1fr)) !important; gap: 8px; }
+  .sales-center > .grid4 > .card { padding: 12px; min-width: 0; }
+  .sales-center > .grid4 > .card > div { display: none; }
+  .sales-center > .grid4 > .card p { font-size: 12px; margin: 0 0 8px; }
+  .sales-center > .grid4 > .card h2 { font-size: 18px; line-height: 1.3; overflow-wrap: anywhere; }
+}
