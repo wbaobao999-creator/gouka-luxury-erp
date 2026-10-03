@@ -2,6 +2,7 @@ import React, { useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Package, FileText, Calculator, Search, Plus, Building2, Download, Edit3, Trash2, ImagePlus, Save, X, Lock, Database, Upload } from "lucide-react";
 import "./style.css";
+import "./simplify.css";
 import { getCloudItems, upsertCloudItem, deleteItemCloud, uploadItemImages, deleteProductImages, uploadImportBatchAttachments } from "./itemService.js";
 
 
@@ -5064,7 +5065,7 @@ function App() {
         {tab === "auction" && (canAccessTab("auction") ? <JapaneseAuctionPanel items={computedItems} downloadCSV={downloadCSV} setPreviewImage={setPreviewImage} setPreviewScale={setPreviewScale} exportItemPdf={canExportBusinessPdf ? exportItemPdf : null} /> : <RestrictedPanel message={restrictedTabMessage} />)}
         {tab === "inventory" && (
           <Inventory
-            items={filtered}
+            items={computedItems}
             query={query}
             setQuery={setQuery}
             statusFilter={statusFilter}
@@ -5082,11 +5083,11 @@ function App() {
             quickSignal={inventoryQuickSignal}
           />
         )}
-        {tab === "ledger" && (canAccessTab("ledger") ? <Ledger items={filtered} setItems={canEditBusiness ? setItems : (() => {})} isOwner={isOwner} downloadCSV={downloadCSV} exportItemPdf={canExportBusinessPdf ? exportItemPdf : null} /> : <RestrictedPanel message={restrictedTabMessage} />)}
+        {tab === "ledger" && (canAccessTab("ledger") ? <Ledger items={computedItems} editItem={canEditBusiness ? editItem : null} setItems={canEditBusiness ? setItems : (() => {})} isOwner={isOwner} downloadCSV={downloadCSV} exportItemPdf={canExportBusinessPdf ? exportItemPdf : null} /> : <RestrictedPanel message={restrictedTabMessage} />)}
         {tab === "customsBatch" && (canAccessTab("customsBatch") ? <CustomsBatchPanel batches={customsBatches} setBatches={isOwner ? setCustomsBatches : (() => {})} items={computedItems} setItems={isOwner ? setItems : null} downloadCSV={downloadCSV} canEdit={isOwner} onGlobalSave={requestGlobalCloudSave} /> : <RestrictedPanel message={restrictedTabMessage} />)}
-        {tab === "customs" && (canAccessTab("customs") ? <Customs items={filtered} customsBatches={customsBatches} downloadCSV={downloadCSV} /> : <RestrictedPanel message={restrictedTabMessage} />)}
-        {tab === "profit" && (canAccessTab("profit") ? <Profit items={filtered} /> : <RestrictedPanel message={restrictedTabMessage} />)}
-        {tab === "tax" && (canAccessTab("tax") ? <TaxReport items={filtered} totals={totals} customsBatches={customsBatches} downloadCSV={downloadCSV} /> : <RestrictedPanel message={restrictedTabMessage} />)}
+        {tab === "customs" && (canAccessTab("customs") ? <Customs items={computedItems} customsBatches={customsBatches} downloadCSV={downloadCSV} /> : <RestrictedPanel message={restrictedTabMessage} />)}
+        {tab === "profit" && (canAccessTab("profit") ? <Profit items={computedItems} /> : <RestrictedPanel message={restrictedTabMessage} />)}
+        {tab === "tax" && (canAccessTab("tax") ? <TaxReport items={computedItems} totals={totals} customsBatches={customsBatches} downloadCSV={downloadCSV} /> : <RestrictedPanel message={restrictedTabMessage} />)}
         {tab === "listing" && (canAccessTab("listing") ? <ListingManagement items={computedItems} updateListingItem={canEditBusiness ? updateListingItem : (() => {})} editItem={canEditBusiness ? editItem : null} setPreviewImage={setPreviewImage} setPreviewScale={setPreviewScale} /> : <RestrictedPanel message={restrictedTabMessage} />)}
         {tab === "sales" && (canAccessTab("sales") ? <SalesReport items={computedItems} updateListingItem={canEditBusiness ? updateListingItem : null} downloadCSV={downloadCSV} /> : <RestrictedPanel message={restrictedTabMessage} />)}
         {tab === "pdf" && (canAccessTab("pdf") && canExportBusinessPdf ? <PdfExportPanel items={computedItems} totals={totals} exportInventoryPdf={exportInventoryPdf} exportLedgerPdf={exportLedgerPdf} exportCustomsPdf={exportCustomsPdf} exportItemPdf={exportItemPdf} exportAuctionPdf={exportAuctionPdf} exportTaxPdf={exportTaxPdf} /> : <RestrictedPanel message={restrictedTabMessage} />)}
@@ -5373,7 +5374,7 @@ function Dashboard({ totals, items, setTab, openInventorySignal = null, exportBa
         <div className="gouka-simple-home-head">
           <div>
             <h2>今天先处理这几件事</h2>
-            <p>入口只保留日常最常用的操作。新增、查库存、出品、报关、销售先走这里，分析和备份放在下面慢慢看。</p>
+            
           </div>
           <div className="gouka-simple-home-total">
             <small>当前库存资金</small>
@@ -5434,6 +5435,7 @@ function Dashboard({ totals, items, setTab, openInventorySignal = null, exportBa
         </div>
       </div>
 
+      <details className="erp-fold erp-dashboard-analysis"><summary>经营分析与更多工具</summary>
       <div className="v3-hero">
         <div>
           <span className="v3-kicker">GOUKA ERP</span>
@@ -5746,6 +5748,7 @@ function Dashboard({ totals, items, setTab, openInventorySignal = null, exportBa
         <h2>经营提醒</h2>
         <p>V7.11新增今日经营、库存预警、品牌利润排行、供应商利润排行。Enterprise 3.0：优化出品管理优先级、统一图片尺寸、菜单按日常业务重新排序；保留云端同步、PDF、古物台账和全页面图片。</p>
       </div>
+      </details>
     </section>
   );
 }
@@ -5976,16 +5979,12 @@ function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, 
       <h2>
         <Plus size={20} /> {editingId ? `编辑商品：${editingId}` : "新增商品"}
       </h2>
-      <div className="gouka-add-assist">
-        <div>
-          <h3>{addMissingCount ? `录入检查：还差 ${addMissingCount} 项` : "录入检查：核心资料已齐"}</h3>
-          <p>先把采购日、品牌、商品名、图片、采购金额和来源填好，后面库存、古物台账、PDF和同步会更稳。</p>
-        </div>
+      <details className="erp-fold gouka-add-assist">
+        <summary>{addMissingCount ? "录入检查：还差 " + addMissingCount + " 项" : "录入检查：核心资料已齐"}</summary>
         <div className="gouka-check-list">
           {addChecks.map((x) => <div key={x.label} className={"gouka-check-item " + (x.ok ? "ok" : "warn")}>{x.ok ? "已填" : "未填"} · {x.label}</div>)}
         </div>
-      </div>
-      <p className="note addform-guide">建议按顺序录入：采购基础 → 商品识别 → 成本税费 → 来源台账 → 报关/拍卖 → 图片备注。带金额的字段会实时影响库存成本和预估差额。</p>
+      </details>
 
       <div className="formgrid">
         <FormSectionTitle title="1. 采购基础 / 商品信息" subtitle="先填采购日期、品类、品牌、商品名。中文为主，括号内保留日文/英文，方便日本员工查看。" />
@@ -6007,85 +6006,6 @@ function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, 
 
         <Input label="数量 / Qty" type="number" value={form.qty} onChange={(v) => set("qty", v)} />
 
-        <FormSectionTitle title="2. 成本与预计售价 / 金额" subtitle="采购金额、汇率、申报金额、运费和费用会进入实时利润预览。预计销售额可先空着，待办中心会提醒。" />
-
-        <Select label="采购币种 / Purchase Currency" value={form.purchaseCurrency || "CNY"} onChange={setPurchaseCurrency} options={CURRENCY_OPTIONS} />
-        <Input label={`采购金额 ${form.purchaseCurrency || "CNY"}`} type="number" value={form.purchaseCny} onChange={(v) => set("purchaseCny", v)} />
-        <Input label={`${form.purchaseCurrency || "CNY"}→JPY 汇率`} type="number" value={form.purchaseRateToJpy || defaultRateFor(form.purchaseCurrency || "CNY")} onChange={(v) => set("purchaseRateToJpy", v)} />
-
-        <Select label="申报币种 / Declared Currency" value={form.declaredCurrency || form.purchaseCurrency || "CNY"} onChange={setDeclaredCurrency} options={CURRENCY_OPTIONS} />
-        <Input label={`申报金额 ${form.declaredCurrency || "CNY"}`} type="number" value={form.declaredCny} onChange={(v) => set("declaredCny", v)} />
-        <Input label={`${form.declaredCurrency || "CNY"}→JPY 汇率`} type="number" value={form.declaredRateToJpy || defaultRateFor(form.declaredCurrency || "CNY")} onChange={(v) => set("declaredRateToJpy", v)} />
-
-        <Input label="预计销售额 JPY（税込）/ 预估卖价" type="number" value={form.saleJpy} onChange={(v) => set("saleJpy", v)} />
-
-        <Input label="EMS/国际运费 JPY / Shipping" type="number" value={form.shippingJpy || ""} onChange={(v) => set("shippingJpy", v)} />
-        <Select label="关税币种 / Duty Currency" value={form.dutyCurrency || "JPY"} onChange={(v) => setFxCurrency("dutyCurrency", "dutyRateToJpy", "dutyJpy", "dutyAmount", v)} options={CURRENCY_OPTIONS} />
-        <Input label={`关税金额 ${form.dutyCurrency || "JPY"} / Duty`} type="number" value={form.dutyAmount ?? form.dutyJpy ?? ""} onChange={(v) => setFxAmount("dutyAmount", "dutyCurrency", "dutyRateToJpy", "dutyJpy", v)} />
-        <Input label={`${form.dutyCurrency || "JPY"}→JPY 汇率 / Duty Rate`} type="number" value={form.dutyRateToJpy || defaultRateFor(form.dutyCurrency || "JPY")} onChange={(v) => setFxRate("dutyRateToJpy", "dutyAmount", "dutyCurrency", "dutyJpy", v)} />
-        <Input label="报关代行费 JPY / Customs Fee" type="number" value={form.customsFeeJpy || ""} onChange={(v) => set("customsFeeJpy", v)} />
-        <Input label="拍卖/平台手续费 JPY / Platform Fee" type="number" value={form.platformFeeJpy || ""} onChange={(v) => set("platformFeeJpy", v)} />
-        <Select label="其他费用币种 / Other Currency" value={form.otherCostCurrency || "JPY"} onChange={(v) => setFxCurrency("otherCostCurrency", "otherCostRateToJpy", "otherCostJpy", "otherCostAmount", v)} options={CURRENCY_OPTIONS} />
-        <Input label={`其他费用金额 ${form.otherCostCurrency || "JPY"} / Other Cost`} type="number" value={form.otherCostAmount ?? form.otherCostJpy ?? ""} onChange={(v) => setFxAmount("otherCostAmount", "otherCostCurrency", "otherCostRateToJpy", "otherCostJpy", v)} />
-        <Input label={`${form.otherCostCurrency || "JPY"}→JPY 汇率 / Other Rate`} type="number" value={form.otherCostRateToJpy || defaultRateFor(form.otherCostCurrency || "JPY")} onChange={(v) => setFxRate("otherCostRateToJpy", "otherCostAmount", "otherCostCurrency", "otherCostJpy", v)} />
-
-        <FormSectionTitle title="3. 来源与古物台账 / 仕入信息" subtitle="供应商、地址、本人确认方式会进入古物台账。这里尽量填完整，后面查账会轻松很多。" />
-
-        <SelectWithOther label="供应商 / 来源 / 仕入先" value={form.source} onChange={setSourceFromSupplier} options={sourceOptions} placeholder="选择来源：中国供应商 / 日本拍卖 / 店铺；找不到选其他" />
-
-        <Input label="供应商地址 / Address" value={form.address} onChange={(v) => set("address", v)} placeholder="输入供应商地址，中国或日本地址都可以" />
-
-        <SelectWithOther label="本人确认方式 / ID Check" value={form.idCheck} onChange={(v) => set("idCheck", v)} options={dictionaries.idChecks} placeholder="选择本人确认：供应商发票 / 免许证确认 / 护照等" />
-
-        <Select label="状态 / Status" value={form.status} onChange={(v) => set("status", v)} options={WORKFLOW_STATUSES} />
-
-        <SelectWithOther label="平台 / 运输方式 / Platform" value={form.platform} onChange={(v) => set("platform", v)} options={dictionaries.platforms} placeholder="选择平台/运输：EMS / NBAA / Mercari / 店铺等" />
-
-        <Select label="所属报关批次 / Customs Batch" value={form.customsBatchId || ""} onChange={(v) => set("customsBatchId", v)} options={["", ...(customsBatches || []).map((b) => b.id)]} />
-
-        <FormSectionTitle title="4. 报关 / 日本拍卖 / 精算信息" subtitle="中国进货一般看报关批次；日本拍卖商品在这里填落札信息，方便后续税务、PDF和古物台账。" />
-
-        <AuctionSettlementBox form={form} setForm={setForm} />
-
-        <div className="full panel" style={{ background: "#f8fafc", padding: "16px" }}>
-          <h3 style={{ marginTop: 0 }}>5. 实时成本与预估预览</h3>
-          <div className="grid4">
-            <Card icon={<Calculator />} title="基础采购成本" value={jpy(preview.baseCostJpy)} />
-            <Card icon={<Calculator />} title="附加成本合计" value={jpy(preview.extraCostJpy)} />
-            <Card icon={<Calculator />} title="真实总成本" value={jpy(preview.costJpy)} />
-            <Card icon={<Calculator />} title="预计毛利" value={jpy(preview.grossProfit)} />
-          </div>
-          <p className="note">
-            采购换算：{jpy(preview.baseCostJpy)}　申报换算：{jpy(preview.declaredJpy)}　利润率：{(preview.margin || 0).toFixed(1)}%　销售消费税参考：{jpy(preview.outputTax)}　进项消费税估算：{jpy(preview.inputTax)}　批次分摊成本：{jpy(Number(form.batchAllocatedDutyJpy || 0) + Number(form.batchAllocatedShippingJpy || 0) + Number(form.batchAllocatedCustomsFeeJpy || 0) + Number(form.batchAllocatedOtherCostJpy || 0))}
-          </p>
-          {!!preview.warnings?.length && (
-            <div className="note" style={{ color: "#b45309", background: "#fff7ed", padding: "10px", borderRadius: "10px" }}>
-              ⚠️ {preview.warnings.join(" / ")}
-            </div>
-          )}
-          <div className="action-row">
-            <button className="ghost" type="button" onClick={() => copyText(makePlatformTitle(form, "mercari"))}>复制Mercari标题</button>
-            <button className="ghost" type="button" onClick={() => copyText(makePlatformTitle(form, "yahoo"))}>复制Yahoo标题</button>
-            <button className="ghost" type="button" onClick={() => copyText(makePlatformTitle(form, "rakuten"))}>复制乐天标题</button>
-          </div>
-        </div>
-
-        <FormSectionTitle title="6. 销售状态 / Sold Info" subtitle="未销售商品可以跳过。状态切换为已售后，再填写销售日期、平台和实际销售额。" />
-
-        {isSoldStatus(form.status) && (
-          <>
-            <Input label="销售日期" type="date" value={form.soldDate || ""} onChange={(v) => set("soldDate", v)} />
-            <Input label="销售平台" value={form.soldPlatform || ""} onChange={(v) => set("soldPlatform", v)} placeholder="EcoRing / Mercari / 店铺 / 其他" />
-            <Input label="实际销售额 JPY（税込）" type="number" value={form.soldPriceJpy || ""} onChange={(v) => set("soldPriceJpy", v)} />
-            <label className="full">
-              销售备注
-              <textarea value={form.soldMemo || ""} onChange={(e) => set("soldMemo", e.target.value)} placeholder="拍卖成交 / 线下销售 / 买家备注" />
-            </label>
-          </>
-        )}
-
-        <FormSectionTitle title="7. 图片与备注 / Photos & Memo" subtitle="建议每件商品至少上传正面、细节、瑕疵/编号图，方便库存确认和出品。" />
-
         <label
           className="full"
           onDragOver={(e) => e.preventDefault()}
@@ -6106,6 +6026,93 @@ function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, 
             </div>
           ))}
         </div>
+
+
+
+        <FormSectionTitle title="2. 成本与预计售价 / 金额" subtitle="采购金额、汇率、申报金额、运费和费用会进入实时利润预览。预计销售额可先空着，待办中心会提醒。" />
+
+        <Select label="采购币种 / Purchase Currency" value={form.purchaseCurrency || "CNY"} onChange={setPurchaseCurrency} options={CURRENCY_OPTIONS} />
+        <Input label={`采购金额 ${form.purchaseCurrency || "CNY"}`} type="number" value={form.purchaseCny} onChange={(v) => set("purchaseCny", v)} />
+        <Input label={`${form.purchaseCurrency || "CNY"}→JPY 汇率`} type="number" value={form.purchaseRateToJpy || defaultRateFor(form.purchaseCurrency || "CNY")} onChange={(v) => set("purchaseRateToJpy", v)} />
+
+        <Input label="预计销售额 JPY（税込）/ 预估卖价" type="number" value={form.saleJpy} onChange={(v) => set("saleJpy", v)} />
+        <details className="erp-fold full">
+          <summary>申报金额与附加费用</summary>
+          <div className="formgrid">
+        <Select label="申报币种 / Declared Currency" value={form.declaredCurrency || form.purchaseCurrency || "CNY"} onChange={setDeclaredCurrency} options={CURRENCY_OPTIONS} />
+        <Input label={`申报金额 ${form.declaredCurrency || "CNY"}`} type="number" value={form.declaredCny} onChange={(v) => set("declaredCny", v)} />
+        <Input label={`${form.declaredCurrency || "CNY"}→JPY 汇率`} type="number" value={form.declaredRateToJpy || defaultRateFor(form.declaredCurrency || "CNY")} onChange={(v) => set("declaredRateToJpy", v)} />
+
+
+
+        <Input label="EMS/国际运费 JPY / Shipping" type="number" value={form.shippingJpy || ""} onChange={(v) => set("shippingJpy", v)} />
+        <Select label="关税币种 / Duty Currency" value={form.dutyCurrency || "JPY"} onChange={(v) => setFxCurrency("dutyCurrency", "dutyRateToJpy", "dutyJpy", "dutyAmount", v)} options={CURRENCY_OPTIONS} />
+        <Input label={`关税金额 ${form.dutyCurrency || "JPY"} / Duty`} type="number" value={form.dutyAmount ?? form.dutyJpy ?? ""} onChange={(v) => setFxAmount("dutyAmount", "dutyCurrency", "dutyRateToJpy", "dutyJpy", v)} />
+        <Input label={`${form.dutyCurrency || "JPY"}→JPY 汇率 / Duty Rate`} type="number" value={form.dutyRateToJpy || defaultRateFor(form.dutyCurrency || "JPY")} onChange={(v) => setFxRate("dutyRateToJpy", "dutyAmount", "dutyCurrency", "dutyJpy", v)} />
+        <Input label="报关代行费 JPY / Customs Fee" type="number" value={form.customsFeeJpy || ""} onChange={(v) => set("customsFeeJpy", v)} />
+        <Input label="拍卖/平台手续费 JPY / Platform Fee" type="number" value={form.platformFeeJpy || ""} onChange={(v) => set("platformFeeJpy", v)} />
+        <Select label="其他费用币种 / Other Currency" value={form.otherCostCurrency || "JPY"} onChange={(v) => setFxCurrency("otherCostCurrency", "otherCostRateToJpy", "otherCostJpy", "otherCostAmount", v)} options={CURRENCY_OPTIONS} />
+        <Input label={`其他费用金额 ${form.otherCostCurrency || "JPY"} / Other Cost`} type="number" value={form.otherCostAmount ?? form.otherCostJpy ?? ""} onChange={(v) => setFxAmount("otherCostAmount", "otherCostCurrency", "otherCostRateToJpy", "otherCostJpy", v)} />
+        <Input label={`${form.otherCostCurrency || "JPY"}→JPY 汇率 / Other Rate`} type="number" value={form.otherCostRateToJpy || defaultRateFor(form.otherCostCurrency || "JPY")} onChange={(v) => setFxRate("otherCostRateToJpy", "otherCostAmount", "otherCostCurrency", "otherCostJpy", v)} />
+
+          </div>
+        </details>
+        <FormSectionTitle title="3. 来源与古物台账 / 仕入信息" subtitle="供应商、地址、本人确认方式会进入古物台账。这里尽量填完整，后面查账会轻松很多。" />
+
+        <SelectWithOther label="供应商 / 来源 / 仕入先" value={form.source} onChange={setSourceFromSupplier} options={sourceOptions} placeholder="选择来源：中国供应商 / 日本拍卖 / 店铺；找不到选其他" />
+
+        <Input label="供应商地址 / Address" value={form.address} onChange={(v) => set("address", v)} placeholder="输入供应商地址，中国或日本地址都可以" />
+
+        <SelectWithOther label="本人确认方式 / ID Check" value={form.idCheck} onChange={(v) => set("idCheck", v)} options={dictionaries.idChecks} placeholder="选择本人确认：供应商发票 / 免许证确认 / 护照等" />
+
+        <Select label="状态 / Status" value={form.status} onChange={(v) => set("status", v)} options={WORKFLOW_STATUSES} />
+
+        <SelectWithOther label="平台 / 运输方式 / Platform" value={form.platform} onChange={(v) => set("platform", v)} options={dictionaries.platforms} placeholder="选择平台/运输：EMS / NBAA / Mercari / 店铺等" />
+
+        <Select label="所属报关批次 / Customs Batch" value={form.customsBatchId || ""} onChange={(v) => set("customsBatchId", v)} options={["", ...(customsBatches || []).map((b) => b.id)]} />
+
+<details className="erp-fold full" key={editingId || "new"} open={isJapaneseAuctionLike(form)}>
+          <summary>日本拍卖结算</summary>
+          <AuctionSettlementBox form={form} setForm={setForm} />
+        </details>
+
+        <details className="erp-fold full">
+          <summary>成本与利润预览 · {jpy(preview.costJpy)}</summary>
+          <div className="grid4">
+            <Card icon={<Calculator />} title="基础采购成本" value={jpy(preview.baseCostJpy)} />
+            <Card icon={<Calculator />} title="附加成本合计" value={jpy(preview.extraCostJpy)} />
+            <Card icon={<Calculator />} title="真实总成本" value={jpy(preview.costJpy)} />
+            <Card icon={<Calculator />} title="预计毛利" value={jpy(preview.grossProfit)} />
+          </div>
+          <p className="note">
+            采购换算：{jpy(preview.baseCostJpy)}　申报换算：{jpy(preview.declaredJpy)}　利润率：{(preview.margin || 0).toFixed(1)}%　销售消费税参考：{jpy(preview.outputTax)}　进项消费税估算：{jpy(preview.inputTax)}　批次分摊成本：{jpy(Number(form.batchAllocatedDutyJpy || 0) + Number(form.batchAllocatedShippingJpy || 0) + Number(form.batchAllocatedCustomsFeeJpy || 0) + Number(form.batchAllocatedOtherCostJpy || 0))}
+          </p>
+          {!!preview.warnings?.length && (
+            <div className="note" style={{ color: "#b45309", background: "#fff7ed", padding: "10px", borderRadius: "10px" }}>
+              ⚠️ {preview.warnings.join(" / ")}
+            </div>
+          )}
+          <div className="action-row">
+            <button className="ghost" type="button" onClick={() => copyText(makePlatformTitle(form, "mercari"))}>复制Mercari标题</button>
+            <button className="ghost" type="button" onClick={() => copyText(makePlatformTitle(form, "yahoo"))}>复制Yahoo标题</button>
+            <button className="ghost" type="button" onClick={() => copyText(makePlatformTitle(form, "rakuten"))}>复制乐天标题</button>
+          </div>
+        </details>
+
+        {isSoldStatus(form.status) && (
+          <>
+            <FormSectionTitle title="销售信息" />
+            <Input label="销售日期" type="date" value={form.soldDate || ""} onChange={(v) => set("soldDate", v)} />
+            <Input label="销售平台" value={form.soldPlatform || ""} onChange={(v) => set("soldPlatform", v)} placeholder="EcoRing / Mercari / 店铺 / 其他" />
+            <Input label="实际销售额 JPY（税込）" type="number" value={form.soldPriceJpy || ""} onChange={(v) => set("soldPriceJpy", v)} />
+            <label className="full">
+              销售备注
+              <textarea value={form.soldMemo || ""} onChange={(e) => set("soldMemo", e.target.value)} placeholder="拍卖成交 / 线下销售 / 买家备注" />
+            </label>
+          </>
+        )}
+
+        <FormSectionTitle title="备注" />
 
         <label className="full">
           备注
@@ -6411,7 +6418,7 @@ function NbaaProductRecordDetail({ item, onClose, exportItemPdf, isOwner = true 
           <RecordField label="备注" value={displayMemo(item)} full />
         </RecordCard>
 
-        <RecordCard title="来源追溯" summary={[trace.kind, trace.supplier, evidence.status].filter(Boolean).join(" / ")} defaultOpen>
+        <RecordCard title="来源追溯" summary={[trace.kind, trace.supplier, evidence.status].filter(Boolean).join(" / ")} defaultOpen={false}>
           <RecordField label="采购类型" value={trace.kind} />
           <RecordField label="仕入先" value={trace.supplier} />
           <RecordField label="地址" value={trace.address} />
@@ -6443,7 +6450,7 @@ function NbaaProductRecordDetail({ item, onClose, exportItemPdf, isOwner = true 
         </RecordCard>
 
         {isChinaPurchaseRecord && (
-          <RecordCard title="Import Batch" summary={[productImportBatch.id, productImportBatch.emsNo, productImportBatch.customsDeclarationNo].filter(Boolean).join(" / ")} defaultOpen>
+          <RecordCard title="Import Batch" summary={[productImportBatch.id, productImportBatch.emsNo, productImportBatch.customsDeclarationNo].filter(Boolean).join(" / ")} defaultOpen={!!productImportBatch.id}>
             <RecordField label="Import Batch ID" value={productImportBatch.id || item.customsBatchId || item.importBatchId} />
             <RecordField label="EMS单号" value={productImportBatch.emsNo || item.emsNo || item.emsTrackingNo} />
             <RecordField label="报关编号" value={productImportBatch.customsDeclarationNo || item.customsDeclarationNo} />
@@ -6457,7 +6464,7 @@ function NbaaProductRecordDetail({ item, onClose, exportItemPdf, isOwner = true 
         )}
 
         {isJapanAuctionRecord && (
-          <RecordCard title="Auction Record" summary={auction ? [auction.platform || auction.auctionHouse, auction.auctionCode, jpy(paymentTotal)].filter(Boolean).join(" / ") : ""} defaultOpen>
+          <RecordCard title="Auction Record" summary={auction ? [auction.platform || auction.auctionHouse, auction.auctionCode, jpy(paymentTotal)].filter(Boolean).join(" / ") : ""} defaultOpen={!!auction}>
             <RecordField label="拍卖会" value={auction?.platform || auction?.auctionHouse} />
             <RecordField label="Lot" value={auction?.lotNo} />
             <RecordField label="箱番" value={auction?.boxNo} />
@@ -6535,7 +6542,7 @@ function NbaaProductRecordDetail({ item, onClose, exportItemPdf, isOwner = true 
           <RecordField label="利润率" value={saleJpy ? `${Number(t.margin || 0).toFixed(1)}%` : ""} />
         </RecordCard>
 
-        <RecordCard title="资金流水" summary="采购 → 进口 → 销售 → 到账 → 利润" defaultOpen>
+        <RecordCard title="资金流水" summary="采购 → 进口 → 销售 → 到账 → 利润" defaultOpen={false}>
           <RecordField label="采购/落札付款" value={jpy(paymentTotal)} />
           <RecordField label="Import Batch" value={importBatch.id || item.customsBatchId || ""} />
           <RecordField label="EMS单号" value={importBatch.emsNo || item.emsNo || ""} />
@@ -6668,7 +6675,11 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
     if (stockSignalFilter === "库存365日以上") return !sales.sold && stockDays(x) >= 365;
     return true;
   }
-  const inventoryItems = allInventoryItems.filter((x) => passesSourceGroup(x) && (evidenceFilter === "全部" || buildEvidenceCheck(x).status === evidenceFilter) && passesStockSignal(x));
+  const inventoryItems = allInventoryItems.filter((x) =>
+    (!query || Object.values(x).join(" ").toLowerCase().includes(query.toLowerCase())) &&
+    (statusFilter === "全部" || x.status === statusFilter) &&
+    passesSourceGroup(x) && (evidenceFilter === "全部" || buildEvidenceCheck(x).status === evidenceFilter) && passesStockSignal(x)
+  );
   const totalPages = Math.max(1, Math.ceil(inventoryItems.length / pageSize));
   const currentPage = Math.min(page, totalPages);
   const pageItems = inventoryItems.slice((currentPage - 1) * pageSize, currentPage * pageSize);
@@ -6844,6 +6855,7 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
           </button>
         ))}
       </div>
+      <details className="erp-fold"><summary>更多筛选</summary>
       <div className="filter-row" style={{ marginBottom: "14px" }}>
         <label>
           资料状态
@@ -6851,26 +6863,22 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
             {evidenceOptions.map((x) => <option key={x} value={x}>{x}</option>)}
           </select>
         </label>
-        <button className="ghost" onClick={() => setEvidenceFilter("缺资料")}>只看缺资料</button>
-        <button className="ghost" onClick={() => setEvidenceFilter("需补充")}>只看需补充</button>
-        <button className="ghost" onClick={() => setEvidenceFilter("全部")}>显示全部</button>
         <label>
           库存信号
           <select value={stockSignalFilter} onChange={(e) => setStockSignalFilter(e.target.value)}>
             {stockSignalOptions.map((x) => <option key={x} value={x}>{x}</option>)}
           </select>
         </label>
-        <button className="ghost" onClick={() => setStockSignalFilter("未设预计售价")}>只看未设售价</button>
-        <button className="ghost" onClick={() => setStockSignalFilter("无图片")}>只看无图片</button>
-        <button className="ghost" onClick={() => setStockSignalFilter("全部")}>清除库存信号</button>
         <span className="note">当前显示 {inventoryItems.length} 件 / 全部 {allInventoryItems.length} 件</span>
       </div>
-      {(stockSignalFilter !== "全部" || evidenceFilter !== "全部" || sourceGroupFilter !== "全部来源") && (
+      </details>
+      {(query || statusFilter !== "全部" || stockSignalFilter !== "全部" || evidenceFilter !== "全部" || sourceGroupFilter !== "全部来源") && (
         <div className="gouka-active-filter">
           <span>当前筛选：来源 {sourceGroupFilter} · 资料 {evidenceFilter} · 库存信号 {stockSignalFilter} · 显示 {inventoryItems.length} 件</span>
-          <button className="ghost" onClick={() => { setSourceGroupFilter("全部来源"); setEvidenceFilter("全部"); setStockSignalFilter("全部"); }}>清除全部筛选</button>
+          <button className="ghost" onClick={() => { setSourceGroupFilter("全部来源"); setEvidenceFilter("全部"); setStockSignalFilter("全部"); setQuery(""); setStatusFilter("全部"); }}>清除全部筛选</button>
         </div>
       )}
+      <details className="erp-fold"><summary>库存统计与快捷筛选</summary>
       <div className="inventory-summary-grid">
         <button type="button" className="inventory-summary-card clickable" onClick={() => showSourceGroup("中国进货")}><small>中国进货</small><b>{sourceGroupSummary["中国进货"] || 0} 件</b><span className="inventory-action-hint">点击筛选</span></button>
         <button type="button" className="inventory-summary-card clickable" onClick={() => showSourceGroup("日本拍卖")}><small>日本拍卖</small><b>{sourceGroupSummary["日本拍卖"] || 0} 件</b><span className="inventory-action-hint">点击筛选</span></button>
@@ -6890,7 +6898,8 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
         <button type="button" className="inventory-summary-card clickable good" onClick={() => showEvidence("完整")}><small>资料完整</small><b>{inventorySummary.evidenceComplete} 件</b><span className="inventory-action-hint">点击查看</span></button>
         <button type="button" className="inventory-summary-card clickable warn" onClick={() => showStockSignal("库存365日以上")}><small>长期库存（365日以上）</small><b>{inventorySummary.longTerm} 件</b><span className="inventory-action-hint">点击处理</span></button>
       </div>
-      <p className="note">库存管理只显示日常查货字段：库龄、库位、来源、资料状态、库存成本、售价和利润。可按资料状态和库存信号筛出缺资料、未设售价、无图片或长期库存；税务、报关、销售明细请点「详情」进入 Product Record。</p>
+      </details>
+      
       <InventoryMobileCards
         items={pageItems}
         sourceGroupOf={sourceGroupOf}
@@ -7112,9 +7121,11 @@ function JapaneseAuctionPanel({ items, downloadCSV, setPreviewImage, setPreviewS
     </div>
   );
 }
-function Ledger({ items, setItems, isOwner, downloadCSV, exportItemPdf }) {
+function Ledger({ items, setItems, isOwner, downloadCSV, exportItemPdf, editItem = null }) {
   const [ledgerQuery, setLedgerQuery] = useState("");
   const [ledgerDate, setLedgerDate] = useState("");
+  const [ledgerMonth, setLedgerMonth] = useState("");
+  const [ledgerView, setLedgerView] = useState("list");
   const [ledgerDetailItem, setLedgerDetailItem] = useState(null);
   const [openLedgerIds, setOpenLedgerIds] = useState([]);
 
@@ -7189,7 +7200,7 @@ function Ledger({ items, setItems, isOwner, downloadCSV, exportItemPdf }) {
     ].join(" ").toLowerCase();
     const matchText = !q || text.includes(q);
     const matchDate = !ledgerDate || x.purchaseDate === ledgerDate;
-    return matchText && matchDate;
+    return matchText && matchDate && (!ledgerMonth || String(x.purchaseDate || "").startsWith(ledgerMonth));
   });
   const ledgerPageSize = 30;
   const [ledgerPage, setLedgerPage] = useState(1);
@@ -7199,7 +7210,7 @@ function Ledger({ items, setItems, isOwner, downloadCSV, exportItemPdf }) {
 
   React.useEffect(() => {
     setLedgerPage(1);
-  }, [ledgerQuery, ledgerDate]);
+  }, [ledgerQuery, ledgerDate, ledgerMonth]);
 
   React.useEffect(() => {
     if (ledgerPage > ledgerTotalPages) setLedgerPage(ledgerTotalPages);
@@ -7249,6 +7260,7 @@ function Ledger({ items, setItems, isOwner, downloadCSV, exportItemPdf }) {
       ledgerStatusLabel(x),
       latestHistoryText(x) || "—",
       <div className="table-actions">
+        {isOwner && editItem && <button className="edit" onClick={() => editItem(x)}>编辑商品</button>}
         <button className="ghost" onClick={() => setLedgerDetailItem(x)}>{auction ? "拍卖详情" : "商品档案"}</button>
         <button className="ghost" onClick={() => showLedgerHistory(x)}>履历</button>
         {isOwner && <button className="edit" onClick={() => correctLedger(x.id)}>更正</button>}
@@ -7282,18 +7294,23 @@ function Ledger({ items, setItems, isOwner, downloadCSV, exportItemPdf }) {
             <Search size={16} />
             <input placeholder="搜索编号 / 品牌 / 商品 / 供应商 / 落札コード" value={ledgerQuery} onChange={(e) => setLedgerQuery(e.target.value)} />
           </div>
-          <input type="date" value={ledgerDate} onChange={(e) => setLedgerDate(e.target.value)} />
-          <button onClick={() => { setLedgerQuery(""); setLedgerDate(""); }}>清除筛选</button>
-          <button className="ghost" onClick={() => setOpenLedgerIds(ledgerPageItems.map((x) => x.id))}>展开本页</button>
-          <button className="ghost" onClick={() => setOpenLedgerIds([])}>全部收起</button>
+          <label className="erp-inline-label">月份<input type="month" value={ledgerMonth} onChange={(e) => setLedgerMonth(e.target.value)} /></label>
+          <input type="date" aria-label="台账交易日期" value={ledgerDate} onChange={(e) => setLedgerDate(e.target.value)} />
+          <button onClick={() => { setLedgerQuery(""); setLedgerDate(""); setLedgerMonth(""); }}>清除筛选</button>
+          <div className="erp-view-switch" role="group" aria-label="台账视图">
+            {[["list", "登记列表"], ["original", "原始横表"], ["cards", "详细卡片"]].map(([value, label]) => <button key={value} aria-pressed={ledgerView === value} className={ledgerView === value ? "active" : "ghost"} onClick={() => setLedgerView(value)}>{label}</button>)}
+          </div>
+          {ledgerView === "cards" && <><button className="ghost" onClick={() => setOpenLedgerIds(ledgerPageItems.map((x) => x.id))}>展开本页</button><button className="ghost" onClick={() => setOpenLedgerIds([])}>全部收起</button></>}
           <button onClick={() => downloadCSV(csvRows, "gouka_kobutsu_ledger.csv")}>
             <Download size={16} /> CSV导出
           </button>
         </div>
       </div>
       <p className="note">
-        当前显示第 {filteredItems.length ? ledgerStart + 1 : 0} - {Math.min(ledgerStart + ledgerPageSize, filteredItems.length)} 件 / 筛选 {filteredItems.length} 件 / 全部 {items.length} 件。古物台账不支持物理删除，只能作废或更正；日本拍卖商品点击「拍卖详情」进入 Product Record。
+        当前显示第 {filteredItems.length ? ledgerStart + 1 : 0} - {Math.min(ledgerStart + ledgerPageSize, filteredItems.length)} 件 / 筛选 {filteredItems.length} 件 / 全部 {items.length} 件。
       </p>
+      {ledgerView !== "cards" && <Table headers={ledgerView === "original" ? headers : ["图片", "商品编号", "取引日", "品牌", "商品名", "实际支付金额", "相手方", "台账状态", "操作"]} rows={ledgerView === "original" ? rows : rows.map((row) => [row[0], row[1], row[2], row[5], row[6], row[10], row[14], row[19], row[21]])} />}
+      {ledgerView === "cards" && <>
       {ledgerPager}
       <div className="ledger-card-list">
         {(Array.isArray(ledgerPageItems) ? ledgerPageItems : []).map((x, i) => {
@@ -7363,6 +7380,7 @@ function Ledger({ items, setItems, isOwner, downloadCSV, exportItemPdf }) {
               <div className="ledger-card-image">
                 <ProductThumb item={x} />
                 <div className="ledger-card-actions">
+                  {isOwner && editItem && <button className="edit" onClick={() => editItem(x)}>编辑商品</button>}
                   <button className="ghost" onClick={() => setLedgerDetailItem(x)}>{auction ? "拍卖详情" : "商品档案"}</button>
                   <button className="ghost" onClick={() => showLedgerHistory(x)}>履历</button>
                   {isOwner && <button className="edit" onClick={() => correctLedger(x.id)}>更正</button>}
@@ -7378,10 +7396,7 @@ function Ledger({ items, setItems, isOwner, downloadCSV, exportItemPdf }) {
         })}
       </div>
       {ledgerPager}
-      <details className="ledger-original-table">
-        <summary>打开原始横表</summary>
-        <Table headers={headers} rows={rows} />
-      </details>
+      </>}
 
       {ledgerDetailItem && (
         <div className="image-modal" onClick={() => setLedgerDetailItem(null)}>
@@ -7398,6 +7413,8 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
   const emptyBatch = { id: "", name: "", emsNo: "", customsDeclarationNo: "", importDate: localDateString(), declaredTotalJpy: "", goodsValueJpy: "", goodsValueAmount: "", goodsValueCurrency: "JPY", goodsValueRateToJpy: "1", goodsCount: "", grossWeightKg: "", dutyJpy: "", dutyAmount: "", dutyCurrency: "JPY", dutyRateToJpy: "1", importConsumptionTaxJpy: "", importConsumptionTaxAmount: "", importConsumptionTaxCurrency: "JPY", importConsumptionTaxRateToJpy: "1", localConsumptionTaxJpy: "", localConsumptionTaxAmount: "", localConsumptionTaxCurrency: "JPY", localConsumptionTaxRateToJpy: "1", shippingJpy: "", internationalShippingAmount: "", internationalShippingCurrency: "JPY", internationalShippingRateToJpy: "1", internationalShippingJpy: "", customsFeeJpy: "", agencyFeeJpy: "", agencyFeeAmount: "", agencyFeeCurrency: "JPY", agencyFeeRateToJpy: "1", otherCostJpy: "", otherCostAmount: "", otherCostCurrency: "JPY", otherCostRateToJpy: "1", attachments: [], attachmentsText: "", memo: "" };
   const [form, setForm] = useState(emptyBatch);
   const [editingId, setEditingId] = useState(null);
+  const [showBatchForm, setShowBatchForm] = useState(!(batches || []).length);
+  const batchFormRef = React.useRef(null);
   const [activeBatchId, setActiveBatchId] = useState("");
   const [attachmentType, setAttachmentType] = useState("报关库存表");
   const [pendingBatchFiles, setPendingBatchFiles] = useState([]);
@@ -7476,6 +7493,8 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
 
   function reset() {
     if (batchSaveLock.current) return;
+    setShowBatchForm(true);
+    requestAnimationFrame(() => batchFormRef.current?.scrollIntoView({ block: "start" }));
     setPendingBatchFiles([]);
     setForm(emptyBatch);
     setEditingId(null);
@@ -7565,6 +7584,8 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
 
   function editBatch(b) {
     if (batchSaveLock.current) return;
+    setShowBatchForm(true);
+    requestAnimationFrame(() => batchFormRef.current?.scrollIntoView({ block: "start" }));
     setPendingBatchFiles([]);
     const batch = normalizeImportBatch(b);
     setForm({
@@ -7724,7 +7745,7 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
   }
 
   function getActiveBatch() {
-    const targetId = editingId || activeBatchId;
+    const targetId = activeBatchId || editingId;
     const source = targetId ? normalizedBatches.find((b) => b.id === targetId) : (normalizedBatches[0] || normalizeImportBatch(form));
     return normalizeImportBatch(source || normalizedBatches[0] || {});
   }
@@ -7983,20 +8004,18 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
 
   return (
     <div className="panel">
-      <h2>进口批次（Import Batch）</h2>
+      <div className="toolbar">
+        <h2>进口批次</h2>
+        <div className="toolbar-right">
+          <label className="erp-inline-label">当前批次<select aria-label="当前批次" value={activeBatch.id || ""} onChange={(e) => { setActiveBatchId(e.target.value); setSelectedLinkItemId(""); }}>
+            {(!batches || !batches.length) && <option value="">暂无批次</option>}
+            {dedupeImportBatchesForDisplay(batches || []).map((b) => <option key={b.id} value={b.id}>{b.id} / {b.name || b.importDate || ""}</option>)}
+          </select></label>
+          {canEdit && <button className="ghost" onClick={reset} disabled={batchSaving}>新增批次</button>}
+        </div>
+      </div>
       <p className="note">一票报关对应一个 Import Batch。商品只关联批次；关税、代理费、国际运费按规则分摊到库存成本；进口消费税、地方消费税不进库存成本，只进入消费税管理中心。</p>
       {!canEdit && <p className="note danger-note">当前为只读账号：可以查看报关批次，但不能新增、编辑、删除或分摊成本。</p>}
-      <div className="import-summary-grid">
-        <Card title="商品数量" value={pageSummary.goodsCount + " 件"} />
-        <Card title="货值合计" value={jpy(pageSummary.goodsValueJpy)} />
-        <Card title="关税合计" value={jpy(pageSummary.dutyJpy)} />
-        <Card title="进口消费税合计" value={jpy(pageSummary.importConsumptionTaxJpy)} />
-        <Card title="地方消费税合计" value={jpy(pageSummary.localConsumptionTaxJpy)} />
-        <Card title="代理费" value={jpy(pageSummary.agencyFeeJpy)} />
-        <Card title="国际运费JPY" value={jpy(pageSummary.internationalShippingJpy)} />
-        <Card title="进入成本合计" value={jpy(pageSummary.costTotal)} />
-        <Card title="不进成本消费税合计" value={jpy(pageSummary.nonCostTaxTotal)} />
-      </div>
       {activeBatch.id && activeTrade && activeProgress && (
         <div className="import-batch-center">
           <div className="record-card-head">
@@ -8009,6 +8028,38 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
             </div>
           </div>
 
+          <div className="record-card">
+            <div className="record-card-head">
+              <h3>商品关联列表</h3>
+              <button className="primary" disabled={!canEdit || !setItems || !(activeTrade?.linkedProducts || []).length} onClick={() => allocateActiveBatch(activeBatch)}>开始分摊</button>
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "end", gap: 10, marginBottom: 12 }}>
+              <label style={{ flex: "0 1 180px", minWidth: 140 }}>商品月份
+                <select style={{ width: "100%" }} value={linkItemMonth} onChange={(e) => { setLinkItemMonth(e.target.value); setSelectedLinkItemId(""); }}>
+                  <option value="">全部月份</option>
+                  {linkItemMonths.map((month) => <option key={month} value={month}>{month.replace("-", "年")}月</option>)}
+                  <option value="unknown">未识别月份</option>
+                </select>
+              </label>
+              <label style={{ flex: "1 1 240px", minWidth: 0 }}>搜索商品
+                <input style={{ width: "100%", boxSizing: "border-box" }} type="search" value={linkItemSearch} placeholder="商品编号 / 品牌 / 商品名" onChange={(e) => { setLinkItemSearch(e.target.value); setSelectedLinkItemId(""); }} />
+              </label>
+              <label style={{ flex: "2 1 320px", minWidth: 0 }}>匹配商品（{filteredLinkItems.length} 件）
+                <select style={{ width: "100%" }} value={selectedLinkItemId} onChange={(e) => setSelectedLinkItemId(e.target.value)}>
+                  <option value="">{filteredLinkItems.length ? "选择商品加入批次" : "没有符合条件的商品"}</option>
+                  {filteredLinkItems.map((x) => {
+                    const batchId = getItemImportBatchId(x);
+                    return <option key={x.id} value={x.id} disabled={batchId === activeBatch.id}>{x.id} / {x.brand || ""} {x.item || ""}{batchId ? " / 已关联：" + batchId : " / 未关联"}</option>;
+                  })}
+                </select>
+              </label>
+              <button className="ghost" disabled={!canEdit || !setItems || !selectedLinkItemId} onClick={() => linkSelectedProduct(activeBatch.id)}>加入 / 移入批次</button>
+              <button className="ghost" disabled={!canEdit || !setItems || (!linkItemMonth && !linkItemSearch.trim()) || !filteredLinkItems.some((x) => getItemImportBatchId(x) !== activeBatch.id)} onClick={() => linkMatchingProducts(activeBatch.id)}>批量移入匹配商品</button>
+              <span className="note" style={{ flexBasis: "100%", margin: 0 }}>待关联 {availableLinkItemCount} 件 · 已关联批次 {alreadyLinkedMatchCount} 件</span>
+            </div>
+            <Table headers={linkedHeaders} rows={linkedRows} />
+          </div>
+          <details className="erp-fold"><summary>批次分析、进度与检查</summary>
           <div className="import-summary-grid compact">
             <Card title="本票总投入" value={jpy(activeTrade.totalInvestmentJpy)} />
             <Card title="平均库存成本" value={jpy(activeTrade.averageInventoryCostJpy)} />
@@ -8109,40 +8160,24 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
             </div>
           </div>
 
-          <div className="record-card">
-            <div className="record-card-head">
-              <h3>商品关联列表</h3>
-              <button className="primary" disabled={!canEdit || !setItems || !(activeTrade?.linkedProducts || []).length} onClick={() => allocateActiveBatch(activeBatch)}>开始分摊</button>
-            </div>
-            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "end", gap: 10, marginBottom: 12 }}>
-              <label style={{ flex: "0 1 180px", minWidth: 140 }}>商品月份
-                <select style={{ width: "100%" }} value={linkItemMonth} onChange={(e) => { setLinkItemMonth(e.target.value); setSelectedLinkItemId(""); }}>
-                  <option value="">全部月份</option>
-                  {linkItemMonths.map((month) => <option key={month} value={month}>{month.replace("-", "年")}月</option>)}
-                  <option value="unknown">未识别月份</option>
-                </select>
-              </label>
-              <label style={{ flex: "1 1 240px", minWidth: 0 }}>搜索商品
-                <input style={{ width: "100%", boxSizing: "border-box" }} type="search" value={linkItemSearch} placeholder="商品编号 / 品牌 / 商品名" onChange={(e) => { setLinkItemSearch(e.target.value); setSelectedLinkItemId(""); }} />
-              </label>
-              <label style={{ flex: "2 1 320px", minWidth: 0 }}>匹配商品（{filteredLinkItems.length} 件）
-                <select style={{ width: "100%" }} value={selectedLinkItemId} onChange={(e) => setSelectedLinkItemId(e.target.value)}>
-                  <option value="">{filteredLinkItems.length ? "选择商品加入批次" : "没有符合条件的商品"}</option>
-                  {filteredLinkItems.map((x) => {
-                    const batchId = getItemImportBatchId(x);
-                    return <option key={x.id} value={x.id} disabled={batchId === activeBatch.id}>{x.id} / {x.brand || ""} {x.item || ""}{batchId ? " / 已关联：" + batchId : " / 未关联"}</option>;
-                  })}
-                </select>
-              </label>
-              <button className="ghost" disabled={!canEdit || !setItems || !selectedLinkItemId} onClick={() => linkSelectedProduct(activeBatch.id)}>加入 / 移入批次</button>
-              <button className="ghost" disabled={!canEdit || !setItems || (!linkItemMonth && !linkItemSearch.trim()) || !filteredLinkItems.some((x) => getItemImportBatchId(x) !== activeBatch.id)} onClick={() => linkMatchingProducts(activeBatch.id)}>批量移入匹配商品</button>
-              <span className="note" style={{ flexBasis: "100%", margin: 0 }}>待关联 {availableLinkItemCount} 件 · 已关联批次 {alreadyLinkedMatchCount} 件</span>
-            </div>
-            <Table headers={linkedHeaders} rows={linkedRows} />
-          </div>
+          </details>
         </div>
       )}
 
+      <details className="erp-fold"><summary>批次费用汇总</summary>
+      <div className="import-summary-grid">
+        <Card title="商品数量" value={pageSummary.goodsCount + " 件"} />
+        <Card title="货值合计" value={jpy(pageSummary.goodsValueJpy)} />
+        <Card title="关税合计" value={jpy(pageSummary.dutyJpy)} />
+        <Card title="进口消费税合计" value={jpy(pageSummary.importConsumptionTaxJpy)} />
+        <Card title="地方消费税合计" value={jpy(pageSummary.localConsumptionTaxJpy)} />
+        <Card title="代理费" value={jpy(pageSummary.agencyFeeJpy)} />
+        <Card title="国际运费JPY" value={jpy(pageSummary.internationalShippingJpy)} />
+        <Card title="进入成本合计" value={jpy(pageSummary.costTotal)} />
+        <Card title="不进成本消费税合计" value={jpy(pageSummary.nonCostTaxTotal)} />
+      </div>
+      </details>
+      <details ref={batchFormRef} className="erp-fold" open={showBatchForm} onToggle={(e) => setShowBatchForm(e.currentTarget.open)}><summary>{editingId ? "编辑批次：" + editingId : "新增批次"}</summary>
       <div className="action-row">
         <button className="primary" onClick={saveBatch} disabled={!canEdit || batchSaving}>{batchSaving ? "正在保存…" : (editingId ? "保存修改" : "保存新批次")}</button>
         {editingId && <button className="ghost" onClick={reset} disabled={batchSaving}>新增另一批次</button>}
@@ -8199,12 +8234,15 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
         <button className="ghost" onClick={fillSampleBatch} disabled={batchSaving}>填入7月样例</button>
         <button className="ghost" onClick={() => downloadCSV([headers, ...rows], "gouka_import_batches.csv")}>CSV导出</button>
       </div>
+      </details>
       <Table headers={headers} rows={rows} />
     </div>
   );
 }
 
 function Customs({ items, customsBatches, downloadCSV }) {
+  const [customsBatchFilter, setCustomsBatchFilter] = useState("");
+  const [customsQuery, setCustomsQuery] = useState("");
   const headers = ["图片", "No.", "Brand", "Item", "Material", "Color", "Specification", "Qty", "Country of Origin", "Declared Currency", "Declared Value", "Declared Value (JPY)", "Import Tax 10% Ref", "Customs Batch", "Remarks"];
   const csvHeaders = headers.filter((h) => h !== "图片");
 
@@ -8213,7 +8251,9 @@ function Customs({ items, customsBatches, downloadCSV }) {
   const customsItems = (items || []).filter((x) => {
     const platform = String(x.platform || "").toUpperCase();
     const batch = String(x.customsBatchId || "").toUpperCase();
-    return platform.includes("EMS") || x.status === "报关准备" || batch.startsWith("EMS-");
+    return (platform.includes("EMS") || x.status === "报关准备" || batch.startsWith("EMS-")) &&
+      (!customsBatchFilter || getItemImportBatchId(x) === customsBatchFilter) &&
+      [x.id, x.brand, x.item].join(" ").toLowerCase().includes(customsQuery.trim().toLowerCase());
   });
 
   const rows = customsItems.map((x, i) => {
@@ -8230,6 +8270,11 @@ function Customs({ items, customsBatches, downloadCSV }) {
   return (
     <div className="panel">
       <Toolbar title="EMS Commercial Customs Declaration" onDownload={() => downloadCSV([csvHeaders, ...csvRows, [], ["Total Quantity", totalQty], ["Total Declared Value JPY", Math.round(totalValue)]], "gouka_ems_customs_tax.csv")} />
+      <div className="filter-row">
+        <label>批次<select value={customsBatchFilter} onChange={(e) => setCustomsBatchFilter(e.target.value)}><option value="">全部批次</option>{dedupeImportBatchesForDisplay(customsBatches || []).map((b) => <option key={b.id} value={b.id}>{b.id}</option>)}</select></label>
+        <label>搜索商品<input type="search" value={customsQuery} onChange={(e) => setCustomsQuery(e.target.value)} placeholder="编号 / 品牌 / 商品名" /></label>
+        <button className="ghost" onClick={() => { setCustomsBatchFilter(""); setCustomsQuery(""); }}>清除筛选</button>
+      </div>
       <p>
         <b>Importer:</b> 豪嘉株式会社 (GOUKA INC.)
       </p>
@@ -8241,8 +8286,10 @@ function Customs({ items, customsBatches, downloadCSV }) {
 }
 
 function Profit({ items }) {
+  const [profitQuery, setProfitQuery] = useState("");
+  const profitItems = items.filter((x) => [x.id, x.brand, x.item].join(" ").toLowerCase().includes(profitQuery.trim().toLowerCase()));
   const headers = ["图片", "商品编号", "品牌", "商品名", "库存成本", "销售收入（未税）", "毛利润", "预计利润", "实际利润", "利润率", "销项消费税", "进项消费税", "应缴消费税"];
-  const rows = items.map((x) => {
+  const rows = profitItems.map((x) => {
     const sales = calcSalesBreakdown(x);
     const saleRevenue = sales.saleTaxIncluded > 0 ? sales.salesRevenueExTax : 0;
     const expectedProfit = sales.expectedSaleTaxIncluded > 0 ? sales.expectedProfitJpy : 0;
@@ -8269,6 +8316,7 @@ function Profit({ items }) {
       <h2>
         <Calculator size={20} /> 利润分析
       </h2>
+      <label className="erp-inline-label">搜索商品<input type="search" value={profitQuery} onChange={(e) => setProfitQuery(e.target.value)} placeholder="编号 / 品牌 / 商品名" /></label>
       <p className="note">利润按销售收入（未税） - 库存成本计算。消费税单独统计，不混入利润。</p>
       <Table headers={headers} rows={rows} />
     </div>
@@ -9998,6 +10046,7 @@ function Table({ headers, rows, showPager = true }) {
             <tr>{headers.map((h, i) => <th key={i}>{h}</th>)}</tr>
           </thead>
           <tbody>
+            {!safeRows.length && <tr><td colSpan={headers.length} className="erp-empty-state">暂无符合条件的记录</td></tr>}
             {pageRows.map((r, i) => (
               <tr key={start + i}>
                 {r.map((c, j) => <td key={j} data-label={headers[j] || ""}>{c}</td>)}
