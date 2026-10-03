@@ -5374,7 +5374,7 @@ function Dashboard({ totals, items, setTab, openInventorySignal = null, exportBa
         <div className="gouka-simple-home-head">
           <div>
             <h2>今天先处理这几件事</h2>
-            <p>入口只保留日常最常用的操作。新增、查库存、出品、报关、销售先走这里，分析和备份放在下面慢慢看。</p>
+            
           </div>
           <div className="gouka-simple-home-total">
             <small>当前库存资金</small>
@@ -5982,7 +5982,7 @@ function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, 
       <div className="gouka-add-assist">
         <div>
           <h3>{addMissingCount ? `录入检查：还差 ${addMissingCount} 项` : "录入检查：核心资料已齐"}</h3>
-          <p>先把采购日、品牌、商品名、图片、采购金额和来源填好，后面库存、古物台账、PDF和同步会更稳。</p>
+          
         </div>
         <div className="gouka-check-list">
           {addChecks.map((x) => <div key={x.label} className={"gouka-check-item " + (x.ok ? "ok" : "warn")}>{x.ok ? "已填" : "未填"} · {x.label}</div>)}
@@ -6898,7 +6898,7 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
         <button type="button" className="inventory-summary-card clickable warn" onClick={() => showStockSignal("库存365日以上")}><small>长期库存（365日以上）</small><b>{inventorySummary.longTerm} 件</b><span className="inventory-action-hint">点击处理</span></button>
       </div>
       </details>
-      <p className="note">库存管理只显示日常查货字段：库龄、库位、来源、资料状态、库存成本、售价和利润。可按资料状态和库存信号筛出缺资料、未设售价、无图片或长期库存；税务、报关、销售明细请点「详情」进入 Product Record。</p>
+      
       <InventoryMobileCards
         items={pageItems}
         sourceGroupOf={sourceGroupOf}
@@ -7306,7 +7306,7 @@ function Ledger({ items, setItems, isOwner, downloadCSV, exportItemPdf, editItem
         </div>
       </div>
       <p className="note">
-        当前显示第 {filteredItems.length ? ledgerStart + 1 : 0} - {Math.min(ledgerStart + ledgerPageSize, filteredItems.length)} 件 / 筛选 {filteredItems.length} 件 / 全部 {items.length} 件。古物台账不支持物理删除，只能作废或更正；日本拍卖商品点击「拍卖详情」进入 Product Record。
+        当前显示第 {filteredItems.length ? ledgerStart + 1 : 0} - {Math.min(ledgerStart + ledgerPageSize, filteredItems.length)} 件 / 筛选 {filteredItems.length} 件 / 全部 {items.length} 件。
       </p>
       {ledgerView !== "cards" && <Table headers={ledgerView === "original" ? headers : ["图片", "商品编号", "取引日", "品牌", "商品名", "实际支付金额", "相手方", "台账状态", "操作"]} rows={ledgerView === "original" ? rows : rows.map((row) => [row[0], row[1], row[2], row[5], row[6], row[10], row[14], row[19], row[21]])} />}
       {ledgerView === "cards" && <>
@@ -7413,6 +7413,7 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
   const [form, setForm] = useState(emptyBatch);
   const [editingId, setEditingId] = useState(null);
   const [showBatchForm, setShowBatchForm] = useState(!(batches || []).length);
+  const batchFormRef = React.useRef(null);
   const [activeBatchId, setActiveBatchId] = useState("");
   const [attachmentType, setAttachmentType] = useState("报关库存表");
   const [pendingBatchFiles, setPendingBatchFiles] = useState([]);
@@ -7492,6 +7493,7 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
   function reset() {
     if (batchSaveLock.current) return;
     setShowBatchForm(true);
+    requestAnimationFrame(() => batchFormRef.current?.scrollIntoView({ block: "start" }));
     setPendingBatchFiles([]);
     setForm(emptyBatch);
     setEditingId(null);
@@ -7580,8 +7582,9 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
   }
 
   function editBatch(b) {
-    setShowBatchForm(true);
     if (batchSaveLock.current) return;
+    setShowBatchForm(true);
+    requestAnimationFrame(() => batchFormRef.current?.scrollIntoView({ block: "start" }));
     setPendingBatchFiles([]);
     const batch = normalizeImportBatch(b);
     setForm({
@@ -8173,7 +8176,7 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
         <Card title="不进成本消费税合计" value={jpy(pageSummary.nonCostTaxTotal)} />
       </div>
       </details>
-      <details className="erp-fold" open={showBatchForm} onToggle={(e) => setShowBatchForm(e.currentTarget.open)}><summary>{editingId ? "编辑批次：" + editingId : "新增批次"}</summary>
+      <details ref={batchFormRef} className="erp-fold" open={showBatchForm} onToggle={(e) => setShowBatchForm(e.currentTarget.open)}><summary>{editingId ? "编辑批次：" + editingId : "新增批次"}</summary>
       <div className="action-row">
         <button className="primary" onClick={saveBatch} disabled={!canEdit || batchSaving}>{batchSaving ? "正在保存…" : (editingId ? "保存修改" : "保存新批次")}</button>
         {editingId && <button className="ghost" onClick={reset} disabled={batchSaving}>新增另一批次</button>}
@@ -10042,6 +10045,7 @@ function Table({ headers, rows, showPager = true }) {
             <tr>{headers.map((h, i) => <th key={i}>{h}</th>)}</tr>
           </thead>
           <tbody>
+            {!safeRows.length && <tr><td colSpan={headers.length} className="erp-empty-state">暂无符合条件的记录</td></tr>}
             {pageRows.map((r, i) => (
               <tr key={start + i}>
                 {r.map((c, j) => <td key={j} data-label={headers[j] || ""}>{c}</td>)}
