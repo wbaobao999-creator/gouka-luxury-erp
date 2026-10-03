@@ -4991,7 +4991,7 @@ function App() {
 
   const toolMenu = [
     ["auction", "日本拍卖"],
-    ["customs", "EMS报关"],
+    ["customs", "报关清单导出"],
     ["profit", "利润分析"],
     ["pdf", "PDF导出"],
     ["backup", "备份恢复"]
@@ -5034,11 +5034,13 @@ function App() {
             <button className="ghost" onClick={syncToCloud}>保存到云端</button>
             <button className="ghost" onClick={loadFromCloud}>从云端读取</button>
             <button className={"ghost lang-toggle-btn " + (japaneseMode ? "active" : "")} onClick={toggleJapaneseMode}>{japaneseMode ? "中文表示" : "日本語表示"}</button>
-            <button className={"gouka-header-todo " + (headerTodo.missingPrice ? "danger" : "good")} onClick={() => openInventorySignal("未设预计售价")}>补售价 {headerTodo.missingPrice}</button>
-            <button className={"gouka-header-todo " + (headerTodo.noImage ? "warn" : "good")} onClick={() => openInventorySignal("无图片")}>无图片 {headerTodo.noImage}</button>
-            <button className={"gouka-header-todo " + (headerTodo.over30 ? "warn" : "good")} onClick={() => openInventorySignal("库存30日以上")}>30日+ {headerTodo.over30}</button>
-            <button className={"gouka-header-todo " + (headerTodo.toList ? "warn" : "good")} onClick={() => goTab("listing")}>待出品 {headerTodo.toList}</button>
-            <button className={"gouka-header-todo " + (headerTodo.toCustoms ? "warn" : "good")} onClick={() => goTab("customsBatch")}>待报关 {headerTodo.toCustoms}</button>
+            <details className="erp-header-todos"><summary>待办事项</summary><div className="erp-todo-menu">
+            <button className={"gouka-header-todo " + (headerTodo.missingPrice ? "danger" : "good")} onClick={(e) => { e.currentTarget.closest("details").open = false; openInventorySignal("未设预计售价"); }}>补售价 {headerTodo.missingPrice}</button>
+            <button className={"gouka-header-todo " + (headerTodo.noImage ? "warn" : "good")} onClick={(e) => { e.currentTarget.closest("details").open = false; openInventorySignal("无图片"); }}>无图片 {headerTodo.noImage}</button>
+            <button className={"gouka-header-todo " + (headerTodo.over30 ? "warn" : "good")} onClick={(e) => { e.currentTarget.closest("details").open = false; openInventorySignal("库存30日以上"); }}>30日+ {headerTodo.over30}</button>
+            <button className={"gouka-header-todo " + (headerTodo.toList ? "warn" : "good")} onClick={(e) => { e.currentTarget.closest("details").open = false; goTab("listing"); }}>待出品 {headerTodo.toList}</button>
+            <button className={"gouka-header-todo " + (headerTodo.toCustoms ? "warn" : "good")} onClick={(e) => { e.currentTarget.closest("details").open = false; goTab("customsBatch"); }}>待报关 {headerTodo.toCustoms}</button>
+            </div></details>
             <span className="pill sync-live-pill">{syncStatusText}</span>
             <span className="pill">Auto Save · {isOwner ? "管理者" : isTaxViewer ? "税理士" : "员工"}</span>
           </div>
@@ -6623,6 +6625,7 @@ function InventoryMobileCards({ items, sourceGroupOf, sourceGroupBadge, stockDay
 }
 function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, downloadCSV, editItem, deleteItem, isOwner, canEdit = true, canExportPdf = true, canViewFinance = true, setPreviewImage, setPreviewScale, exportItemPdf, quickSignal }) {
   const [detailItem, setDetailItem] = useState(null);
+  const [inventoryView, setInventoryView] = useState("daily");
   const [page, setPage] = useState(1);
   const [evidenceFilter, setEvidenceFilter] = useState("全部");
   const [stockSignalFilter, setStockSignalFilter] = useState("全部");
@@ -6916,8 +6919,15 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
         canEdit={canEdit}
         canExportPdf={canExportPdf}
       />
+      <div className="erp-inventory-viewbar">
+        <span>当前显示 {inventoryItems.length} 件</span>
+        <div className="erp-view-switch" role="group" aria-label="库存列表视图">
+          <button aria-pressed={inventoryView === "daily"} onClick={() => setInventoryView("daily")}>日常列表</button>
+          <button aria-pressed={inventoryView === "full"} onClick={() => setInventoryView("full")}>完整明细</button>
+        </div>
+      </div>
       {inventoryPager}
-      <Table headers={headers} rows={rows} showPager={false} />
+      <Table headers={inventoryView === "full" ? headers : ["图片", "商品编号", "品牌 / 商品", "状态", "库龄", "库位", "库存成本", "售价 / 成交价（含税）", "操作"]} rows={inventoryView === "full" ? rows : rows.map((row) => [row[1], row[2], <div>{row[5]}<br />{row[6]}</div>, row[9], row[4], row[10], row[12], row[13], row[15]])} showPager={false} />
       {inventoryPager}
 
       {detailItem && (
@@ -8614,6 +8624,7 @@ function ListingManagement({ items, updateListingItem, editItem, setPreviewImage
   const [sourceFilter, setSourceFilter] = useState("全部来源");
   const [signalFilter, setSignalFilter] = useState("全部");
   const [expandedStatus, setExpandedStatus] = useState({});
+  const [listingView, setListingView] = useState("已入库");
   const [editingPlatformId, setEditingPlatformId] = useState(null);
   const [platformDraft, setPlatformDraft] = useState({ platform: "", customPlatform: "", saleJpy: "", soldPriceJpy: "" });
 
@@ -8769,46 +8780,44 @@ function ListingManagement({ items, updateListingItem, editItem, setPreviewImage
   return (
     <div className="panel">
       <h2><Package size={20} /> 出品管理</h2>
-      <p className="note">出品管理用于把库存商品推进到平台出品、成交、发货。已入库列只做候选商品，平台和价格在卡片内处理。</p>
-
-      <div className="grid4" style={{marginBottom:"16px"}}>
-        <Card icon={<Package />} title="已入库" value={`${counts["已入库"] || 0} 件`} />
-        <Card icon={<FileText />} title="待出品" value={`${counts["待出品"] || 0} 件`} />
-        <Card icon={<Upload />} title="已出品" value={`${counts["已出品"] || 0} 件`} />
-        <Card icon={<Calculator />} title="已售/已发货" value={`${(counts["已售出"] || 0) + (counts["已发货"] || 0)} 件`} />
+      <div className="erp-view-switch erp-listing-tabs" role="group" aria-label="出品流程">
+        {kanbanStatuses.map((status) => <button key={status} aria-pressed={listingView === status} onClick={() => { setListingView(status); setEditingPlatformId(null); }}>{status} {counts[status] || 0}</button>)}
+        <button aria-pressed={listingView === "全部流程"} onClick={() => { setListingView("全部流程"); setEditingPlatformId(null); }}>全部流程</button>
       </div>
 
       <div className="toolbar" style={{marginBottom:"16px"}}>
-        <h2>流程看板</h2>
+        <h3>商品查询</h3>
         <div className="toolbar-right">
           <div className="search">
             <Search size={16} />
             <input placeholder="搜索编号 / 品牌 / 商品 / 平台" value={query} onChange={(e) => setQuery(e.target.value)} />
           </div>
-          <select value={platformFilter} onChange={(e) => setPlatformFilter(e.target.value)}>
-            {platforms.map((p) => <option key={p}>{p}</option>)}
-          </select>
-          <select value={brandFilter} onChange={(e) => setBrandFilter(e.target.value)}>
-            {brands.map((p) => <option key={p}>{p}</option>)}
-          </select>
-          <select value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)}>
-            {sourceOptions.map((p) => <option key={p}>{p}</option>)}
-          </select>
-          <select value={signalFilter} onChange={(e) => setSignalFilter(e.target.value)}>
-            {signalOptions.map((p) => <option key={p}>{p}</option>)}
-          </select>
           <button onClick={() => { setQuery(""); setPlatformFilter("全部"); setBrandFilter("全部"); setSourceFilter("全部来源"); setSignalFilter("全部"); setExpandedStatus({}); }}>清除</button>
         </div>
       </div>
+      <details className="erp-fold"><summary>更多筛选</summary><div className="filter-row">
+          <select aria-label="出品平台" value={platformFilter} onChange={(e) => setPlatformFilter(e.target.value)}>
+            {platforms.map((p) => <option key={p}>{p}</option>)}
+          </select>
+          <select aria-label="商品品牌" value={brandFilter} onChange={(e) => setBrandFilter(e.target.value)}>
+            {brands.map((p) => <option key={p}>{p}</option>)}
+          </select>
+          <select aria-label="商品来源" value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)}>
+            {sourceOptions.map((p) => <option key={p}>{p}</option>)}
+          </select>
+          <select aria-label="待处理条件" value={signalFilter} onChange={(e) => setSignalFilter(e.target.value)}>
+            {signalOptions.map((p) => <option key={p}>{p}</option>)}
+          </select>
+      </div></details>
       {(query || platformFilter !== "全部" || brandFilter !== "全部" || sourceFilter !== "全部来源" || signalFilter !== "全部") && (
         <div className="gouka-active-filter" style={{marginBottom:"12px"}}>
           <span>当前筛选：平台 {platformFilter} · 品牌 {brandFilter} · 来源 {sourceFilter} · 信号 {signalFilter} · 显示 {filteredItems.length} 件</span>
         </div>
       )}
 
-      <div style={{display:"grid", gridTemplateColumns:"repeat(5, minmax(220px, 1fr))", gap:"12px", alignItems:"start", overflowX:"auto", paddingBottom:"8px"}}>
+      <div className={"erp-listing-board" + (listingView === "全部流程" ? " all" : "")}>
         {kanbanStatuses.map((status, idx) => (
-          <div key={status} style={{background:"#f8fafc", border:"1px solid #e5e7eb", borderRadius:"16px", padding:"12px", minHeight:"420px"}}>
+          <div key={status} hidden={listingView !== "全部流程" && listingView !== status} className="erp-listing-column">
             <div className="listing-column-head">
               <div>
                 <b>{idx + 1}. {status}</b>
@@ -9089,36 +9098,26 @@ function SalesReport({ items, updateListingItem, downloadCSV }) {
   return (
     <div className="panel sales-center">
       <Toolbar title="销售中心" onDownload={() => downloadCSV([csvHeaders, ...csvRows], "gouka_sales_records.csv")} />
-      <p className="note">销售中心只显示已登记售价的 Sales Record。库存、入库、出品、发货状态不会自动变成销售；售价为税込，系统自动拆分未税销售收入和销项消费税。</p>
 
-      <div className="grid4" style={{marginBottom:"16px"}}>
-        <Card icon={<Calculator />} title="销售记录" value={filteredSalesRows.length + " 件"} />
-        <Card icon={<Calculator />} title="可登记商品" value={saleCandidateItems.length + " 件"} />
-        <Card icon={<Calculator />} title="销售收入（未税）" value={jpy(totalRevenue)} />
-        <Card icon={<Calculator />} title="实际利润" value={jpy(totalProfit)} />
-      </div>
-
-      <div className="sales-check-strip">
-        <div><span>销项消费税</span><b>{jpy(totalOutputTax)}</b></div>
-        <div><span>预计到账</span><b>{jpy(expectedDepositTotal)}</b></div>
-        <div><span>已回款</span><b>{jpy(totalDeposit)}</b></div>
-        <div className={pendingDeposit ? "warn" : "ok"}><span>待回款</span><b>{jpy(pendingDeposit)}</b></div>
-        <div className={missingDeposit ? "warn" : "ok"}><span>未回款件数</span><b>{missingDeposit} 件</b></div>
-        <div className={incompleteSalesRecords ? "warn" : "ok"}><span>资料需补充</span><b>{incompleteSalesRecords} 件</b></div>
-        <div><span>利润率</span><b>{pct(totalRevenue ? totalProfit / totalRevenue * 100 : 0)}</b></div>
-      </div>
-
-      <div className="sales-platform-summary">
-        <div className="sales-section-head">
-          <h3>平台汇总</h3>
-          <span>按当前筛选自动汇总</span>
-        </div>
-        <Table headers={["平台", "件数", "售价（含税）", "销售收入（未税）", "销项消费税", "实际利润", "已回款", "待回款"]} rows={platformSummaryRows} />
+      <div className="filter-row">
+        <input placeholder="搜索销售编号 / 商品 / 平台 / 买家" value={salesQuery} onChange={(e) => setSalesQuery(e.target.value)} />
+        <input aria-label="销售月份" type="month" value={salesMonth} onChange={(e) => setSalesMonth(e.target.value)} />
+        <select aria-label="回款状态" value={salesPaymentFilter} onChange={(e) => setSalesPaymentFilter(e.target.value)}>
+          <option value="全部">全部回款状态</option>
+          <option value="未回款">未回款</option>
+          <option value="已回款">已回款</option>
+        </select>
+        <select aria-label="销售资料状态" value={salesQualityFilter} onChange={(e) => setSalesQualityFilter(e.target.value)}>
+          <option value="全部">全部资料状态</option>
+          <option value="需补充">需补充</option>
+          <option value="完整">完整</option>
+        </select>
+        <button onClick={() => { setSalesQuery(""); setSalesMonth(""); setSalesPaymentFilter("全部"); setSalesQualityFilter("全部"); }}>清除筛选</button>
       </div>
 
       <div className="sales-center-form">
         <div className="sales-form-head">
-          <h3>{editingSalesId ? "编辑 Sales Record" : "新增 Sales Record"}</h3>
+          <h3>{editingSalesId ? "编辑销售记录" : "登记销售"}</h3>
           <button className="primary" onClick={() => {
             const firstCandidate = saleCandidateItems[0];
             if (!firstCandidate) return alert("当前没有可新增销售的商品。已有销售金额的商品请使用编辑。");
@@ -9160,28 +9159,39 @@ function SalesReport({ items, updateListingItem, downloadCSV }) {
         )}
       </div>
 
-      <div className="filter-row">
-        <input placeholder="搜索销售编号 / 商品 / 平台 / 买家" value={salesQuery} onChange={(e) => setSalesQuery(e.target.value)} />
-        <input type="month" value={salesMonth} onChange={(e) => setSalesMonth(e.target.value)} />
-        <select value={salesPaymentFilter} onChange={(e) => setSalesPaymentFilter(e.target.value)}>
-          <option value="全部">全部回款状态</option>
-          <option value="未回款">未回款</option>
-          <option value="已回款">已回款</option>
-        </select>
-        <select value={salesQualityFilter} onChange={(e) => setSalesQualityFilter(e.target.value)}>
-          <option value="全部">全部资料状态</option>
-          <option value="需补充">需补充</option>
-          <option value="完整">完整</option>
-        </select>
-        <button onClick={() => { setSalesQuery(""); setSalesMonth(""); setSalesPaymentFilter("全部"); setSalesQualityFilter("全部"); }}>清除筛选</button>
+      <div className="grid4" style={{marginBottom:"16px"}}>
+        <Card icon={<Calculator />} title="销售记录" value={filteredSalesRows.length + " 件"} />
+        <Card icon={<Calculator />} title="可登记商品" value={saleCandidateItems.length + " 件"} />
+        <Card icon={<Calculator />} title="销售收入（未税）" value={jpy(totalRevenue)} />
+        <Card icon={<Calculator />} title="实际利润" value={jpy(totalProfit)} />
       </div>
 
       <Table headers={headers} rows={rows} />
+      <details className="erp-fold"><summary>回款、税额与平台汇总</summary>
+      <div className="sales-check-strip">
+        <div><span>销项消费税</span><b>{jpy(totalOutputTax)}</b></div>
+        <div><span>预计到账</span><b>{jpy(expectedDepositTotal)}</b></div>
+        <div><span>已回款</span><b>{jpy(totalDeposit)}</b></div>
+        <div className={pendingDeposit ? "warn" : "ok"}><span>待回款</span><b>{jpy(pendingDeposit)}</b></div>
+        <div className={missingDeposit ? "warn" : "ok"}><span>未回款件数</span><b>{missingDeposit} 件</b></div>
+        <div className={incompleteSalesRecords ? "warn" : "ok"}><span>资料需补充</span><b>{incompleteSalesRecords} 件</b></div>
+        <div><span>利润率</span><b>{pct(totalRevenue ? totalProfit / totalRevenue * 100 : 0)}</b></div>
+      </div>
+
+      <div className="sales-platform-summary">
+        <div className="sales-section-head">
+          <h3>平台汇总</h3>
+          <span>按当前筛选自动汇总</span>
+        </div>
+        <Table headers={["平台", "件数", "售价（含税）", "销售收入（未税）", "销项消费税", "实际利润", "已回款", "待回款"]} rows={platformSummaryRows} />
+      </div>
+
+      </details>
 
       {detailSales && (
         <div className="modal-backdrop" onClick={() => setDetailSales(null)}>
           <div className="modal sales-detail-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-head"><h2>Sales Record Detail</h2><button onClick={() => setDetailSales(null)}>关闭</button></div>
+            <div className="modal-head"><h2>销售记录详情</h2><button onClick={() => setDetailSales(null)}>关闭</button></div>
             <div className="sales-detail-grid">
               <div><span>销售编号</span><b>{detailSales.record.salesNo}</b></div>
               <div><span>商品编号</span><b>{detailSales.item.id}</b></div>
