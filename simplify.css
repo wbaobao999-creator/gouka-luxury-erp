@@ -1,0 +1,23 @@
+/* Compact operational views; calculation and storage styles are unchanged. */
+.erp-fold { margin: 12px 0; border-top: 1px solid #d7e0dc; min-width: 0; }
+.erp-fold > summary { padding: 12px 4px; cursor: pointer; font-size: 14px; font-weight: 600; color: #24483a; }
+.erp-fold[open] > summary { margin-bottom: 8px; }
+.erp-fold > .formgrid { margin: 0; }
+.erp-inline-label { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; min-width: 0; }
+.erp-inline-label input, .erp-inline-label select { max-width: 100%; min-width: 0; }
+.erp-view-switch { display: flex; flex-wrap: wrap; gap: 4px; }
+.erp-view-switch button { flex: 0 0 auto; border-radius: 4px; }
+.erp-view-switch button[aria-pressed="true"] { background: #e8f5ed; color: #166534; border-color: #38a169; }
+.erp-dashboard-analysis { margin-top: 20px; }
+.erp-fold .grid4, .erp-fold .formgrid { min-width: 0; }
+@media (max-width: 700px) {
+  .panel .toolbar, .panel .toolbar-right { flex-wrap: wrap; min-width: 0; }
+  .panel .toolbar-right { width: 100%; justify-content: flex-start; margin-left: 0; }
+  .panel .toolbar-right .search, .panel .toolbar-right .search input { width: 100%; min-width: 0; }
+  .panel .formgrid { grid-template-columns: minmax(0, 1fr); }
+  .erp-inline-label { width: 100%; }
+  .erp-inline-label select { width: 100%; }
+  .erp-fold summary { overflow-wrap: anywhere; }
+}
+
+.erp-empty-state { padding: 28px 12px !important; text-align: center; color: #64746c; }
