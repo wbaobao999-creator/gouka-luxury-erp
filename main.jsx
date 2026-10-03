@@ -5065,7 +5065,7 @@ function App() {
         {tab === "auction" && (canAccessTab("auction") ? <JapaneseAuctionPanel items={computedItems} downloadCSV={downloadCSV} setPreviewImage={setPreviewImage} setPreviewScale={setPreviewScale} exportItemPdf={canExportBusinessPdf ? exportItemPdf : null} /> : <RestrictedPanel message={restrictedTabMessage} />)}
         {tab === "inventory" && (
           <Inventory
-            items={filtered}
+            items={computedItems}
             query={query}
             setQuery={setQuery}
             statusFilter={statusFilter}
@@ -6675,7 +6675,11 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
     if (stockSignalFilter === "库存365日以上") return !sales.sold && stockDays(x) >= 365;
     return true;
   }
-  const inventoryItems = allInventoryItems.filter((x) => passesSourceGroup(x) && (evidenceFilter === "全部" || buildEvidenceCheck(x).status === evidenceFilter) && passesStockSignal(x));
+  const inventoryItems = allInventoryItems.filter((x) =>
+    (!query || Object.values(x).join(" ").toLowerCase().includes(query.toLowerCase())) &&
+    (statusFilter === "全部" || x.status === statusFilter) &&
+    passesSourceGroup(x) && (evidenceFilter === "全部" || buildEvidenceCheck(x).status === evidenceFilter) && passesStockSignal(x)
+  );
   const totalPages = Math.max(1, Math.ceil(inventoryItems.length / pageSize));
   const currentPage = Math.min(page, totalPages);
   const pageItems = inventoryItems.slice((currentPage - 1) * pageSize, currentPage * pageSize);
