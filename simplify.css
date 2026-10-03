@@ -19,3 +19,5 @@
   .erp-inline-label select { width: 100%; }
   .erp-fold summary { overflow-wrap: anywhere; }
 }
+
+.erp-empty-state { padding: 28px 12px !important; text-align: center; color: #64746c; }
