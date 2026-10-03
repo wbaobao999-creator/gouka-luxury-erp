@@ -7404,6 +7404,8 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
   const [batchSaving, setBatchSaving] = useState(false);
   const batchSaveLock = React.useRef(false);
   const [selectedLinkItemId, setSelectedLinkItemId] = useState("");
+  const [linkItemMonth, setLinkItemMonth] = useState("");
+  const [linkItemSearch, setLinkItemSearch] = useState("");
   const attachmentTypes = ["报关库存表", "輸入許可通知書 / 报关单", "Invoice", "Packing List", "EMS凭证", "其他"];
   const set = (k, v) => setForm((prev) => ({ ...prev, [k]: v }));
   const shippingAmount = Number(form.internationalShippingAmount || form.shippingAmount || form.internationalShippingJpy || form.shippingJpy || 0);
@@ -7728,8 +7730,12 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
   }
 
   function linkSelectedProduct(batchId) {
-    if (!setItems) return alert("当前账号不能关联商品");
+    if (!canEdit || !setItems) return alert("当前账号不能关联商品");
     if (!selectedLinkItemId) return alert("请选择要加入批次的商品");
+    if (!filteredLinkItems.some((x) => x.id === selectedLinkItemId)) {
+      setSelectedLinkItemId("");
+      return alert("商品已关联其他批次或不符合当前筛选，请重新选择。");
+    }
     setItems((prev) => (prev || []).map((x) => x.id === selectedLinkItemId ? { ...x, customsBatchId: batchId, importBatchId: batchId } : x));
     setActiveBatchId(batchId);
     setSelectedLinkItemId("");
@@ -7853,7 +7859,25 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
   const activeTrade = activeBatch.id ? calcImportBatchTradeSummary(activeBatch, items) : null;
   const activeAllocations = activeBatch.id ? calcImportBatchAllocation(activeBatch, activeTrade?.linkedProducts || []) : [];
   const activeAllocationMap = Object.fromEntries(activeAllocations.map((x) => [x.item.id, x]));
+  function linkProductMonth(item) {
+    const idMonth = String(item.id || "").match(/(?:^|-)((?:19|20)\d{2})(0[1-9]|1[0-2])(?:-|$)/);
+    if (idMonth) return idMonth[1] + "-" + idMonth[2];
+    const date = normalizeDateStringForInput(item.purchaseDate || item.auction?.auctionDate || "");
+    return /^\d{4}-\d{2}/.test(date) ? date.slice(0, 7) : "";
+  }
+  const linkItemMonths = [...new Set((items || []).map(linkProductMonth).filter(Boolean))].sort().reverse();
   const unlinkedItems = (items || []).filter((x) => !getItemImportBatchId(x));
+  const linkSearchWords = linkItemSearch.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
+  const matchesLinkFilters = (x) => {
+    const month = linkProductMonth(x);
+    const text = [x.id, x.brand, x.item, x.productTitle, month].join(" ").toLocaleLowerCase();
+    return (!linkItemMonth || (linkItemMonth === "unknown" ? !month : month === linkItemMonth)) &&
+      linkSearchWords.every((word) => text.includes(word));
+  };
+  const filteredLinkItems = unlinkedItems.filter(matchesLinkFilters).sort((a, b) =>
+    linkProductMonth(b).localeCompare(linkProductMonth(a)) || String(a.id).localeCompare(String(b.id), undefined, { numeric: true })
+  );
+  const alreadyLinkedMatchCount = (items || []).filter((x) => getItemImportBatchId(x) && matchesLinkFilters(x)).length;
   const activeTimeline = activeBatch.id ? [
     { label: "EMS发货", done: !!activeBatch.emsNo, date: activeBatch.shipDate || activeBatch.emsDate || "" },
     { label: "抵达日本", done: !!activeBatch.importDate, date: activeBatch.importDate || "" },
@@ -8041,14 +8065,27 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
           <div className="record-card">
             <div className="record-card-head">
               <h3>商品关联列表</h3>
-              <div className="table-actions">
-                <select value={selectedLinkItemId} onChange={(e) => setSelectedLinkItemId(e.target.value)}>
-                  <option value="">选择商品加入批次</option>
-                  {unlinkedItems.map((x) => <option key={x.id} value={x.id}>{x.id} / {x.brand || ""} {x.item || ""}</option>)}
+              <button className="primary" disabled={!canEdit || !setItems || !(activeTrade?.linkedProducts || []).length} onClick={() => allocateActiveBatch(activeBatch)}>开始分摊</button>
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "end", gap: 10, marginBottom: 12 }}>
+              <label style={{ flex: "0 1 180px", minWidth: 140 }}>商品月份
+                <select style={{ width: "100%" }} value={linkItemMonth} onChange={(e) => { setLinkItemMonth(e.target.value); setSelectedLinkItemId(""); }}>
+                  <option value="">全部月份</option>
+                  {linkItemMonths.map((month) => <option key={month} value={month}>{month.replace("-", "年")}月</option>)}
+                  <option value="unknown">未识别月份</option>
                 </select>
-                <button className="ghost" onClick={() => linkSelectedProduct(activeBatch.id)}>加入批次</button>
-                <button className="primary" onClick={() => allocateActiveBatch(activeBatch)}>开始分摊</button>
-              </div>
+              </label>
+              <label style={{ flex: "1 1 240px", minWidth: 0 }}>搜索商品
+                <input style={{ width: "100%", boxSizing: "border-box" }} type="search" value={linkItemSearch} placeholder="商品编号 / 品牌 / 商品名" onChange={(e) => { setLinkItemSearch(e.target.value); setSelectedLinkItemId(""); }} />
+              </label>
+              <label style={{ flex: "2 1 320px", minWidth: 0 }}>待关联商品（{filteredLinkItems.length} 件）
+                <select style={{ width: "100%" }} value={selectedLinkItemId} onChange={(e) => setSelectedLinkItemId(e.target.value)}>
+                  <option value="">{filteredLinkItems.length ? "选择商品加入批次" : "没有符合条件的待关联商品"}</option>
+                  {filteredLinkItems.map((x) => <option key={x.id} value={x.id}>{x.id} / {x.brand || ""} {x.item || ""}</option>)}
+                </select>
+              </label>
+              <button className="ghost" disabled={!canEdit || !setItems || !selectedLinkItemId} onClick={() => linkSelectedProduct(activeBatch.id)}>加入批次</button>
+              <span className="note" style={{ flexBasis: "100%", margin: 0 }}>待关联 {filteredLinkItems.length} 件 · 已关联批次 {alreadyLinkedMatchCount} 件</span>
             </div>
             <Table headers={linkedHeaders} rows={linkedRows} />
           </div>
