@@ -108,12 +108,18 @@ try {
 
     }
 
-    await page.addInitScript(() => localStorage.setItem("gouka_erp_login", "yes"));
+    await page.addInitScript(() => {
+      localStorage.clear();
+      localStorage.setItem("gouka_erp_login", "yes");
+      const fixture = { id: "CN-202609-0001", brand: "CHANEL", item: "Chain Bag", purchaseDate: "2026-09-15", category: "バッグ類", qty: 1, source: "China Supplier", address: "China", purchaseCurrency: "CNY", purchaseCny: 1000, purchaseRateToJpy: 21.8, declaredCurrency: "CNY", declaredCny: 1000, declaredRateToJpy: 21.8, status: "已入库", platform: "EMS", saleJpy: 50000, images: [], memo: "" };
+      localStorage.setItem("gouka_erp_v2_items", JSON.stringify([fixture, { ...fixture, id: "CN-202609-0002", item: "Wallet" }]));
+    });
     await page.goto("http://127.0.0.1:4173/?view=app");
     await page.locator("aside").waitFor();
     await page.locator("aside").getByRole("button", { name: "库存管理", exact: true }).click();
     await page.locator(".search input").first().fill("Chain");
     await page.locator("aside").getByRole("button", { name: "古物台账", exact: true }).click();
+    await page.getByRole("heading", { name: "古物台账", exact: true }).waitFor();
     assert.equal(await page.locator("table tbody tr").count(), 2, "inventory search does not leak into ledger");
     await page.getByRole("button", { name: "编辑商品", exact: true }).first().click();
     assert(await page.getByRole("button", { name: "保存修改", exact: false }).isVisible(), "ledger opens actual product editor");
