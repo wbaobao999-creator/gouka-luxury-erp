@@ -24,7 +24,8 @@ console.log("Financial, persistence, images, batch save and transfer functions u
 assert(candidate.includes("<Ledger items={computedItems}"));
 assert(candidate.includes("<Customs items={computedItems}"));
 assert(candidate.includes("<Profit items={computedItems}"));
-const harness = "\nfunction SimplifyTestHarness() {\n  const fixture = { ...emptyForm, id: \"CN-202609-0001\", brand: \"CHANEL\", item: \"Classic Bag\", purchaseDate: \"2026-09-15\", purchaseCny: 1000, declaredCny: 1000, saleJpy: 50000, source: \"China Supplier\", address: \"China\", images: [\"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l9sAAAAASUVORK5CYII=\"], importBatchId: \"EMS-20260803-001\", customsBatchId: \"EMS-20260803-001\" };\n  const [items, setItems] = useState([fixture, { ...fixture, id: \"CN-202609-0002\", item: \"Wallet\" }]);\n  const [form, setForm] = useState({ ...emptyForm });\n  const [batches, setBatches] = useState([{ id: \"EMS-20260930-001\", name: \"九月\", importDate: \"2026-09-30\", goodsCount: 2, goodsValueJpy: 43600, dutyJpy: 1000, internationalShippingJpy: 2000 }, { id: \"EMS-20260803-001\", name: \"八月\", importDate: \"2026-08-03\", goodsCount: 2, dutyJpy: 500 }]);\n  const [query, setQuery] = useState(\"\");\n  const [status, setStatus] = useState(\"全部\");\n  const view = new URLSearchParams(location.search).get(\"view\") || \"ledger\";\n  const csv = (...args) => { window.__exports = args; };\n  const totals = { cost: 43600, sale: 100000, profit: 56400, qty: 2, declared: 2000, inputTax: 0, outputTax: 0 };\n  window.__testItems = items;\n  window.__testBatches = batches;\n  window.__testForm = form;\n  let content;\n  if (view === \"ledger\") content = <Ledger items={items} setItems={setItems} isOwner downloadCSV={csv} exportItemPdf={() => {}} editItem={(x) => { window.__editId = x.id; }} />;\n  if (view === \"inventory\") content = <Inventory items={items.filter(x => [x.id,x.brand,x.item].join(\" \").toLowerCase().includes(query.toLowerCase()) && (status === \"全部\" || x.status === status))} query={query} setQuery={setQuery} statusFilter={status} setStatusFilter={setStatus} downloadCSV={csv} editItem={() => {}} deleteItem={() => {}} isOwner setPreviewImage={() => {}} setPreviewScale={() => {}} exportItemPdf={() => {}} />;\n  if (view === \"batch\") content = <CustomsBatchPanel batches={batches} setBatches={setBatches} items={items} setItems={setItems} downloadCSV={csv} />;\n  if (view === \"add\") content = <AddForm form={form} setForm={setForm} saveItem={() => { window.__savedForm = form; }} resetForm={() => setForm(emptyForm)} editingId={null} handleImages={() => {}} removeImage={() => {}} dictionaries={DEFAULT_DICTIONARIES} suppliers={[]} customsBatches={batches} />;\n  if (view === \"dashboard\") content = <Dashboard items={items} totals={totals} setTab={() => {}} exportBackup={() => {}} customsBatches={batches} />;\n  if (view === \"detail\") content = <NbaaProductRecordDetail item={fixture} onClose={() => {}} exportItemPdf={() => {}} isOwner />;\n  if (view === \"ems\") content = <Customs items={items} customsBatches={batches} downloadCSV={csv} />;\n  if (view === \"profit\") content = <Profit items={items} />;\n  if (view === \"listing\") content = <ListingManagement items={items} updateListingItem={() => {}} editItem={() => {}} setPreviewImage={() => {}} setPreviewScale={() => {}} />;\n  if (view === \"sales\") content = <SalesReport items={items} updateListingItem={() => {}} downloadCSV={csv} />;\n  return <main style={{ margin: 0, width: \"100%\", boxSizing: \"border-box\", padding: 12 }}><ErrorBoundary>{content}</ErrorBoundary></main>;\n}\n";
+const harness = "\nfunction SimplifyTestHarness() {\n  const fixture = { ...emptyForm, id: \"CN-202609-0001\", brand: \"CHANEL\", item: \"Classic Bag\", purchaseDate: \"2026-09-15\", purchaseCny: 1000, declaredCny: 1000, saleJpy: 50000, source: \"China Supplier\", address: \"China\", images: [\"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l9sAAAAASUVORK5CYII=\"], importBatchId: \"EMS-20260803-001\", customsBatchId: \"EMS-20260803-001\" };\n  const [items, setItems] = useState([fixture, { ...fixture, id: \"CN-202609-0002\", item: \"Wallet\" }]);\n  const [form, setForm] = useState({ ...emptyForm });\n  const [batches, setBatches] = useState([{ id: \"EMS-20260930-001\", name: \"九月\", importDate: \"2026-09-30\", goodsCount: 2, goodsValueJpy: 43600, dutyJpy: 1000, internationalShippingJpy: 2000 }, { id: \"EMS-20260803-001\", name: \"八月\", importDate: \"2026-08-03\", goodsCount: 2, dutyJpy: 500 }]);\n  const [query, setQuery] = useState(\"\");\n  const [status, setStatus] = useState(\"全部\");\n  const view = new URLSearchParams(location.search).get(\"view\") || \"ledger\";\n  const csv = (...args) => { window.__exports = args; };\n  const totals = { cost: 43600, sale: 100000, profit: 56400, qty: 2, declared: 2000, inputTax: 0, outputTax: 0 };\n  window.__testItems = items;\n  window.__testBatches = batches;\n  window.__testForm = form;\n  let content;\n  if (view === \"ledger\") content = <Ledger items={items} setItems={setItems} isOwner downloadCSV={csv} exportItemPdf={() => {}} editItem={(x) => { window.__editId = x.id; }} />;\n  if (view === \"inventory\") content = <Inventory items={items.filter(x => [x.id,x.brand,x.item].join(\" \").toLowerCase().includes(query.toLowerCase()) && (status === \"全部\" || x.status === status))} query={query} setQuery={setQuery} statusFilter={status} setStatusFilter={setStatus} downloadCSV={csv} editItem={() => {}} deleteItem={() => {}} isOwner setPreviewImage={() => {}} setPreviewScale={() => {}} exportItemPdf={() => {}} />;\n  if (view === \"batch\") content = <CustomsBatchPanel batches={batches} setBatches={setBatches} items={items} setItems={setItems} downloadCSV={csv} />;\n  if (view === \"add\") content = <AddForm form={form} setForm={setForm} saveItem={() => { window.__savedForm = form; }} resetForm={() => setForm(emptyForm)} editingId={null} handleImages={() => {}} removeImage={() => {}} dictionaries={DEFAULT_DICTIONARIES} suppliers={[]} customsBatches={batches} />;\n  if (view === \"dashboard\") content = <Dashboard items={items} totals={totals} setTab={() => {}} exportBackup={() => {}} customsBatches={batches} />;\n  if (view === \"detail\") content = <NbaaProductRecordDetail item={fixture} onClose={() => {}} exportItemPdf={() => {}} isOwner />;\n  if (view === \"ems\") content = <Customs items={items} customsBatches={batches} downloadCSV={csv} />;\n  if (view === \"profit\") content = <Profit items={items} />;\n  if (view === \"listing\") content = <ListingManagement items={items} updateListingItem={() => {}} editItem={() => {}} setPreviewImage={() => {}} setPreviewScale={() => {}} />;\n  if (view === \"sales\") content = <SalesReport items={items} updateListingItem={() => {}} downloadCSV={csv} />;\n  if (view === "app") return <App />;
+  return <main style={{ margin: 0, width: \"100%\", boxSizing: \"border-box\", padding: 12 }}><ErrorBoundary>{content}</ErrorBoundary></main>;\n}\n";
 const mount = 'createRoot(document.getElementById("root")).render(';
 const offset = candidate.lastIndexOf(mount);
 assert(offset > 0);
@@ -37,6 +38,7 @@ try {
   browser = await chromium.launch({ headless: true });
   for (const width of [1440, 390]) {
     const page = await browser.newPage({ viewport: { width, height: 1000 } });
+    await page.route("**/*.supabase.co/**", route => route.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
     const errors = [];
     page.on("pageerror", e => errors.push(String(e)));
     page.on("dialog", d => d.type() === "confirm" ? d.accept() : d.dismiss());
@@ -47,6 +49,12 @@ try {
       assert.equal(await page.getByText("GOUKA ERP 安全模式", { exact: true }).count(), 0, view + " no error boundary");
       assert((await page.locator("main").innerText()).length > 20, view + " nonblank");
       assert.equal(errors.length, 0, view + " browser errors: " + errors.join("; "));
+      if (["ledger", "batch", "add", "inventory", "dashboard"].includes(view) && width === 390) {
+        const shot = await page.screenshot({ type: "jpeg", quality: 35, fullPage: false });
+        console.log("UI_SHOT:" + view + ":" + shot.toString("base64"));
+      }
+      const initialLayout = await page.evaluate(() => ({ width: innerWidth, scrollWidth: document.documentElement.scrollWidth }));
+      assert(initialLayout.scrollWidth <= initialLayout.width + 1, view + " has no page-level horizontal overflow");
       if (view === "ledger") {
         assert(await page.getByRole("button", { name: "登记列表", exact: true }).getAttribute("aria-pressed") === "true");
         assert.equal(await page.locator("table tbody tr").count(), 2);
@@ -95,11 +103,21 @@ try {
       const metrics = await page.evaluate(() => ({ width: innerWidth, scrollWidth: document.documentElement.scrollWidth, buttons: [...document.querySelectorAll("button")].filter(e => e.getClientRects().length).length }));
       console.log("UI_CHECK", view, width, JSON.stringify(metrics));
       await page.screenshot({ path: "verification/screenshots/" + view + "-" + width + ".png", fullPage: true });
-      if (["ledger", "batch", "add", "inventory", "dashboard"].includes(view) && width === 390) {
-        const shot = await page.screenshot({ type: "jpeg", quality: 35, fullPage: false });
-        console.log("UI_SHOT:" + view + ":" + shot.toString("base64"));
-      }
+
     }
+
+    await page.addInitScript(() => localStorage.setItem("gouka_erp_login", "yes"));
+    await page.goto("http://127.0.0.1:4173/?view=app");
+    await page.locator("aside").waitFor();
+    await page.locator("aside").getByRole("button", { name: "库存管理", exact: true }).click();
+    await page.locator(".search input").first().fill("Chain");
+    await page.locator("aside").getByRole("button", { name: "古物台账", exact: true }).click();
+    assert.equal(await page.locator("table tbody tr").count(), 2, "inventory search does not leak into ledger");
+    await page.getByRole("button", { name: "编辑商品", exact: true }).first().click();
+    assert(await page.getByRole("button", { name: "保存修改", exact: false }).isVisible(), "ledger opens actual product editor");
+    assert.equal(errors.length, 0, "App navigation browser errors");
+    console.log("APP_NAVIGATION_PASS", width);
+    await page.screenshot({ path: "verification/screenshots/app-" + width + ".png", fullPage: true });
     await page.close();
   }
   console.log("All desktop/mobile workflow checks passed");
