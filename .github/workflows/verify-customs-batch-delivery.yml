@@ -1,0 +1,25 @@
+name: Verify Customs Batch Delivery
+on:
+  push:
+    branches:
+      - fix/customs-batch-save-20261003
+    paths:
+      - deliveries/GOUKA-ERP-main-customs-batch-fixed-20261003.txt
+      - .github/workflows/verify-customs-batch-delivery.yml
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Load candidate into temporary checkout
+        run: cp deliveries/GOUKA-ERP-main-customs-batch-fixed-20261003.txt main.jsx
+      - name: Install project dependencies
+        run: npm install --no-audit --no-fund
+      - name: Build complete ERP
+        run: npm run build
