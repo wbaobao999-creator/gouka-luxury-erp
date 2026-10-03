@@ -7729,17 +7729,64 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
     return normalizeImportBatch(source || normalizedBatches[0] || {});
   }
 
-  function linkSelectedProduct(batchId) {
+  function moveProductsToBatch(batchId, productIds) {
     if (!canEdit || !setItems) return alert("当前账号不能关联商品");
-    if (!selectedLinkItemId) return alert("请选择要加入批次的商品");
-    if (!filteredLinkItems.some((x) => x.id === selectedLinkItemId && !getItemImportBatchId(x))) {
-      setSelectedLinkItemId("");
-      return alert("商品已关联其他批次或不符合当前筛选，请重新选择。");
-    }
-    setItems((prev) => (prev || []).map((x) => x.id === selectedLinkItemId ? { ...x, customsBatchId: batchId, importBatchId: batchId } : x));
+    const target = (batches || []).map(normalizeImportBatch).find((x) => x.id === batchId);
+    if (!target) return alert("请先保存并选择目标批次。");
+    const ids = new Set(productIds);
+    const selected = (items || []).filter((x) => ids.has(x.id) && getItemImportBatchId(x) !== batchId);
+    if (!selected.length) return alert("所选商品已在当前批次，或没有可加入的商品。");
+    const sourceIds = [...new Set(selected.map(getItemImportBatchId).filter(Boolean))];
+    const message = "将 " + selected.length + " 件商品移入批次 " + batchId + "？" +
+      (sourceIds.length ? "\n原批次：" + sourceIds.join("、") : "\n原状态：未关联批次") +
+      "\n商品：" + selected.slice(0, 5).map((x) => x.id).join("、") + (selected.length > 5 ? " 等" : "") +
+      "\n原批次和目标批次的旧分摊将清除，需分别重新分摊。采购金额、批次费用和附件不变。";
+    if (!window.confirm(message)) return;
+    const movingIds = new Set(selected.map((x) => x.id));
+    const affectedBatchIds = new Set([...sourceIds, batchId]);
+    // Membership changes invalidate allocations for both source and target batches.
+    setItems((prev) => (prev || []).map((x) => {
+      const moving = movingIds.has(x.id);
+      if (!moving && !affectedBatchIds.has(getItemImportBatchId(x))) return x;
+      return {
+        ...x,
+        ...(moving ? { customsBatchId: batchId, importBatchId: batchId } : {}),
+        allocatedDutyJpy: 0,
+        allocatedAgentFeeJpy: 0,
+        allocatedInternationalShippingJpy: 0,
+        allocatedOtherImportCostJpy: 0,
+        importTaxCreditJpy: 0,
+        batchAllocatedDutyJpy: 0,
+        batchAllocatedShippingJpy: 0,
+        batchAllocatedCustomsFeeJpy: 0,
+        batchAllocatedOtherCostJpy: 0,
+        batchAllocatedImportTaxJpy: 0,
+        batchAllocatedAt: ""
+      };
+    }));
+    setBatches((prev) => (prev || []).map((x) => {
+      if (!affectedBatchIds.has(normalizeImportBatch(x).id)) return x;
+      return {
+        ...x,
+        status: ["已分摊", "已完成"].includes(x.status) ? "" : x.status,
+        allocatedAt: "",
+        completedAt: ""
+      };
+    }));
     setActiveBatchId(batchId);
     setSelectedLinkItemId("");
-    alert("商品已关联到 Import Batch");
+    alert(selected.length + " 件商品已移入 " + batchId + "。请点击开始分摊；原批次如仍有商品，也需重新分摊。");
+  }
+
+  function linkSelectedProduct(batchId) {
+    if (!selectedLinkItemId) return alert("请选择要加入批次的商品");
+    if (!filteredLinkItems.some((x) => x.id === selectedLinkItemId)) return alert("请选择符合当前筛选的商品");
+    moveProductsToBatch(batchId, [selectedLinkItemId]);
+  }
+
+  function linkMatchingProducts(batchId) {
+    if (!linkItemMonth && !linkItemSearch.trim()) return alert("请先选择商品月份或输入商品编号，避免误加入其他月份。");
+    moveProductsToBatch(batchId, filteredLinkItems.map((x) => x.id));
   }
 
   function unlinkProductFromBatch(itemId) {
@@ -8083,11 +8130,12 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
                   <option value="">{filteredLinkItems.length ? "选择商品加入批次" : "没有符合条件的商品"}</option>
                   {filteredLinkItems.map((x) => {
                     const batchId = getItemImportBatchId(x);
-                    return <option key={x.id} value={x.id} disabled={!!batchId}>{x.id} / {x.brand || ""} {x.item || ""}{batchId ? " / 已关联：" + batchId : " / 未关联"}</option>;
+                    return <option key={x.id} value={x.id} disabled={batchId === activeBatch.id}>{x.id} / {x.brand || ""} {x.item || ""}{batchId ? " / 已关联：" + batchId : " / 未关联"}</option>;
                   })}
                 </select>
               </label>
-              <button className="ghost" disabled={!canEdit || !setItems || !selectedLinkItemId} onClick={() => linkSelectedProduct(activeBatch.id)}>加入批次</button>
+              <button className="ghost" disabled={!canEdit || !setItems || !selectedLinkItemId} onClick={() => linkSelectedProduct(activeBatch.id)}>加入 / 移入批次</button>
+              <button className="ghost" disabled={!canEdit || !setItems || (!linkItemMonth && !linkItemSearch.trim()) || !filteredLinkItems.some((x) => getItemImportBatchId(x) !== activeBatch.id)} onClick={() => linkMatchingProducts(activeBatch.id)}>批量移入匹配商品</button>
               <span className="note" style={{ flexBasis: "100%", margin: 0 }}>待关联 {availableLinkItemCount} 件 · 已关联批次 {alreadyLinkedMatchCount} 件</span>
             </div>
             <Table headers={linkedHeaders} rows={linkedRows} />
