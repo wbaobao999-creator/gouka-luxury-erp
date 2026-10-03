@@ -7732,7 +7732,7 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
   function linkSelectedProduct(batchId) {
     if (!canEdit || !setItems) return alert("当前账号不能关联商品");
     if (!selectedLinkItemId) return alert("请选择要加入批次的商品");
-    if (!filteredLinkItems.some((x) => x.id === selectedLinkItemId)) {
+    if (!filteredLinkItems.some((x) => x.id === selectedLinkItemId && !getItemImportBatchId(x))) {
       setSelectedLinkItemId("");
       return alert("商品已关联其他批次或不符合当前筛选，请重新选择。");
     }
@@ -7866,7 +7866,6 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
     return /^\d{4}-\d{2}/.test(date) ? date.slice(0, 7) : "";
   }
   const linkItemMonths = [...new Set((items || []).map(linkProductMonth).filter(Boolean))].sort().reverse();
-  const unlinkedItems = (items || []).filter((x) => !getItemImportBatchId(x));
   const linkSearchWords = linkItemSearch.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
   const matchesLinkFilters = (x) => {
     const month = linkProductMonth(x);
@@ -7874,10 +7873,11 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
     return (!linkItemMonth || (linkItemMonth === "unknown" ? !month : month === linkItemMonth)) &&
       linkSearchWords.every((word) => text.includes(word));
   };
-  const filteredLinkItems = unlinkedItems.filter(matchesLinkFilters).sort((a, b) =>
+  const filteredLinkItems = (items || []).filter(matchesLinkFilters).sort((a, b) =>
     linkProductMonth(b).localeCompare(linkProductMonth(a)) || String(a.id).localeCompare(String(b.id), undefined, { numeric: true })
   );
-  const alreadyLinkedMatchCount = (items || []).filter((x) => getItemImportBatchId(x) && matchesLinkFilters(x)).length;
+  const alreadyLinkedMatchCount = filteredLinkItems.filter((x) => getItemImportBatchId(x)).length;
+  const availableLinkItemCount = filteredLinkItems.length - alreadyLinkedMatchCount;
   const activeTimeline = activeBatch.id ? [
     { label: "EMS发货", done: !!activeBatch.emsNo, date: activeBatch.shipDate || activeBatch.emsDate || "" },
     { label: "抵达日本", done: !!activeBatch.importDate, date: activeBatch.importDate || "" },
@@ -8078,14 +8078,17 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
               <label style={{ flex: "1 1 240px", minWidth: 0 }}>搜索商品
                 <input style={{ width: "100%", boxSizing: "border-box" }} type="search" value={linkItemSearch} placeholder="商品编号 / 品牌 / 商品名" onChange={(e) => { setLinkItemSearch(e.target.value); setSelectedLinkItemId(""); }} />
               </label>
-              <label style={{ flex: "2 1 320px", minWidth: 0 }}>待关联商品（{filteredLinkItems.length} 件）
+              <label style={{ flex: "2 1 320px", minWidth: 0 }}>匹配商品（{filteredLinkItems.length} 件）
                 <select style={{ width: "100%" }} value={selectedLinkItemId} onChange={(e) => setSelectedLinkItemId(e.target.value)}>
-                  <option value="">{filteredLinkItems.length ? "选择商品加入批次" : "没有符合条件的待关联商品"}</option>
-                  {filteredLinkItems.map((x) => <option key={x.id} value={x.id}>{x.id} / {x.brand || ""} {x.item || ""}</option>)}
+                  <option value="">{filteredLinkItems.length ? "选择商品加入批次" : "没有符合条件的商品"}</option>
+                  {filteredLinkItems.map((x) => {
+                    const batchId = getItemImportBatchId(x);
+                    return <option key={x.id} value={x.id} disabled={!!batchId}>{x.id} / {x.brand || ""} {x.item || ""}{batchId ? " / 已关联：" + batchId : " / 未关联"}</option>;
+                  })}
                 </select>
               </label>
               <button className="ghost" disabled={!canEdit || !setItems || !selectedLinkItemId} onClick={() => linkSelectedProduct(activeBatch.id)}>加入批次</button>
-              <span className="note" style={{ flexBasis: "100%", margin: 0 }}>待关联 {filteredLinkItems.length} 件 · 已关联批次 {alreadyLinkedMatchCount} 件</span>
+              <span className="note" style={{ flexBasis: "100%", margin: 0 }}>待关联 {availableLinkItemCount} 件 · 已关联批次 {alreadyLinkedMatchCount} 件</span>
             </div>
             <Table headers={linkedHeaders} rows={linkedRows} />
           </div>
