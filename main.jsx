@@ -7400,7 +7400,12 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
   const [editingId, setEditingId] = useState(null);
   const [activeBatchId, setActiveBatchId] = useState("");
   const [attachmentType, setAttachmentType] = useState("报关库存表");
+  const [pendingBatchFiles, setPendingBatchFiles] = useState([]);
+  const [batchSaving, setBatchSaving] = useState(false);
+  const batchSaveLock = React.useRef(false);
   const [selectedLinkItemId, setSelectedLinkItemId] = useState("");
+  const [linkItemMonth, setLinkItemMonth] = useState("");
+  const [linkItemSearch, setLinkItemSearch] = useState("");
   const attachmentTypes = ["报关库存表", "輸入許可通知書 / 报关单", "Invoice", "Packing List", "EMS凭证", "其他"];
   const set = (k, v) => setForm((prev) => ({ ...prev, [k]: v }));
   const shippingAmount = Number(form.internationalShippingAmount || form.shippingAmount || form.internationalShippingJpy || form.shippingJpy || 0);
@@ -7470,12 +7475,15 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
   }
 
   function reset() {
+    if (batchSaveLock.current) return;
+    setPendingBatchFiles([]);
     setForm(emptyBatch);
     setEditingId(null);
     setAttachmentType("报关库存表");
   }
 
-  function saveBatch() {
+  async function saveBatch() {
+    if (batchSaveLock.current) return;
     if (!canEdit) {
       alert("当前账号是只读权限，不能新增或修改报关批次。请用管理者账号登录。");
       return;
@@ -7486,6 +7494,18 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
       alert("Import Batch ID 生成失败，请填写进口日期后再试。");
       return;
     }
+    if (!editingId && (batches || []).some((b) => normalizeImportBatch(b).id === batchId)) return alert("批次编号已存在，请换一个编号或编辑原批次。");
+    batchSaveLock.current = true;
+    setBatchSaving(true);
+    setForm((prev) => ({ ...prev, id: batchId }));
+    try {
+      const savedAttachments = normalizeBatchAttachments(form);
+      for (const entry of pendingBatchFiles) {
+        const uploaded = await uploadImportBatchAttachments(batchId, [entry.file], entry.documentType);
+        savedAttachments.push(...uploaded);
+        setForm((prev) => ({ ...prev, attachments: [...(prev.attachments || []), ...uploaded] }));
+        setPendingBatchFiles((prev) => prev.filter((x) => x !== entry));
+      }
     const goodsValueJpy = fxToJpy("goodsValueAmount", "goodsValueCurrency", "goodsValueRateToJpy", "goodsValueJpy");
     const dutyJpy = fxToJpy("dutyAmount", "dutyCurrency", "dutyRateToJpy", "dutyJpy");
     const importConsumptionTaxJpy = fxToJpy("importConsumptionTaxAmount", "importConsumptionTaxCurrency", "importConsumptionTaxRateToJpy", "importConsumptionTaxJpy");
@@ -7515,7 +7535,7 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
       customsFeeJpy: agencyFeeJpy,
       agencyFeeJpy,
       otherCostJpy,
-      attachments: normalizeBatchAttachments(form),
+      attachments: savedAttachments,
       createdAt: form.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString()
     });
@@ -7530,11 +7550,22 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
     });
     setActiveBatchId(next.id);
     window.setTimeout(onGlobalSave, 0);
-    alert(editingId ? "报关批次已更新：" + next.id : "报关批次已新增：" + next.id);
-    reset();
+    setForm({ ...next, attachmentsText: "" });
+    setEditingId(next.id);
+    setPendingBatchFiles([]);
+    alert("批次已在本机保存：" + next.id + "\n附件已登记：" + savedAttachments.length + " 个。跨设备同步请确认顶部同步状态。");
+    } catch (e) {
+      console.error(e);
+      alert("保存未完成：" + String(e?.message || e) + "\n填写内容已保留，请重试。");
+    } finally {
+      batchSaveLock.current = false;
+      setBatchSaving(false);
+    }
   }
 
   function editBatch(b) {
+    if (batchSaveLock.current) return;
+    setPendingBatchFiles([]);
     const batch = normalizeImportBatch(b);
     setForm({
       ...batch,
@@ -7567,6 +7598,8 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
   }
 
   function fillSampleBatch() {
+    if (batchSaveLock.current) return;
+    setPendingBatchFiles([]);
     setForm({
       ...emptyBatch,
       id: "EMS-20260702-001",
@@ -7639,26 +7672,17 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
     });
   }
 
-  async function handleBatchFiles(files) {
+  function handleBatchFiles(files) {
+    if (!canEdit || batchSaveLock.current) return;
     const selected = Array.from(files || []);
-    if (!selected.length) return;
-    const batchId = String(form.id || editingId || "").trim();
-    if (!batchId) {
-      alert("请先填写 Import Batch ID，再上传附件。这样云端档案才能按批次长期保存。");
-      return;
-    }
-    try {
-      const uploaded = await uploadImportBatchAttachments(batchId, selected, attachmentType || "报关库存表");
-      setForm((prev) => ({
-        ...prev,
-        attachments: [...(Array.isArray(prev.attachments) ? prev.attachments : []), ...uploaded]
-      }));
-      alert("附件已上传到云端档案库，并登记到当前报关批次。");
-    } catch (e) {
-      console.error(e);
-      const msg = String(e?.message || e?.error_description || e?.details || e || "未知错误");
-      alert("附件上传云端失败：" + msg + "\n\n请确认已在 Supabase SQL Editor 运行 supabase-import-batch-files.sql。文件没有写入ERP，避免系统变大。");
-    }
+    if (selected.some((file) => file.size > 100 * 1024 * 1024)) return alert("附件超过100MB，请先压缩。");
+    setPendingBatchFiles((prev) => {
+      const next = [...prev];
+      for (const file of selected) {
+        if (!next.some((x) => x.file.name === file.name && x.file.size === file.size && x.file.lastModified === file.lastModified)) next.push({ file, documentType: attachmentType });
+      }
+      return next;
+    });
   }
 
   function removeBatchAttachment(index) {
@@ -7706,8 +7730,12 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
   }
 
   function linkSelectedProduct(batchId) {
-    if (!setItems) return alert("当前账号不能关联商品");
+    if (!canEdit || !setItems) return alert("当前账号不能关联商品");
     if (!selectedLinkItemId) return alert("请选择要加入批次的商品");
+    if (!filteredLinkItems.some((x) => x.id === selectedLinkItemId && !getItemImportBatchId(x))) {
+      setSelectedLinkItemId("");
+      return alert("商品已关联其他批次或不符合当前筛选，请重新选择。");
+    }
     setItems((prev) => (prev || []).map((x) => x.id === selectedLinkItemId ? { ...x, customsBatchId: batchId, importBatchId: batchId } : x));
     setActiveBatchId(batchId);
     setSelectedLinkItemId("");
@@ -7831,7 +7859,25 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
   const activeTrade = activeBatch.id ? calcImportBatchTradeSummary(activeBatch, items) : null;
   const activeAllocations = activeBatch.id ? calcImportBatchAllocation(activeBatch, activeTrade?.linkedProducts || []) : [];
   const activeAllocationMap = Object.fromEntries(activeAllocations.map((x) => [x.item.id, x]));
-  const unlinkedItems = (items || []).filter((x) => !getItemImportBatchId(x));
+  function linkProductMonth(item) {
+    const idMonth = String(item.id || "").match(/(?:^|-)((?:19|20)\d{2})(0[1-9]|1[0-2])(?:-|$)/);
+    if (idMonth) return idMonth[1] + "-" + idMonth[2];
+    const date = normalizeDateStringForInput(item.purchaseDate || item.auction?.auctionDate || "");
+    return /^\d{4}-\d{2}/.test(date) ? date.slice(0, 7) : "";
+  }
+  const linkItemMonths = [...new Set((items || []).map(linkProductMonth).filter(Boolean))].sort().reverse();
+  const linkSearchWords = linkItemSearch.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
+  const matchesLinkFilters = (x) => {
+    const month = linkProductMonth(x);
+    const text = [x.id, x.brand, x.item, x.productTitle, month].join(" ").toLocaleLowerCase();
+    return (!linkItemMonth || (linkItemMonth === "unknown" ? !month : month === linkItemMonth)) &&
+      linkSearchWords.every((word) => text.includes(word));
+  };
+  const filteredLinkItems = (items || []).filter(matchesLinkFilters).sort((a, b) =>
+    linkProductMonth(b).localeCompare(linkProductMonth(a)) || String(a.id).localeCompare(String(b.id), undefined, { numeric: true })
+  );
+  const alreadyLinkedMatchCount = filteredLinkItems.filter((x) => getItemImportBatchId(x)).length;
+  const availableLinkItemCount = filteredLinkItems.length - alreadyLinkedMatchCount;
   const activeTimeline = activeBatch.id ? [
     { label: "EMS发货", done: !!activeBatch.emsNo, date: activeBatch.shipDate || activeBatch.emsDate || "" },
     { label: "抵达日本", done: !!activeBatch.importDate, date: activeBatch.importDate || "" },
@@ -8019,42 +8065,64 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
           <div className="record-card">
             <div className="record-card-head">
               <h3>商品关联列表</h3>
-              <div className="table-actions">
-                <select value={selectedLinkItemId} onChange={(e) => setSelectedLinkItemId(e.target.value)}>
-                  <option value="">选择商品加入批次</option>
-                  {unlinkedItems.map((x) => <option key={x.id} value={x.id}>{x.id} / {x.brand || ""} {x.item || ""}</option>)}
+              <button className="primary" disabled={!canEdit || !setItems || !(activeTrade?.linkedProducts || []).length} onClick={() => allocateActiveBatch(activeBatch)}>开始分摊</button>
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "end", gap: 10, marginBottom: 12 }}>
+              <label style={{ flex: "0 1 180px", minWidth: 140 }}>商品月份
+                <select style={{ width: "100%" }} value={linkItemMonth} onChange={(e) => { setLinkItemMonth(e.target.value); setSelectedLinkItemId(""); }}>
+                  <option value="">全部月份</option>
+                  {linkItemMonths.map((month) => <option key={month} value={month}>{month.replace("-", "年")}月</option>)}
+                  <option value="unknown">未识别月份</option>
                 </select>
-                <button className="ghost" onClick={() => linkSelectedProduct(activeBatch.id)}>加入批次</button>
-                <button className="primary" onClick={() => allocateActiveBatch(activeBatch)}>开始分摊</button>
-              </div>
+              </label>
+              <label style={{ flex: "1 1 240px", minWidth: 0 }}>搜索商品
+                <input style={{ width: "100%", boxSizing: "border-box" }} type="search" value={linkItemSearch} placeholder="商品编号 / 品牌 / 商品名" onChange={(e) => { setLinkItemSearch(e.target.value); setSelectedLinkItemId(""); }} />
+              </label>
+              <label style={{ flex: "2 1 320px", minWidth: 0 }}>匹配商品（{filteredLinkItems.length} 件）
+                <select style={{ width: "100%" }} value={selectedLinkItemId} onChange={(e) => setSelectedLinkItemId(e.target.value)}>
+                  <option value="">{filteredLinkItems.length ? "选择商品加入批次" : "没有符合条件的商品"}</option>
+                  {filteredLinkItems.map((x) => {
+                    const batchId = getItemImportBatchId(x);
+                    return <option key={x.id} value={x.id} disabled={!!batchId}>{x.id} / {x.brand || ""} {x.item || ""}{batchId ? " / 已关联：" + batchId : " / 未关联"}</option>;
+                  })}
+                </select>
+              </label>
+              <button className="ghost" disabled={!canEdit || !setItems || !selectedLinkItemId} onClick={() => linkSelectedProduct(activeBatch.id)}>加入批次</button>
+              <span className="note" style={{ flexBasis: "100%", margin: 0 }}>待关联 {availableLinkItemCount} 件 · 已关联批次 {alreadyLinkedMatchCount} 件</span>
             </div>
             <Table headers={linkedHeaders} rows={linkedRows} />
           </div>
         </div>
       )}
 
+      <div className="action-row">
+        <button className="primary" onClick={saveBatch} disabled={!canEdit || batchSaving}>{batchSaving ? "正在保存…" : (editingId ? "保存修改" : "保存新批次")}</button>
+        {editingId && <button className="ghost" onClick={reset} disabled={batchSaving}>新增另一批次</button>}
+      </div>
+      <fieldset disabled={batchSaving || !canEdit} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
       <div className="formgrid">
         <Input label="Import Batch ID" value={form.id} onChange={(v) => set("id", v)} placeholder="空白则自动生成 EMS-年月-001" />
         <Input label="批次名称" value={form.name} onChange={(v) => set("name", v)} placeholder="例：2026年7月进口第1批" />
         <Input label="EMS单号" value={form.emsNo || ""} onChange={(v) => set("emsNo", v)} />
         <Input label="报关编号" value={form.customsDeclarationNo || ""} onChange={(v) => set("customsDeclarationNo", v)} />
         <Input label="进口日期" type="date" value={form.importDate || ""} onChange={(v) => set("importDate", v)} />
-        <FxMoneyInput label="货值" amountKey="goodsValueAmount" currencyKey="goodsValueCurrency" rateKey="goodsValueRateToJpy" jpyKey="goodsValueJpy" note="报关申报货值，可填 CNY / JPY / USD。" />
+        {FxMoneyInput({ label: "货值", amountKey: "goodsValueAmount", currencyKey: "goodsValueCurrency", rateKey: "goodsValueRateToJpy", jpyKey: "goodsValueJpy", note: "报关申报货值，可填 CNY / JPY / USD。", })}
         <Input label="商品件数" type="number" value={form.goodsCount || form.itemCount || ""} onChange={(v) => { set("goodsCount", v); set("itemCount", v); }} />
         <Input label="重量 kg" type="number" value={form.grossWeightKg || ""} onChange={(v) => set("grossWeightKg", v)} />
-        <FxMoneyInput label="关税（进成本）" amountKey="dutyAmount" currencyKey="dutyCurrency" rateKey="dutyRateToJpy" jpyKey="dutyJpy" />
-        <FxMoneyInput label="进口消费税（不进成本）" amountKey="importConsumptionTaxAmount" currencyKey="importConsumptionTaxCurrency" rateKey="importConsumptionTaxRateToJpy" jpyKey="importConsumptionTaxJpy" />
-        <FxMoneyInput label="地方消费税（不进成本）" amountKey="localConsumptionTaxAmount" currencyKey="localConsumptionTaxCurrency" rateKey="localConsumptionTaxRateToJpy" jpyKey="localConsumptionTaxJpy" />
-        <FxMoneyInput label="代理费（进成本）" amountKey="agencyFeeAmount" currencyKey="agencyFeeCurrency" rateKey="agencyFeeRateToJpy" jpyKey="agencyFeeJpy" />
+        {FxMoneyInput({ label: "关税（进成本）", amountKey: "dutyAmount", currencyKey: "dutyCurrency", rateKey: "dutyRateToJpy", jpyKey: "dutyJpy", })}
+        {FxMoneyInput({ label: "进口消费税（不进成本）", amountKey: "importConsumptionTaxAmount", currencyKey: "importConsumptionTaxCurrency", rateKey: "importConsumptionTaxRateToJpy", jpyKey: "importConsumptionTaxJpy", })}
+        {FxMoneyInput({ label: "地方消费税（不进成本）", amountKey: "localConsumptionTaxAmount", currencyKey: "localConsumptionTaxCurrency", rateKey: "localConsumptionTaxRateToJpy", jpyKey: "localConsumptionTaxJpy", })}
+        {FxMoneyInput({ label: "代理费（进成本）", amountKey: "agencyFeeAmount", currencyKey: "agencyFeeCurrency", rateKey: "agencyFeeRateToJpy", jpyKey: "agencyFeeJpy", })}
         <Input label="国际运费金额" type="number" value={form.internationalShippingAmount || ""} onChange={(v) => { set("internationalShippingAmount", v); set("internationalShippingJpy", Math.round(Number(v || 0) * shippingRateToJpy)); set("shippingJpy", Math.round(Number(v || 0) * shippingRateToJpy)); }} />
         <label>国际运费币种<select value={shippingCurrency} onChange={(e) => { const cur = e.target.value; const rate = cur === "JPY" ? 1 : defaultRateFor(cur); setForm((prev) => ({ ...prev, internationalShippingCurrency: cur, internationalShippingRateToJpy: rate, internationalShippingJpy: Math.round(Number(prev.internationalShippingAmount || 0) * rate), shippingJpy: Math.round(Number(prev.internationalShippingAmount || 0) * rate) })); }}><option value="CNY">CNY</option><option value="JPY">JPY</option><option value="USD">USD</option></select></label>
         <Input label="国际运费汇率" type="number" value={form.internationalShippingRateToJpy || ""} onChange={(v) => { set("internationalShippingRateToJpy", v); set("internationalShippingJpy", Math.round(shippingAmount * Number(v || 0))); set("shippingJpy", Math.round(shippingAmount * Number(v || 0))); }} />
         <Input label="国际运费 JPY（自动）" type="number" value={shippingJpyPreview || ""} onChange={(v) => { set("internationalShippingJpy", v); set("shippingJpy", v); }} />
-        <FxMoneyInput label="其他费用（进成本）" amountKey="otherCostAmount" currencyKey="otherCostCurrency" rateKey="otherCostRateToJpy" jpyKey="otherCostJpy" />
+        {FxMoneyInput({ label: "其他费用（进成本）", amountKey: "otherCostAmount", currencyKey: "otherCostCurrency", rateKey: "otherCostRateToJpy", jpyKey: "otherCostJpy", })}
         <label>附件类型<select value={attachmentType} onChange={(e) => setAttachmentType(e.target.value)}>{attachmentTypes.map((x) => <option key={x} value={x}>{x}</option>)}</select></label>
         <label className="file-upload-box">附件导入（PDF / 图片 / 报关库存表）
-          <input type="file" accept="application/pdf,image/*,.pdf,.jpg,.jpeg,.png,.webp,.xls,.xlsx,.csv" multiple onChange={(e) => handleBatchFiles(e.target.files)} />
-          <span>文件会上传到云端附件库，ERP只保存链接和档案信息。适合长期保存和跨电脑查看。</span>
+          <input type="file" accept="application/pdf,image/*,.pdf,.jpg,.jpeg,.png,.webp,.xls,.xlsx,.csv" multiple onChange={(e) => { handleBatchFiles(e.target.files); e.target.value = ""; }} />
+          <span>保存批次时上传附件；编号留空会自动生成。</span>
+          {pendingBatchFiles.map((entry, index) => <span key={index}>{entry.file.name}（待保存） <button type="button" className="ghost" onClick={(e) => { e.preventDefault(); setPendingBatchFiles((prev) => prev.filter((_, i) => i !== index)); }}>移除</button></span>)}
         </label>
         <label>附件清单 / URL<textarea value={form.attachmentsText || ""} onChange={(e) => set("attachmentsText", e.target.value)} placeholder="也可以一行一个附件名或URL" /></label>
         {!!(form.attachments || []).length && (
@@ -8076,10 +8144,11 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
         )}
         <label>备注<textarea value={form.memo || ""} onChange={(e) => set("memo", e.target.value)} placeholder="例：7月报关单、Invoice、Packing List 对应保存" /></label>
       </div>
+      </fieldset>
       <div className="action-row">
-        <button className="primary" onClick={saveBatch} disabled={!canEdit}>{editingId ? "保存批次" : "新增批次"}</button>
-        {editingId && <button className="ghost" onClick={reset}>取消编辑</button>}
-        <button className="ghost" onClick={fillSampleBatch}>填入7月样例</button>
+        <button className="primary" onClick={saveBatch} disabled={!canEdit || batchSaving}>{batchSaving ? "正在保存…" : (editingId ? "保存修改" : "保存新批次")}</button>
+        {editingId && <button className="ghost" onClick={reset} disabled={batchSaving}>新增另一批次</button>}
+        <button className="ghost" onClick={fillSampleBatch} disabled={batchSaving}>填入7月样例</button>
         <button className="ghost" onClick={() => downloadCSV([headers, ...rows], "gouka_import_batches.csv")}>CSV导出</button>
       </div>
       <Table headers={headers} rows={rows} />
