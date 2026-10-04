@@ -259,16 +259,23 @@ try {
         for (const row of rows) tx.objectStore("item_images").put({ itemId: row.id, images: ["https://example.com/1.jpg", "https://example.com/2.jpg", "https://example.com/3.jpg"] });
         tx.oncomplete = resolve; tx.onerror = () => reject(tx.error);
       });
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction("item_images", "readwrite");
+        tx.objectStore("item_images").put({ itemId: "CACHE-invalid", images: { broken: true } });
+        tx.oncomplete = resolve; tx.onerror = () => reject(tx.error);
+      });
+      rows.push({ id: "CACHE-invalid", images: [], imageCount: 2 });
       db.close();
       const nativeOpen = indexedDB.open.bind(indexedDB);
       let opens = 0;
       indexedDB.open = (...args) => { opens++; return nativeOpen(...args); };
       let result;
       try { result = await window.__hydrateImages(rows); } finally { indexedDB.open = nativeOpen; }
-      return { opens, count: result.length, complete: result.every(row => row.images.length === 3 && row.imageCount === 3) };
+      return { opens, count: result.length, complete: result.filter(row => row.id !== "CACHE-invalid").every(row => row.images.length === 3 && row.imageCount === 3),
+        invalidSafe: Array.isArray(result.at(-1).images) && result.at(-1).images.length === 0 && result.at(-1).imageCount === 2 };
     });
     assert.equal(hydration.opens, 1, "10000 cache records use one database connection");
-    assert.equal(hydration.count, 10000); assert(hydration.complete);
+    assert.equal(hydration.count, 10001); assert(hydration.complete); assert(hydration.invalidSafe);
     console.log("IMAGE_CACHE_SCALE_PASS", width, JSON.stringify(hydration));
 
     console.log("PHOTO_SCALE_PASS", width, JSON.stringify({ displayed: imageRequests.length, dimensions: imageCheck.dimensions }));
