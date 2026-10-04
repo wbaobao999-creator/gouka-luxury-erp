@@ -278,6 +278,43 @@ try {
     assert(await page.locator("aside").getByRole("button", { name: "报关清单导出", exact: true }).isVisible());
     console.log("APP_NAVIGATION_PASS", width);
     await page.screenshot({ path: "verification/screenshots/app-" + width + ".png", fullPage: true });
+
+    await page.locator("aside").getByRole("button", { name: "古物台账", exact: true }).click();
+    await page.getByRole("button", { name: "编辑商品", exact: true }).first().click();
+    let targetWrites = 0, failPhoto = true;
+    await page.route("**/*.supabase.co/rest/v1/items**", route => {
+      const request = route.request();
+      if (request.method() === "POST") {
+        const rows = request.postDataJSON();
+        if ((Array.isArray(rows) ? rows : [rows]).some(row => row.product_no === "CN-202609-0001")) targetWrites++;
+      }
+      return route.fulfill({ status: 200, contentType: "application/json", body: "[]" });
+    });
+    await page.route("**/*.supabase.co/storage/v1/object/**", route => {
+      if (route.request().method() === "POST") {
+        return route.fulfill({ status: failPhoto ? 503 : 200, contentType: "application/json",
+          body: failPhoto ? JSON.stringify({ message: "Test upload failure", error: "ServiceUnavailable" }) : JSON.stringify({ Key: "test-photo" }) });
+      }
+      return route.fulfill({ status: 200, contentType: "image/png", body: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l9sAAAAASUVORK5CYII=", "base64") });
+    });
+    const dialogs = [];
+    page.on("dialog", d => dialogs.push(d.message()));
+    await page.locator('input[type="file"]').first().setInputFiles({ name: "photo.png", mimeType: "image/png",
+      buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l9sAAAAASUVORK5CYII=", "base64") });
+    await page.getByAltText("商品图片1", { exact: true }).waitFor();
+    await page.getByRole("button", { name: "保存修改", exact: false }).click();
+    await page.waitForFunction(() => document.body.innerText.includes("照片上传失败"));
+    assert.equal(targetWrites, 0, "failed photo never saves an incomplete cloud product");
+    assert(await page.getByRole("button", { name: "保存修改", exact: false }).isVisible(), "failed upload keeps product editor");
+    assert.equal(await page.getByAltText("商品图片1", { exact: true }).count(), 1, "failed upload keeps photo");
+    assert(dialogs.some(message => message.includes("上传失败")), "failure is visible to user");
+    failPhoto = false;
+    await page.getByRole("button", { name: "保存修改", exact: false }).click();
+    await page.getByRole("heading", { name: "库存管理", exact: true }).waitFor();
+    assert(targetWrites > 0, "retry saves the same product");
+    assert.equal(errors.length, 0, "upload failures do not cause uncaught browser errors");
+    console.log("ACTUAL_EDITOR_UPLOAD_RETRY_PASS", width);
+
     await page.close();
   }
   console.log("All desktop/mobile workflow checks passed");
