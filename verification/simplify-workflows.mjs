@@ -37,7 +37,7 @@ function objectValues(source) {
 }
 assert.deepEqual(objectValues(newFns.get("saveItem")), objectValues(oldFns.get("saveItem")), "all saved product and financial field expressions remain identical");
 for (const name of ["ProductThumb", "NbaaProductRecordDetail"]) {
-  assert.equal(newFns.get(name), oldFns.get(name).replaceAll("<img", "<ProductImage"), name + " only adopts safe thumbnails");
+  assert.equal(newFns.get(name).replaceAll("<ProductImage", "<img"), oldFns.get(name), name + " only adopts safe thumbnails");
 }
 
 console.log("Financial calculations, batch save/transfer and unaffected workflows unchanged");
