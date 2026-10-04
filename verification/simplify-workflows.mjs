@@ -15,7 +15,11 @@ function functions(source) {
   walk(parse(source, { sourceType: "module", plugins: ["jsx"] }));
   return map;
 }
-const oldFns = functions(base), newFns = functions(candidate);
+const basePage = execFileSync("git", ["show", "a3695072c885b765c65591ffb8e95d82ccafa89e:pages/JapaneseAuctionPage.jsx"], { encoding: "utf8" });
+const candidatePage = fs.readFileSync("pages/JapaneseAuctionPage.jsx", "utf8");
+assert.equal(candidatePage, basePage, "auction page extraction remains unchanged");
+const oldFns = new Map([...functions(base), ...functions(basePage)]);
+const newFns = new Map([...functions(candidate), ...functions(candidatePage)]);
 for (const name of ["calcTax", "calcImportBatchAllocation", "calcImportBatchProgress", "applyBatchAllocations", "calcSalesBreakdown", "moveProductsToBatch", "allocateActiveBatch", "saveBatch", "handleImages", "syncToCloud", "loadFromCloud", "moveStatus", "savePlatform", "quickSetPlatform", "saveSalesDraft", "calculateAuctionTotals", "normalizeAuction", "inferredAuctionForItem", "structuredAuction"]) {
   assert(oldFns.has(name), name + " exists");
   assert.equal(newFns.get(name), oldFns.get(name), name + " unchanged");
