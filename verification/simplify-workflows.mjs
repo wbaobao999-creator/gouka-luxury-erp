@@ -24,6 +24,22 @@ for (const name of ["calcTax", "calcImportBatchAllocation", "calcImportBatchProg
   assert(oldFns.has(name), name + " exists");
   assert.equal(newFns.get(name), oldFns.get(name), name + " unchanged");
 }
+
+function objectValues(source) {
+  const values = [];
+  function walk(node) {
+    if (!node || typeof node !== "object") return;
+    if (node.type === "ObjectProperty") values.push([source.slice(node.key.start, node.key.end), source.slice(node.value.start, node.value.end)]);
+    for (const child of Object.values(node)) if (Array.isArray(child)) child.forEach(walk); else if (child && typeof child === "object") walk(child);
+  }
+  walk(parse(source, { sourceType: "module", plugins: ["jsx"] }));
+  return values;
+}
+assert.deepEqual(objectValues(newFns.get("saveItem")), objectValues(oldFns.get("saveItem")), "all saved product and financial field expressions remain identical");
+for (const name of ["ProductThumb", "NbaaProductRecordDetail"]) {
+  assert.equal(newFns.get(name), oldFns.get(name).replaceAll("<img", "<ProductImage"), name + " only adopts safe thumbnails");
+}
+
 console.log("Financial calculations, batch save/transfer and unaffected workflows unchanged");
 assert(candidate.includes("<Ledger items={computedItems}"));
 assert(candidate.includes("<Customs items={computedItems}"));
@@ -198,7 +214,7 @@ try {
       return route.fulfill({ status: 200, contentType: "image/png", body: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l9sAAAAASUVORK5CYII=", "base64") });
     });
     await page.goto("http://127.0.0.1:4173/?view=photos");
-    await page.locator("main img").first().waitFor();
+    await page.locator("main img:visible").first().waitFor();
     await page.waitForFunction(() => [...document.querySelectorAll("main img")].some(i => i.complete && i.naturalWidth > 0));
     assert(await page.locator("main img").count() < 200, "10000 products stay paginated");
     assert(imageRequests.length < 200, "30000 photo URLs do not trigger 30000 downloads");
