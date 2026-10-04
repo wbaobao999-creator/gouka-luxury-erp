@@ -6947,6 +6947,11 @@ function JapaneseAuctionPanel({ items, downloadCSV, setPreviewImage, setPreviewS
   const [paymentFilter, setPaymentFilter] = useState("全部");
   const [auctionQualityFilter, setAuctionQualityFilter] = useState("全部");
   const [detailItem, setDetailItem] = useState(null);
+  const [brandFilter, setBrandFilter] = useState("全部");
+  const [boxQuery, setBoxQuery] = useState("");
+  const [page, setPage] = useState(1);
+  const pageSize = 20;
+  React.useEffect(() => { setPage(1); }, [auctionQuery, auctionHouseFilter, auctionDateFilter, paymentFilter, auctionQualityFilter, brandFilter, boxQuery]);
   const keyword = auctionQuery.trim().toLowerCase();
 
   function structuredAuction(item) {
@@ -6961,6 +6966,11 @@ function JapaneseAuctionPanel({ items, downloadCSV, setPreviewImage, setPreviewS
     .filter((x) => x.auction);
 
   const auctionHouses = ["全部", ...Array.from(new Set(baseAuctionRecords.map(({ auction }) => auction.platform || auction.auctionHouse).filter(Boolean))).sort()];
+
+  const auctionDates = Array.from(new Set(baseAuctionRecords
+    .filter(({ auction }) => auctionHouseFilter === "全部" || (auction.platform || auction.auctionHouse) === auctionHouseFilter)
+    .map(({ item, auction }) => auction.auctionDate || item.purchaseDate).filter(Boolean))).sort().reverse();
+  const brands = ["全部", ...Array.from(new Set(baseAuctionRecords.map(({ item }) => item.brand).filter(Boolean))).sort()];
 
   const fullAuctionQualitySummary = baseAuctionRecords.reduce((a, { auction }) => {
     if (auction.inferred) a.inferred += 1;
@@ -6978,6 +6988,9 @@ function JapaneseAuctionPanel({ items, downloadCSV, setPreviewImage, setPreviewS
     if (paymentFilter === "未付款" && paid) return false;
     if (auctionQualityFilter === "完整资料" && auction.inferred) return false;
     if (auctionQualityFilter === "需补充" && !auction.inferred) return false;
+    if (brandFilter !== "全部" && item.brand !== brandFilter) return false;
+    const boxText = [auction.boxNo, auction.branchNo, auction.lotNo].filter(Boolean).join("-");
+    if (boxQuery.trim() && !boxText.toLowerCase().includes(boxQuery.trim().toLowerCase())) return false;
     if (!keyword) return true;
     return [
       item.id, item.brand, item.item, item.category, item.status,
@@ -7029,108 +7042,111 @@ function JapaneseAuctionPanel({ items, downloadCSV, setPreviewImage, setPreviewS
     </div>
   ]);
 
+  const totalPages = Math.max(1, Math.ceil(auctionRecords.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const pageRecords = auctionRecords.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const clearFilters = () => {
+    setAuctionQuery(""); setAuctionHouseFilter("全部"); setAuctionDateFilter("");
+    setPaymentFilter("全部"); setAuctionQualityFilter("全部"); setBrandFilter("全部"); setBoxQuery("");
+  };
+  const pager = <div className="erp-auction-pager">
+    <span>共 {auctionRecords.length} 件</span>
+    {totalPages > 1 && <><button className="ghost" disabled={currentPage <= 1} onClick={() => setPage(currentPage - 1)}>上一页</button><span>第 {currentPage} / {totalPages} 页</span><button className="ghost" disabled={currentPage >= totalPages} onClick={() => setPage(currentPage + 1)}>下一页</button></>}
+  </div>;
+
   return (
-    <div className="panel">
+    <div className="panel erp-auction">
       <div className="toolbar">
-        <h2>日本拍卖</h2>
-        <div className="toolbar-right">
-          <div className="search">
-            <Search size={16} />
-            <input placeholder="搜索编号 / 品牌 / 落札コード / 箱番" value={auctionQuery} onChange={(e) => setAuctionQuery(e.target.value)} />
-          </div>
-          <select value={auctionHouseFilter} onChange={(e) => setAuctionHouseFilter(e.target.value)}>
-            {auctionHouses.map((x) => <option key={x}>{x}</option>)}
-          </select>
-          <input type="date" value={auctionDateFilter} onChange={(e) => setAuctionDateFilter(e.target.value)} />
-          <select value={paymentFilter} onChange={(e) => setPaymentFilter(e.target.value)}>
-            {["全部", "已付款", "未付款"].map((x) => <option key={x}>{x}</option>)}
-          </select>
-          <select value={auctionQualityFilter} onChange={(e) => setAuctionQualityFilter(e.target.value)}>
-            {["全部", "完整资料", "需补充"].map((x) => <option key={x}>{x}</option>)}
-          </select>
-          <button className="ghost" onClick={() => { setAuctionQuery(""); setAuctionHouseFilter("全部"); setAuctionDateFilter(""); setPaymentFilter("全部"); setAuctionQualityFilter("全部"); }}>清除筛选</button>
-          <button onClick={() => downloadCSV(csvRows, "gouka_auction_records.csv")}>
-            <Download size={16} /> CSV导出
-          </button>
+        <h2><Package size={20} /> 日本拍卖</h2>
+        <button className="ghost" onClick={() => downloadCSV(csvRows, "gouka_auction_records.csv")}><Download size={16} /> CSV导出</button>
+      </div>
+      <div className="erp-auction-session">
+        <label>拍卖公司<select value={auctionHouseFilter} onChange={(e) => { setAuctionHouseFilter(e.target.value); setAuctionDateFilter(""); }}>
+          {auctionHouses.map((x) => <option key={x} value={x}>{x === "全部" ? "全部拍卖公司" : x}</option>)}
+        </select></label>
+        <label>场次日期<select value={auctionDateFilter} onChange={(e) => setAuctionDateFilter(e.target.value)}>
+          <option value="">全部场次</option>{auctionDates.map((x) => <option key={x} value={x}>{x}</option>)}
+        </select></label>
+      </div>
+      <dl className="erp-auction-totals">
+        <div><dt>当前商品</dt><dd>{summary.count} 件</dd></div>
+        <div><dt>精算合计</dt><dd>{jpy(summary.paid)}</dd></div>
+        <div><dt>库存成本合计</dt><dd>{jpy(summary.cost)}</dd></div>
+      </dl>
+      <div className="erp-auction-filters">
+        <label>品牌<select value={brandFilter} onChange={(e) => setBrandFilter(e.target.value)}>{brands.map((x) => <option key={x} value={x}>{x === "全部" ? "全部品牌" : x}</option>)}</select></label>
+        <label>商品查询<input placeholder="商品编号 / 商品名 / 落札代码" value={auctionQuery} onChange={(e) => setAuctionQuery(e.target.value)} /></label>
+        <label>箱番 / 枝番 / Lot<input placeholder="例如 7-8" value={boxQuery} onChange={(e) => setBoxQuery(e.target.value)} /></label>
+        <button className="ghost" onClick={clearFilters}>清除筛选</button>
+      </div>
+      <details className="erp-fold"><summary>付款与资料筛选</summary>
+        <div className="filter-row">
+          <label>付款状态<select value={paymentFilter} onChange={(e) => setPaymentFilter(e.target.value)}>{["全部", "已付款", "未付款"].map((x) => <option key={x} value={x}>{x === "全部" ? "全部付款状态" : x}</option>)}</select></label>
+          <label>资料状态<select value={auctionQualityFilter} onChange={(e) => setAuctionQualityFilter(e.target.value)}>{["全部", "完整资料", "需补充"].map((x) => <option key={x} value={x}>{x === "全部" ? "全部资料状态" : x}</option>)}</select></label>
+          <span>完整 {summary.completeCount} 件 / 需补充 {summary.inferredCount} 件</span>
         </div>
-      </div>
-
-      <div className="inventory-summary-grid">
-        <div className="inventory-summary-card"><small>拍卖商品</small><b>{summary.count} 件</b></div>
-        <div className="inventory-summary-card"><small>付款总额</small><b>{jpy(summary.paid)}</b></div>
-        <div className="inventory-summary-card"><small>库存成本</small><b>{jpy(summary.cost)}</b></div>
-        <div className="inventory-summary-card good"><small>消费税控除</small><b>{jpy(summary.tax)}</b></div>
-        <div className="inventory-summary-card"><small>付款记录</small><b>{summary.paidCount} 件</b></div>
-        <div className="inventory-summary-card good"><small>完整资料</small><b>{summary.completeCount} 件</b></div>
-        <div className="inventory-summary-card warn"><small>需补充</small><b>{summary.inferredCount} 件</b></div>
-        <div className="inventory-summary-card"><small>全部完整/需补充</small><b>{fullAuctionQualitySummary.complete} / {fullAuctionQualitySummary.inferred}</b></div>
-      </div>
-      <div className="auction-quickbar">
-        <button className={auctionQualityFilter === "需补充" ? "active" : "ghost"} onClick={() => setAuctionQualityFilter("需补充")}>只看需补充</button>
-        <button className={auctionQualityFilter === "完整资料" ? "active" : "ghost"} onClick={() => setAuctionQualityFilter("完整资料")}>只看完整资料</button>
-        <button className={auctionHouseFilter === "NBAA" ? "active" : "ghost"} onClick={() => setAuctionHouseFilter("NBAA")}>只看 NBAA</button>
-        <button className="ghost" onClick={() => { setAuctionQuery(""); setAuctionHouseFilter("全部"); setAuctionDateFilter(""); setPaymentFilter("全部"); setAuctionQualityFilter("全部"); }}>全部显示</button>
-        <span className="hint">日常处理建议：先点「只看需补充」，把落札コード、箱番、枝番、精算金额补齐。</span>
-      </div>      <p className="note">日本拍卖页现在与库存来源口径一致：结构化 product.auction 会完整显示；只有来源/NBAA等线索但缺少明细的商品也会列出，并标为「需补充」。可用资料状态筛选，把需要补落札コード、箱番、枝番和精算金额的商品单独拉出来处理。</p>
-      <div className="auction-card-list">
-        {auctionRecords.map(({ item, auction }, i) => {
-          const house = auction.platform || auction.auctionHouse || "—";
-          const auctionDate = auction.auctionDate || item.purchaseDate || "—";
-          const itemTitle = auction.itemNameJp || item.item || "—";
-          const bidAmount = Number(auction.bidAmount || auction.hammerPrice || auction.itemPrice || 0);
-          const taxAmount = Number(auction.consumptionTax || auction.tax || auction.taxAmount || 0);
-          const feeAmount = Number(auction.commission || auction.fee || auction.auctionFee || 0);
-          const invoiceTotal = Number(auction.invoiceTotal || 0);
-          return (
-            <div className="auction-card" key={item.id || i}>
-              <div className="auction-card-main">
-                <div className="auction-card-grid">
-                  <div className="auction-card-section">落札商品 No.{i + 1}<span className={auction.inferred ? "auction-quality-badge warn" : "auction-quality-badge"}>{auction.inferred ? "资料需补充" : "资料完整"}</span></div>
-                  <div className="auction-card-label">商品编号</div><div className="auction-card-value strong">{item.id}</div>
-                  <div className="auction-card-label">拍卖公司</div><div className="auction-card-value strong">{house}</div>
-                  <div className="auction-card-label">落札コード</div><div className="auction-card-value">{auction.auctionCode || "—"}</div>
-                  <div className="auction-card-label">落札日</div><div className="auction-card-value">{auctionDate}</div>
-                  <div className="auction-card-label">箱番</div><div className="auction-card-value">{auction.boxNo || "—"}</div>
-                  <div className="auction-card-label">枝番</div><div className="auction-card-value">{auction.branchNo || "—"}</div>
-                  <div className="auction-card-label">Lot</div><div className="auction-card-value">{auction.lotNo || "—"}</div>
-                  <div className="auction-card-label">品牌名</div><div className="auction-card-value strong">{item.brand || "—"}</div>
-                  <div className="auction-card-label">商品名</div><div className="auction-card-value strong">{itemTitle}</div>
-                  <div className="auction-card-label">落札金额</div><div className="auction-card-value strong">{bidAmount ? jpy(bidAmount) : "—"}</div>
-                  <div className="auction-card-label">消费税</div><div className="auction-card-value">{taxAmount ? jpy(taxAmount) : "—"}</div>
-                  <div className="auction-card-label">手续费</div><div className="auction-card-value">{feeAmount ? jpy(feeAmount) : "—"}</div>
-                  <div className="auction-card-label">付款总额</div><div className="auction-card-value strong">{invoiceTotal ? jpy(invoiceTotal) : "—"}</div>
-                  <div className="auction-card-label">库存成本</div><div className="auction-card-value strong">{jpy(auction.inventoryCost || 0)}</div>
-                  <div className="auction-card-label">消费税控除</div><div className="auction-card-value">{jpy(auction.taxCredit || 0)}</div>
-                  {auction.inferred && <><div className="auction-card-label">资料提示</div><div className="auction-card-value">来源判断为日本拍卖，但 auction 明细未完整结构化。请补落札コード、箱番、枝番、付款总额。</div></>}
-                  <div className="auction-card-label">状态</div><div className="auction-card-value"><StatusBadge status={item.status} /></div>
-                </div>
-              </div>
-              <div className="auction-card-image">
-                <ProductThumb item={item} onPreview={(src) => { setPreviewScale?.(1); setPreviewImage?.(src); }} />
-                <div className="auction-card-actions">
-                  <button className="ghost" onClick={() => setDetailItem(item)}>拍卖详情</button>
-                  <button className="ghost" onClick={() => exportItemPdf?.(item)}>PDF</button>
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-      <details className="auction-original-table">
-        <summary>打开原始横表</summary>
-        <Table headers={headers} rows={rows} />
       </details>
-
-      {detailItem && (
-        <div className="image-modal" onClick={() => setDetailItem(null)}>
-          <div className="panel" style={{ width: "1180px", maxWidth: "94vw", maxHeight: "88vh", overflow: "auto" }} onClick={(e) => e.stopPropagation()}>
-            <NbaaProductRecordDetail item={detailItem} onClose={() => setDetailItem(null)} exportItemPdf={exportItemPdf} />
-          </div>
+      {(paymentFilter !== "全部" || auctionQualityFilter !== "全部") && <div className="gouka-active-filter">付款：{paymentFilter} · 资料：{auctionQualityFilter}</div>}
+      {pager}
+      <div className="erp-auction-records">
+        {pageRecords.map(({ item, auction }, i) => {
+          const house = auction.platform || auction.auctionHouse || "—";
+          const date = auction.auctionDate || item.purchaseDate || "—";
+          return <article className="erp-auction-record" key={item.id || i}>
+            <div className="erp-auction-photo">
+              {item.images?.[0] ? <ProductThumb item={item} size={180} onPreview={(src) => { setPreviewScale?.(1); setPreviewImage?.(src); }} /> : <span>暂无图片</span>}
+            </div>
+            <div className="erp-auction-main">
+              <div className="erp-auction-record-head">
+                <div><small>{item.id}</small><h3>{item.brand || "—"} · {auction.itemNameJp || item.item || "未填写商品名"}</h3></div>
+                <StatusBadge status={item.status} />
+              </div>
+              <div className="erp-auction-meta"><span>{house} / {date}</span><span>箱番 {auction.boxNo || "—"} - {auction.branchNo || "—"}</span><span>Lot {auction.lotNo || "—"}</span><span>落札代码 {auction.auctionCode || "—"}</span></div>
+              <dl className="erp-auction-money">
+                <div><dt>落札价（未税）</dt><dd>{auction.inferred ? "待补充" : jpy(auction.hammerPrice || 0)}</dd></div>
+                <div><dt>手续费（未税）</dt><dd>{auction.inferred ? "待补充" : jpy(auction.buyerFee || 0)}</dd></div>
+                <div><dt>库存成本</dt><dd>{jpy(auction.inventoryCost || 0)}</dd></div>
+              </dl>
+              <div className="erp-auction-actions">
+                <span className={auction.inferred ? "inventory-pending" : "status-badge status-已入库"}>{auction.inferred ? "资料需补充" : "资料完整"}</span>
+                <button className="ghost" onClick={() => setDetailItem(item)}><FileText size={14} /> 商品详情</button>
+                {exportItemPdf && <button className="ghost" onClick={() => exportItemPdf(item)}><Download size={14} /> PDF</button>}
+              </div>
+              <details className="erp-fold erp-auction-settlement"><summary>结算明细</summary>
+                <dl className="erp-auction-settlement-fields">
+                  <div><dt>落札消费税</dt><dd>{auction.inferred ? "待补充" : jpy(auction.hammerTax || 0)}</dd></div>
+                  <div><dt>手续费消费税</dt><dd>{auction.inferred ? "待补充" : jpy(auction.buyerFeeTax || 0)}</dd></div>
+                  <div><dt>日本国内运费</dt><dd>{auction.inferred ? "待补充" : jpy(auction.domesticShipping || 0)}</dd></div>
+                  <div><dt>精算金额</dt><dd>{jpy(auction.invoiceTotal || 0)}</dd></div>
+                  <div><dt>消费税控除</dt><dd>{jpy(auction.taxCredit || 0)}</dd></div>
+                  <div><dt>精算单号</dt><dd>{auction.invoiceNo || "—"}</dd></div>
+                  <div><dt>付款日期</dt><dd>{auction.paymentDate || "—"}</dd></div>
+                  <div><dt>付款方式</dt><dd>{auction.paymentMethod || "—"}</dd></div>
+                </dl>
+              </details>
+            </div>
+          </article>;
+        })}
+        {!auctionRecords.length && <div className="erp-empty-state">暂无符合条件的拍卖商品</div>}
+      </div>
+      {totalPages > 1 && pager}
+      <details className="erp-fold auction-original-table"><summary>完整明细横表</summary><Table headers={headers} rows={rows} /></details>
+      <details className="erp-fold"><summary>税额与资料汇总</summary>
+        <dl className="erp-auction-totals">
+          <div><dt>当前消费税控除</dt><dd>{jpy(summary.tax)}</dd></div>
+          <div><dt>当前付款记录</dt><dd>{summary.paidCount} 件</dd></div>
+          <div><dt>全部资料完整 / 需补充</dt><dd>{fullAuctionQualitySummary.complete} / {fullAuctionQualitySummary.inferred}</dd></div>
+        </dl>
+      </details>
+      {detailItem && <div className="image-modal" onClick={() => setDetailItem(null)}>
+        <div className="panel" style={{ width: "1180px", maxWidth: "94vw", maxHeight: "88vh", overflow: "auto" }} onClick={(e) => e.stopPropagation()}>
+          <NbaaProductRecordDetail item={detailItem} onClose={() => setDetailItem(null)} exportItemPdf={exportItemPdf} />
         </div>
-      )}
+      </div>}
     </div>
   );
 }
+
 function Ledger({ items, setItems, isOwner, downloadCSV, exportItemPdf, editItem = null }) {
   const [ledgerQuery, setLedgerQuery] = useState("");
   const [ledgerDate, setLedgerDate] = useState("");
