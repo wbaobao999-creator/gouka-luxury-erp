@@ -2254,7 +2254,7 @@ async function hydrateItemsWithImages(items) {
         const store = tx.objectStore(IMAGE_DB_STORE);
         for (const item of missing) {
           const request = store.get(item.id);
-          request.onsuccess = () => cached.set(item.id, request.result?.images || []);
+          request.onsuccess = () => cached.set(item.id, Array.isArray(request.result?.images) ? request.result.images : []);
         }
         tx.oncomplete = resolve;
         tx.onerror = tx.onabort = () => reject(tx.error || new Error("图片缓存读取失败"));
