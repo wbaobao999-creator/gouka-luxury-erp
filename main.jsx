@@ -7061,10 +7061,10 @@ function JapaneseAuctionPanel({ items, downloadCSV, setPreviewImage, setPreviewS
         <button className="ghost" onClick={() => downloadCSV(csvRows, "gouka_auction_records.csv")}><Download size={16} /> CSV导出</button>
       </div>
       <div className="erp-auction-session">
-        <label>拍卖公司<select value={auctionHouseFilter} onChange={(e) => { setAuctionHouseFilter(e.target.value); setAuctionDateFilter(""); }}>
+        <label>拍卖公司<select aria-label="拍卖公司" value={auctionHouseFilter} onChange={(e) => { setAuctionHouseFilter(e.target.value); setAuctionDateFilter(""); }}>
           {auctionHouses.map((x) => <option key={x} value={x}>{x === "全部" ? "全部拍卖公司" : x}</option>)}
         </select></label>
-        <label>场次日期<select value={auctionDateFilter} onChange={(e) => setAuctionDateFilter(e.target.value)}>
+        <label>场次日期<select aria-label="场次日期" value={auctionDateFilter} onChange={(e) => setAuctionDateFilter(e.target.value)}>
           <option value="">全部场次</option>{auctionDates.map((x) => <option key={x} value={x}>{x}</option>)}
         </select></label>
       </div>
@@ -7074,15 +7074,15 @@ function JapaneseAuctionPanel({ items, downloadCSV, setPreviewImage, setPreviewS
         <div><dt>库存成本合计</dt><dd>{jpy(summary.cost)}</dd></div>
       </dl>
       <div className="erp-auction-filters">
-        <label>品牌<select value={brandFilter} onChange={(e) => setBrandFilter(e.target.value)}>{brands.map((x) => <option key={x} value={x}>{x === "全部" ? "全部品牌" : x}</option>)}</select></label>
+        <label>品牌<select aria-label="品牌" value={brandFilter} onChange={(e) => setBrandFilter(e.target.value)}>{brands.map((x) => <option key={x} value={x}>{x === "全部" ? "全部品牌" : x}</option>)}</select></label>
         <label>商品查询<input placeholder="商品编号 / 商品名 / 落札代码" value={auctionQuery} onChange={(e) => setAuctionQuery(e.target.value)} /></label>
         <label>箱番 / 枝番 / Lot<input placeholder="例如 7-8" value={boxQuery} onChange={(e) => setBoxQuery(e.target.value)} /></label>
         <button className="ghost" onClick={clearFilters}>清除筛选</button>
       </div>
       <details className="erp-fold"><summary>付款与资料筛选</summary>
         <div className="filter-row">
-          <label>付款状态<select value={paymentFilter} onChange={(e) => setPaymentFilter(e.target.value)}>{["全部", "已付款", "未付款"].map((x) => <option key={x} value={x}>{x === "全部" ? "全部付款状态" : x}</option>)}</select></label>
-          <label>资料状态<select value={auctionQualityFilter} onChange={(e) => setAuctionQualityFilter(e.target.value)}>{["全部", "完整资料", "需补充"].map((x) => <option key={x} value={x}>{x === "全部" ? "全部资料状态" : x}</option>)}</select></label>
+          <label>付款状态<select aria-label="付款状态" value={paymentFilter} onChange={(e) => setPaymentFilter(e.target.value)}>{["全部", "已付款", "未付款"].map((x) => <option key={x} value={x}>{x === "全部" ? "全部付款状态" : x}</option>)}</select></label>
+          <label>资料状态<select aria-label="资料状态" value={auctionQualityFilter} onChange={(e) => setAuctionQualityFilter(e.target.value)}>{["全部", "完整资料", "需补充"].map((x) => <option key={x} value={x}>{x === "全部" ? "全部资料状态" : x}</option>)}</select></label>
           <span>完整 {summary.completeCount} 件 / 需补充 {summary.inferredCount} 件</span>
         </div>
       </details>
