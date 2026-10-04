@@ -4,6 +4,7 @@ import { Package, FileText, Calculator, Search, Plus, Building2, Download, Edit3
 import "./style.css";
 import "./simplify.css";
 import JapaneseAuctionPage from "./pages/JapaneseAuctionPage.jsx";
+import ProductImage from "./components/ProductImage.jsx";
 import { getCloudItems, upsertCloudItem, deleteItemCloud, uploadItemImages, deleteProductImages, uploadImportBatchAttachments } from "./itemService.js";
 
 
@@ -2241,11 +2242,32 @@ async function deleteItemImagesFromDb(itemId) {
 }
 
 async function hydrateItemsWithImages(items) {
-  const arr = await Promise.all((items || []).map(async (x) => {
-    const images = Array.isArray(x.images) && x.images.length ? x.images : await loadItemImagesFromDb(x.id);
-    return { ...x, images, imageCount: images.length || Number(x.imageCount || 0) };
-  }));
-  return arr;
+  const source = items || [];
+  const missing = source.filter(x => !(Array.isArray(x.images) && x.images.length) && x.id);
+  const cached = new Map();
+  let db;
+  try {
+    if (missing.length) {
+      db = await openImageDb();
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction(IMAGE_DB_STORE, "readonly");
+        const store = tx.objectStore(IMAGE_DB_STORE);
+        for (const item of missing) {
+          const request = store.get(item.id);
+          request.onsuccess = () => cached.set(item.id, request.result?.images || []);
+        }
+        tx.oncomplete = resolve;
+        tx.onerror = tx.onabort = () => reject(tx.error || new Error("图片缓存读取失败"));
+      });
+    }
+    return source.map(item => {
+      const images = Array.isArray(item.images) && item.images.length ? item.images : cached.get(item.id) || [];
+      return { ...item, images, imageCount: images.length || Number(item.imageCount || 0) };
+    });
+  } catch (error) {
+    console.error("读取图片缓存失败，保留原有照片", error);
+    return source;
+  } finally { db?.close(); }
 }
 
 function bytesOfText(text) {
@@ -4289,6 +4311,18 @@ function App() {
     setEditingId(null);
   }
 
+  async function uploadImagesForSave(productNo, images) {
+    try {
+      return await uploadItemImages(productNo, images);
+    } catch (error) {
+      console.error("照片上传失败", error);
+      if (Array.isArray(error.images)) setForm(current => ({ ...current, images: error.images }));
+      setSyncStatusText("照片上传失败，未保存商品");
+      alert(error.message || "照片上传失败。照片和表单已保留，请重试。");
+      return null;
+    }
+  }
+
   async function saveItem() {
     const safeForm = {
       ...form,
@@ -4311,7 +4345,8 @@ function App() {
     );
 
     if (editingId) {
-      const cloudImages = await uploadItemImages(editingId, safeForm.images || []);
+      const cloudImages = await uploadImagesForSave(editingId, safeForm.images || []);
+      if (cloudImages === null) return;
       safeForm.images = cloudImages.length ? cloudImages : safeForm.images;
       await saveItemImagesToDb(editingId, safeForm.images || []);
 
@@ -4356,16 +4391,18 @@ function App() {
 
       setItems(updatedItems);
 
+      let cloudSaved = true;
       try {
         setSyncStatusText("正在同步云端…");
         if (updatedItem) await upsertCloudItem(toCloudItem(updatedItem));
         setSyncStatusText("商品已同步");
       } catch (e) {
         console.error("Cloud update failed", e);
-        setSyncStatusText("商品同步失败");
+        cloudSaved = false;
+        setSyncStatusText("商品同步失败，本地已保存");
       }
 
-      alert("商品已更新，并已同步云端");
+      alert(cloudSaved ? "商品已更新，并已同步云端" : "商品已在本地更新，但云端同步失败。请稍后点击保存到云端。");
     } else {
       const next = {
         ...safeForm,
@@ -4402,21 +4439,24 @@ function App() {
         soldMemo: safeForm.soldMemo || ""
       };
 
-      const cloudImages = await uploadItemImages(next.id, next.images || []);
+      const cloudImages = await uploadImagesForSave(next.id, next.images || []);
+      if (cloudImages === null) return;
       const savedNext = { ...next, images: cloudImages.length ? cloudImages : next.images };
       await saveItemImagesToDb(savedNext.id, savedNext.images || []);
       setItems([savedNext, ...items]);
 
+      let cloudSaved = true;
       try {
         setSyncStatusText("正在同步云端…");
         await upsertCloudItem(toCloudItem(savedNext));
         setSyncStatusText("商品已同步");
       } catch (e) {
         console.error("Cloud insert failed", e);
-        setSyncStatusText("商品同步失败");
+        cloudSaved = false;
+        setSyncStatusText("商品同步失败，本地已保存");
       }
 
-      alert("商品已添加，并已同步云端");
+      alert(cloudSaved ? "商品已添加，并已同步云端" : "商品已在本地添加，但云端同步失败。请稍后点击保存到云端。");
     }
 
     resetForm();
@@ -5508,7 +5548,7 @@ function Dashboard({ totals, items, setTab, openInventorySignal = null, exportBa
           {spotlightItems.length ? spotlightItems.map(({ item, reason }) => (
             <button key={item.id} className="gouka-spotlight-item" onClick={() => setTab("inventory")}>
               <div className="gouka-spotlight-img">
-                {item.images?.[0] ? <img decoding="async" loading="lazy" src={item.images[0]} alt={item.item || item.id} /> : "无图"}
+                {item.images?.[0] ? <ProductImage decoding="async" loading="lazy" src={item.images[0]} alt={item.item || item.id} /> : "无图"}
               </div>
               <div className="gouka-spotlight-main">
                 <strong>{item.brand || "未填品牌"} / {item.item || "未填商品名"}</strong>
@@ -5719,7 +5759,7 @@ function Dashboard({ totals, items, setTab, openInventorySignal = null, exportBa
           <div className="v3-recent-list">
             {recent.length ? recent.map((x) => (
               <div className="v3-recent-item" key={x.id}>
-                <div className="v3-recent-img">{x.images?.[0] ? <img decoding="async" loading="lazy" src={x.images[0]} alt={x.item} /> : "📦"}</div>
+                <div className="v3-recent-img">{x.images?.[0] ? <ProductImage decoding="async" loading="lazy" src={x.images[0]} alt={x.item} /> : "📦"}</div>
                 <div><b>{x.brand} {x.item}</b><p>{x.category} / {x.color || "未填颜色"}</p><small>{x.id}</small></div>
                 <StatusBadge status={x.status} />
                 <span className="v3-recent-date">{x.purchaseDate || "未填日期"}</span>
@@ -6146,7 +6186,7 @@ function ProductThumb({ item, size = 72, onPreview }) {
   const src = Array.isArray(item?.images) && item.images.length ? item.images[0] : "";
   if (!src) return "—";
   return (
-    <img decoding="async" loading="lazy"
+    <ProductImage decoding="async" loading="lazy"
       className="thumb"
       src={src}
       alt={item?.item || item?.id || "product"}
@@ -6359,7 +6399,7 @@ function NbaaProductRecordDetail({ item, onClose, exportItemPdf, isOwner = true 
             </div>
           )}
           <div className="product-record-thumbs">
-            {images.slice(0, 8).map((src, i) => <img decoding="async" loading="lazy" key={i} src={src} alt="thumb" onClick={() => window.open(src, "_blank")} />)}
+            {images.slice(0, 8).map((src, i) => <ProductImage decoding="async" loading="lazy" key={i} src={src} alt="thumb" onClick={() => window.open(src, "_blank")} />)}
           </div>
         </div>
         <div className="product-record-identity">
@@ -6590,7 +6630,7 @@ function InventoryMobileCards({ items, sourceGroupOf, sourceGroupBadge, stockDay
         return (
           <article className="inventory-mobile-card" key={x.id}>
             <button className="inventory-mobile-thumb" type="button" onClick={() => { if (img) { setPreviewScale(1); setPreviewImage(img); } }}>
-              {img ? <img decoding="async" loading="lazy" src={img} alt={x.item || x.id} /> : <div className="inventory-mobile-noimg">No Image</div>}
+              {img ? <ProductImage decoding="async" loading="lazy" src={img} alt={x.item || x.id} /> : <div className="inventory-mobile-noimg">No Image</div>}
             </button>
             <div className="inventory-mobile-body">
               <div className="inventory-mobile-top">
@@ -6797,7 +6837,7 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
     const days = stockDays(x);
     return [
       sourceGroupBadge(sourceGroupOf(x)),
-      x.images && x.images.length ? <img decoding="async" loading="lazy" className="thumb" src={x.images[0]} alt={x.item} style={{ width: 72, height: 72 }} onClick={() => { setPreviewScale(1); setPreviewImage(x.images[0]); }} /> : "—",
+      x.images && x.images.length ? <ProductImage decoding="async" loading="lazy" className="thumb" src={x.images[0]} alt={x.item} style={{ width: 72, height: 72 }} onClick={() => { setPreviewScale(1); setPreviewImage(x.images[0]); }} /> : "—",
       x.id,
       x.purchaseDate,
       <span className={"inventory-stock-age" + (days >= 365 ? " warn" : "")}>{days ? `${days}日` : "—"}</span>,
@@ -8553,7 +8593,7 @@ function ListingManagement({ items, updateListingItem, editItem, setPreviewImage
     return (
       <div key={item.id} className="listing-compact-row">
         <div className="listing-compact-thumb" onClick={() => image && (setPreviewScale(1), setPreviewImage(image))}>
-          {image ? <img decoding="async" loading="lazy" src={image} alt={item.item || item.id} /> : "📦"}
+          {image ? <ProductImage decoding="async" loading="lazy" src={image} alt={item.item || item.id} /> : "📦"}
         </div>
         <div className="listing-compact-main">
           <b>{item.brand || "—"} {item.item || "未识别商品"}</b>
@@ -8657,7 +8697,7 @@ function ListingManagement({ items, updateListingItem, editItem, setPreviewImage
                   <div key={item.id} style={{background:"#fff", border:"1px solid #e5e7eb", borderRadius:"14px", padding:"10px", boxShadow:"0 8px 18px rgba(15,23,42,.05)"}}>
                     <div style={{display:"flex", gap:"10px", alignItems:"flex-start"}}>
                       <div style={{width:"74px", height:"74px", borderRadius:"12px", background:"#eef2ff", overflow:"hidden", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0}}>
-                        {item.images?.[0] ? <img decoding="async" loading="lazy" src={item.images[0]} alt={item.item} style={{width:"100%", height:"100%", objectFit:"cover", cursor:"pointer"}} onClick={() => { setPreviewScale(1); setPreviewImage(item.images[0]); }} /> : "📦"}
+                        {item.images?.[0] ? <ProductImage decoding="async" loading="lazy" src={item.images[0]} alt={item.item} style={{width:"100%", height:"100%", objectFit:"cover", cursor:"pointer"}} onClick={() => { setPreviewScale(1); setPreviewImage(item.images[0]); }} /> : "📦"}
                       </div>
                       <div style={{minWidth:0}}>
                         <b style={{display:"block", fontSize:"13px", lineHeight:1.35}}>{item.brand} {item.item}</b>
@@ -9121,7 +9161,7 @@ function PdfExportPanel({ items, totals, exportInventoryPdf, exportLedgerPdf, ex
           const t = calcTax(x);
           return [
             <input type="checkbox" checked={selectedIds.includes(x.id)} onChange={() => toggleOne(x.id)} />,
-            x.images?.[0] ? <img decoding="async" loading="lazy" className="thumb" src={x.images[0]} alt={x.item} style={{ width: 72, height: 72 }} /> : "—",
+            x.images?.[0] ? <ProductImage decoding="async" loading="lazy" className="thumb" src={x.images[0]} alt={x.item} style={{ width: 72, height: 72 }} /> : "—",
             x.id,
             x.purchaseDate,
             x.brand,
