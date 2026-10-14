@@ -2976,7 +2976,7 @@ function stripSalesRecordMemo(memo = "") {
 
 function buildSalesRecordMemo(record = {}, originalMemo = "") {
   const cleanMemo = stripSalesRecordMemo(originalMemo);
-  const keys = ["settlementVersion", "salesNo", "saleDate", "buyerName", "buyerContact", "paymentMethod", "depositDate", "salesStatus", "platform", "salePriceTaxIncludedJpy", "platformFeeJpy", "shippingFeeJpy", "refundJpy", "adjustmentJpy", "finalDepositJpy", "memo"];
+  const keys = ["settlementVersion", "salesNo", "listingNumber", "saleDate", "buyerName", "buyerContact", "paymentMethod", "depositDate", "salesStatus", "platform", "salePriceTaxIncludedJpy", "platformFeeJpy", "shippingFeeJpy", "refundJpy", "adjustmentJpy", "finalDepositJpy", "memo"];
   const block = keys.map((key) => key + ": " + (record[key] ?? "")).join("\n");
   return [cleanMemo, "GOUKA_SALES_RECORD_START", block, "GOUKA_SALES_RECORD_END"].filter(Boolean).join("\n");
 }
@@ -3021,6 +3021,7 @@ function getSalesRecordFromProduct(item = {}) {
   const platformFeeJpy = Number(saved.platformFeeJpy ?? item.salesPlatformFeeJpy ?? 0);
   const record = {
     salesNo: saved.salesNo || item.salesNo || makeSalesNo(item),
+    listingNumber: saved.listingNumber ?? "",
     productId: saved.productId || item.id || "",
     productCode: saved.productCode || item.id || "",
     saleDate: saved.saleDate || item.soldDate || "",
@@ -3098,6 +3099,14 @@ function buildSalesRecordPatch(item, draft, user = "gouka") {
     salesRecord: record,
     soldMemo: buildSalesRecordMemo(record, draft.memo || item.soldMemo || "")
   };
+}
+
+function SalesProductFields({ item, listingNumber, onChange }) {
+  return <div className="sales-product-fields full span-3">
+    <label>品牌名（ブランド名）<input readOnly value={item.brand || ""} /></label>
+    <label>商品名<input readOnly value={item.item || item.productTitle || ""} /></label>
+    <label>平台出品编号（出品番号）<input value={listingNumber || ""} onChange={(e) => onChange(e.target.value)} /></label>
+  </div>;
 }
 
 function SalesAmountFields({ record, onChange }) {
@@ -6196,6 +6205,7 @@ function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, 
         {isSoldStatus(form.status) && (
           <>
             <FormSectionTitle title="销售信息" />
+            <SalesProductFields item={form} listingNumber={getSalesRecordFromProduct(form).listingNumber} onChange={(v) => setForm((current) => ({ ...current, salesRecord: { ...getSalesRecordFromProduct(current), listingNumber: v } }))} />
             <Input label="销售日期" type="date" value={form.soldDate || ""} onChange={(v) => set("soldDate", v)} />
             <Input label="销售平台" value={form.soldPlatform || ""} onChange={(v) => set("soldPlatform", v)} placeholder="EcoRing / Mercari / 店铺 / 其他" />
             <SalesAmountFields record={{ ...getSalesRecordFromProduct(form), platform: form.soldPlatform || "", salePriceTaxIncludedJpy: form.soldPriceJpy || "" }} onChange={(record) => setForm((current) => ({ ...current, soldPriceJpy: record.salePriceTaxIncludedJpy, salesRecord: record }))} />
@@ -6585,6 +6595,9 @@ function NbaaProductRecordDetail({ item, onClose, exportItemPdf, isOwner = true 
         </RecordCard>
 
         <RecordCard title="④ 销售" summary={salesRecord.salePriceTaxIncludedJpy ? [salesRecord.salesNo, salesRecord.platform, jpy(salesRecord.salePriceTaxIncludedJpy)].filter(Boolean).join(" / ") : ""} defaultOpen={salesRecord.salePriceTaxIncludedJpy > 0}>
+          <RecordField label="品牌名（ブランド名）" value={item.brand} />
+          <RecordField label="商品名" value={item.item || item.productTitle} />
+          <RecordField label="出品番号" value={salesRecord.listingNumber} />
           <RecordField label="销售编号" value={salesRecord.salesNo} />
           <RecordField label="买家" value={salesRecord.buyerName || buyerName} />
           <RecordField label="平台" value={salesRecord.platform} />
@@ -8828,6 +8841,7 @@ function SalesReport({ items, updateListingItem, downloadCSV }) {
     return {
       productId: product.id || record.productId || "",
       salesNo: record.salesNo || "",
+      listingNumber: record.listingNumber || "",
       saleDate: record.saleDate || localDateString(),
       platform: record.platform || "",
       buyerName: record.buyerName || "",
@@ -8886,7 +8900,7 @@ function SalesReport({ items, updateListingItem, downloadCSV }) {
 
   const filteredSalesRows = salesRows.filter(({ item, record }) => {
     const q = salesQuery.toLowerCase();
-    const text = [record.salesNo, item.id, item.brand, item.item, record.platform, record.buyerName, record.memo, item.soldMemo].join(" ").toLowerCase();
+    const text = [record.salesNo, record.listingNumber, item.id, item.brand, item.item, record.platform, record.buyerName, record.memo, item.soldMemo].join(" ").toLowerCase();
     const matchText = !q || text.includes(q);
     const matchMonth = !salesMonth || String(record.saleDate || "").startsWith(salesMonth);
     const deposited = salesIsDeposited(item, record);
@@ -8912,7 +8926,7 @@ function SalesReport({ items, updateListingItem, downloadCSV }) {
   }
 
   const headers = ["销售编号", "商品图片", "商品编号", "品牌", "商品名", "销售日期", "平台", "售价（含税）", "手续费（含税）", "应结算", "实收", "销售收入（未税）", "销项消费税", "库存成本", "实际利润", "回款状态", "资料状态", "销售状态", "操作"];
-  const csvHeaders = ["销售编号", "商品编号", "品牌", "商品名", "销售日期", "平台", "买家", "联系方式", "售价（含税）", "销售收入（未税）", "销项消费税", "平台手续费", "手续费消费税", "发货费", "退款", "调整金额", "应结算", "实收", "到账日期", "支付方式", "库存成本", "实际利润", "利润率", "回款状态", "资料状态", "缺失项目", "销售状态", "备注"];
+  const csvHeaders = ["销售编号", "出品番号", "商品编号", "品牌", "商品名", "销售日期", "平台", "买家", "联系方式", "售价（含税）", "销售收入（未税）", "销项消费税", "平台手续费", "手续费消费税", "发货费", "退款", "调整金额", "应结算", "实收", "到账日期", "支付方式", "库存成本", "实际利润", "利润率", "回款状态", "资料状态", "缺失项目", "销售状态", "备注"];
 
   const rows = filteredSalesRows.map(({ item, record }) => {
     const deposited = salesIsDeposited(item, record);
@@ -8951,6 +8965,7 @@ function SalesReport({ items, updateListingItem, downloadCSV }) {
     const quality = salesRecordQuality(item, record);
     return [
       record.salesNo,
+      record.listingNumber,
       item.id,
       item.brand,
       item.item,
@@ -9048,6 +9063,7 @@ function SalesReport({ items, updateListingItem, downloadCSV }) {
         {salesDraft && (
           <div className="sales-draft-grid">
             <label>商品<select value={salesDraft.productId} onChange={(e) => setSalesDraft(makeDraft(items.find((x) => x.id === e.target.value) || {}))}>{draftProductOptions.map((x) => <option key={x.id} value={x.id}>{x.id} / {x.brand} {x.item}</option>)}</select></label>
+            <SalesProductFields item={selectedDraftItem()} listingNumber={salesDraft.listingNumber} onChange={(v) => setSalesDraft((current) => ({ ...current, listingNumber: v }))} />
             <label>销售编号<input value={salesDraft.salesNo} onChange={(e) => setSalesDraft({ ...salesDraft, salesNo: e.target.value })} /></label>
             <label>销售日期<input type="date" value={salesDraft.saleDate} onChange={(e) => setSalesDraft({ ...salesDraft, saleDate: e.target.value })} /></label>
             <label>平台<select value={salesDraft.platform} onChange={(e) => setSalesDraft({ ...salesDraft, platform: e.target.value })}><option value="">选择平台</option>{platformOptions.map((x) => <option key={x} value={x}>{x}</option>)}</select></label>
@@ -9114,6 +9130,9 @@ function SalesReport({ items, updateListingItem, downloadCSV }) {
             <div className="sales-detail-grid">
               <div><span>销售编号</span><b>{detailSales.record.salesNo}</b></div>
               <div><span>商品编号</span><b>{detailSales.item.id}</b></div>
+              <div><span>品牌名（ブランド名）</span><b>{detailSales.item.brand || "—"}</b></div>
+              <div><span>商品名</span><b>{detailSales.item.item || detailSales.item.productTitle || "—"}</b></div>
+              <div><span>出品番号</span><b>{detailSales.record.listingNumber || "—"}</b></div>
               <div><span>平台</span><b>{detailSales.record.platform || "—"}</b></div>
               <div><span>买家</span><b>{detailSales.record.buyerName || "—"}</b></div>
               <div><span>售价（含税）</span><b>{jpy(detailSales.record.salePriceTaxIncludedJpy)}</b></div>
@@ -10351,8 +10370,6 @@ createRoot(document.getElementById("root")).render(
     <App />
   </ErrorBoundary>
 );
-
-
 
 
 

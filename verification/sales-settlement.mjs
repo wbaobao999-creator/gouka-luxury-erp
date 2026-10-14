@@ -37,7 +37,7 @@ try {
   await page.waitForFunction(()=>window.__sales);
   const checks=await page.evaluate(()=>{
    const f=window.__sales, item=f.fixture;
-   const patch=f.buildSalesRecordPatch(item,{saleDate:'2026-10-15',platform:'NBAA',salePriceTaxIncludedJpy:99000,platformFeeJpy:3960,finalDepositJpy:0});
+   const patch=f.buildSalesRecordPatch(item,{listingNumber:'001',saleDate:'2026-10-15',platform:'NBAA',salePriceTaxIncludedJpy:99000,platformFeeJpy:3960,finalDepositJpy:0});
    const record=f.getSalesRecordFromProduct({...item,...patch});
    const roundtrip=f.getSalesRecordFromProduct({...item,soldPriceJpy:patch.soldPriceJpy,soldMemo:patch.soldMemo});
    const clear=f.buildSalesRecordPatch({...item,...patch},{...record,platformFeeJpy:0,finalDepositJpy:0});
@@ -52,9 +52,13 @@ try {
   assert(Math.abs(checks.profit-35400)<0.01);
   assert.equal(checks.roundtrip.expectedDepositJpy,95040);
   assert.equal(checks.roundtrip.finalDepositJpy,0);
+  assert.equal(checks.roundtrip.listingNumber,'001','cloud memo retains platform number including leading zeros');
   assert.equal(checks.clear.salesRecord.platformFeeJpy,0,'explicit zero clears fee');
   assert(!Object.hasOwn(checks.patch,'platformFeeJpy'),'purchase cost is not overwritten');
   await page.getByRole('button',{name:'新增销售',exact:true}).click();
+  assert.equal(await page.locator('.sales-product-fields').getByLabel('品牌名（ブランド名）',{exact:true}).inputValue(),'LV');
+  assert.equal(await page.locator('.sales-product-fields').getByLabel('商品名',{exact:true}).inputValue(),'Phone Case');
+  await page.getByLabel('平台出品编号（出品番号）',{exact:true}).fill('1');
   await page.locator('.sales-draft-grid label').filter({hasText:/^平台/}).locator('select').selectOption('NBAA');
   assert.equal(await page.getByRole('button',{name:'含税金额',exact:true}).count(),0,'NBAA has fixed tax-exclusive entry');
   await page.getByLabel('成交价 JPY（税前）',{exact:true}).fill('90000');
@@ -63,10 +67,12 @@ try {
   await page.screenshot({path:'verification/screenshots/sales-'+width+'.png',fullPage:true});
   await page.getByRole('button',{name:'保存销售记录',exact:true}).click();
   await page.waitForFunction(()=>window.__items[0].soldPriceJpy===99000);
+  assert.equal(await page.evaluate(()=>window.__items[0].salesRecord.listingNumber),'1');
   assert.equal(await page.evaluate(()=>window.__items[0].salesRecord.finalDepositJpy),0);
   assert((await page.locator('tbody').first().innerText()).includes('未回款'));
   assert((await page.locator('tbody').first().innerText()).includes('95,040'));
   await page.getByRole('button',{name:'编辑',exact:true}).first().click();
+  assert.equal(await page.getByLabel('平台出品编号（出品番号）',{exact:true}).inputValue(),'1');
   await page.getByLabel('实收金额 JPY（未到账留空）',{exact:true}).fill('95040');
   await page.getByRole('button',{name:'保存销售记录',exact:true}).click();
   await page.waitForFunction(()=>window.__items[0].salesRecord.finalDepositJpy===95040);
@@ -83,6 +89,9 @@ try {
   assert.equal(await page.getByLabel('成交价 JPY（税前）',{exact:true}).inputValue(),'90000','reopen preserves hammer price');
   assert.equal(await page.getByRole('button',{name:'按NBAA税前金额修正',exact:true}).count(),0,'correction cannot be applied twice');
   await page.goto('http://127.0.0.1:4187/sales-test.html?view=product');
+  assert.equal(await page.locator('.sales-product-fields').getByLabel('品牌名（ブランド名）',{exact:true}).inputValue(),'LV');
+  await page.getByLabel('平台出品编号（出品番号）',{exact:true}).fill('1');
+  assert.equal(await page.evaluate(()=>window.__form.salesRecord.listingNumber),'1');
   await page.getByRole('button',{name:'税前金额',exact:true}).click();
   await page.getByLabel('成交价 JPY（税前）',{exact:true}).fill('90000');
   await page.getByLabel('销售手续费 JPY（税前）',{exact:true}).fill('3600');
