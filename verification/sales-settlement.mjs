@@ -13,7 +13,7 @@ window.__sales = { fixture, calcSalesSettlement, getSalesRecordFromProduct, buil
 function SalesTest() {
  const [items,setItems] = useState([fixture]);
  const [form,setForm] = useState({...fixture,status:'已售出',soldPriceJpy:''});
- window.__items = items; window.__form = form;
+ window.__items = items; window.__setItems = setItems; window.__form = form;
  const view = new URLSearchParams(location.search).get('view');
  return <main style={{margin:0,width:'100%',boxSizing:'border-box',padding:16}}>{view === 'product' ? <AddForm form={form} setForm={setForm} saveItem={()=>{}} resetForm={()=>{}} editingId={fixture.id} handleImages={()=>{}} removeImage={()=>{}} dictionaries={DEFAULT_DICTIONARIES} suppliers={[]} customsBatches={[]} /> : <SalesReport items={items} updateListingItem={async (id,patch)=>setItems(xs=>xs.map(x=>x.id===id?{...x,...patch}:x))} downloadCSV={(headers,rows)=>{window.__csv={headers,rows};}} />}</main>;
 }
@@ -56,7 +56,7 @@ try {
   assert(!Object.hasOwn(checks.patch,'platformFeeJpy'),'purchase cost is not overwritten');
   await page.getByRole('button',{name:'新增销售',exact:true}).click();
   await page.locator('.sales-draft-grid label').filter({hasText:/^平台/}).locator('select').selectOption('NBAA');
-  await page.getByRole('button',{name:'税前金额',exact:true}).click();
+  assert.equal(await page.getByRole('button',{name:'含税金额',exact:true}).count(),0,'NBAA has fixed tax-exclusive entry');
   await page.getByLabel('成交价 JPY（税前）',{exact:true}).fill('90000');
   await page.getByLabel('销售手续费 JPY（税前）',{exact:true}).fill('3600');
   assert((await page.locator('.sales-amount-summary').innerText()).includes('95,040'));
@@ -71,6 +71,17 @@ try {
   await page.getByRole('button',{name:'保存销售记录',exact:true}).click();
   await page.waitForFunction(()=>window.__items[0].salesRecord.finalDepositJpy===95040);
   assert((await page.locator('tbody').first().innerText()).includes('已回款'));
+  await page.evaluate(()=>window.__setItems([{...window.__sales.fixture,status:'已售出',soldPriceJpy:90000,soldPlatform:'NBAA',salesRecord:{salePriceTaxIncludedJpy:90000,platformFeeJpy:3600,finalDepositJpy:95040,platform:'NBAA'}}]));
+  await page.getByRole('button',{name:'编辑',exact:true}).first().click();
+  await page.getByRole('button',{name:'按NBAA税前金额修正',exact:true}).click();
+  assert.equal(await page.getByLabel('成交价 JPY（税前）',{exact:true}).inputValue(),'90000');
+  assert.equal(await page.getByLabel('销售手续费 JPY（税前）',{exact:true}).inputValue(),'3600');
+  assert((await page.locator('.sales-amount-summary').innerText()).includes('95,040'));
+  await page.getByRole('button',{name:'保存销售记录',exact:true}).click();
+  await page.waitForFunction(()=>window.__items[0].salesRecord.salePriceTaxIncludedJpy===99000);
+  await page.getByRole('button',{name:'编辑',exact:true}).first().click();
+  assert.equal(await page.getByLabel('成交价 JPY（税前）',{exact:true}).inputValue(),'90000','reopen preserves hammer price');
+  assert.equal(await page.getByRole('button',{name:'按NBAA税前金额修正',exact:true}).count(),0,'correction cannot be applied twice');
   await page.goto('http://127.0.0.1:4187/sales-test.html?view=product');
   await page.getByRole('button',{name:'税前金额',exact:true}).click();
   await page.getByLabel('成交价 JPY（税前）',{exact:true}).fill('90000');

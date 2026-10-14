@@ -3101,22 +3101,31 @@ function buildSalesRecordPatch(item, draft, user = "gouka") {
 }
 
 function SalesAmountFields({ record, onChange }) {
+  const isNbaa = String(record.platform || "").toUpperCase().includes("NBAA");
   const [mode, setMode] = useState("included");
-  const excluded = mode === "excluded";
+  const excluded = isNbaa || mode === "excluded";
   const amount = (key) => record[key] === "" || record[key] == null ? "" : Math.round(Number(record[key]) / (excluded ? 1 + TAX_RATE : 1));
   const change = (key, value) => onChange({ ...record, [key]: value === "" ? "" : Math.round(Number(value) * (excluded ? 1 + TAX_RATE : 1)) });
   const settlement = calcSalesSettlement(record);
+  const receipt = Number(record.finalDepositJpy || 0);
+  const canCorrectTaxBasis = isNbaa && receipt > 0 && settlement.expectedDepositJpy > 0
+    && !Number(record.shippingFeeJpy || record.refundJpy || record.adjustmentJpy || 0)
+    && Math.abs(receipt - settlement.expectedDepositJpy * (1 + TAX_RATE)) < 1;
   return <div className="sales-amount-fields full span-3">
-    <div className="sales-amount-mode" role="group" aria-label="销售金额输入方式">
+    {!isNbaa && <div className="sales-amount-mode" role="group" aria-label="销售金额输入方式">
       <button type="button" aria-pressed={!excluded} onClick={() => setMode("included")}>含税金额</button>
       <button type="button" aria-pressed={excluded} onClick={() => setMode("excluded")}>税前金额</button>
-    </div>
+    </div>}
+    {canCorrectTaxBasis && <div className="sales-basis-warning" role="status">
+      <span>实收 {jpy(receipt)} 与应结算 {jpy(settlement.expectedDepositJpy)} 不一致；金额可能误录为含税。</span>
+      <button type="button" onClick={() => onChange({ ...record, salePriceTaxIncludedJpy: Math.round(Number(record.salePriceTaxIncludedJpy) * (1 + TAX_RATE)), platformFeeJpy: Math.round(Number(record.platformFeeJpy) * (1 + TAX_RATE)) })}>按NBAA税前金额修正</button>
+    </div>}
     <div className="sales-amount-inputs">
       <label>成交价 JPY（{excluded ? "税前" : "含税"}）<input type="number" min="0" step="1" value={amount("salePriceTaxIncludedJpy")} onChange={(e) => change("salePriceTaxIncludedJpy", e.target.value)} /></label>
       <label>销售手续费 JPY（{excluded ? "税前" : "含税"}）<input type="number" min="0" step="1" value={amount("platformFeeJpy")} onChange={(e) => change("platformFeeJpy", e.target.value)} /></label>
     </div>
     <dl className="sales-amount-summary">
-      <div><dt>含税销售额</dt><dd>{jpy(settlement.taxIncluded)}</dd></div>
+      <div><dt>销售合计（含税）</dt><dd>{jpy(settlement.taxIncluded)}</dd></div>
       <div><dt>商品消费税</dt><dd>{jpy(settlement.outputConsumptionTaxJpy)}</dd></div>
       <div><dt>手续费（含税）</dt><dd>{jpy(settlement.feeTaxIncluded)}</dd></div>
       <div><dt>手续费消费税</dt><dd>{jpy(settlement.feeTaxJpy)}</dd></div>
@@ -6189,7 +6198,7 @@ function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, 
             <FormSectionTitle title="销售信息" />
             <Input label="销售日期" type="date" value={form.soldDate || ""} onChange={(v) => set("soldDate", v)} />
             <Input label="销售平台" value={form.soldPlatform || ""} onChange={(v) => set("soldPlatform", v)} placeholder="EcoRing / Mercari / 店铺 / 其他" />
-            <SalesAmountFields record={{ ...getSalesRecordFromProduct(form), salePriceTaxIncludedJpy: form.soldPriceJpy || "" }} onChange={(record) => setForm((current) => ({ ...current, soldPriceJpy: record.salePriceTaxIncludedJpy, salesRecord: record }))} />
+            <SalesAmountFields record={{ ...getSalesRecordFromProduct(form), platform: form.soldPlatform || "", salePriceTaxIncludedJpy: form.soldPriceJpy || "" }} onChange={(record) => setForm((current) => ({ ...current, soldPriceJpy: record.salePriceTaxIncludedJpy, salesRecord: record }))} />
             <Input label="实收金额 JPY（未到账留空）" type="number" value={getSalesRecordFromProduct(form).finalDepositJpy || ""} onChange={(v) => setForm((current) => ({ ...current, salesRecord: { ...getSalesRecordFromProduct(current), finalDepositJpy: v } }))} />
             <Input label="到账日期" type="date" value={getSalesRecordFromProduct(form).depositDate || ""} onChange={(v) => setForm((current) => ({ ...current, salesRecord: { ...getSalesRecordFromProduct(current), depositDate: v } }))} />
             <label className="full">
@@ -10342,7 +10351,6 @@ createRoot(document.getElementById("root")).render(
     <App />
   </ErrorBoundary>
 );
-
 
 
 

@@ -1127,6 +1127,7 @@ main { min-width: 0; max-width: 100%; overflow-x: hidden; }
 .sales-form-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;}
 .sales-form-head h3{margin:0;font-size:18px;}
 .sales-amount-fields{grid-column:1 / -1;min-width:0;}
+.sales-basis-warning{display:flex;align-items:center;flex-wrap:wrap;gap:10px;padding:10px 0;margin-bottom:12px;color:#9a3412;border-bottom:1px solid #fdba74;}
 .sales-amount-mode{display:flex;gap:0;margin-bottom:12px;}
 .sales-amount-mode button{border-radius:0;border:1px solid var(--line);padding:8px 14px;}
 .sales-amount-mode button[aria-pressed="true"]{background:#e9f7ef;color:#166534;border-color:#16a34a;}
