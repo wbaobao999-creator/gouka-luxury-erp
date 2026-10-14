@@ -3083,6 +3083,8 @@ function buildSalesRecordPatch(item, draft, user = "gouka") {
     : (["已发货", "已签收", "已回款", "已完成"].includes(record.salesStatus) ? "已发货" : "已售出");
   return {
     status: nextStatus,
+    brand: draft.brand ?? item.brand,
+    item: draft.item ?? item.item,
     soldDate: record.saleDate,
     soldPlatform: record.platform,
     soldPriceJpy: Math.round(record.salePriceTaxIncludedJpy || 0),
@@ -3101,10 +3103,10 @@ function buildSalesRecordPatch(item, draft, user = "gouka") {
   };
 }
 
-function SalesProductFields({ item, listingNumber, onChange }) {
+function SalesProductFields({ item, listingNumber, onChange, onProductChange }) {
   return <div className="sales-product-fields full span-3">
-    <label>品牌名（ブランド名）<input readOnly value={item.brand || ""} /></label>
-    <label>商品名<input readOnly value={item.item || item.productTitle || ""} /></label>
+    <label>品牌名（ブランド名）<input value={item.brand ?? ""} onChange={(e) => onProductChange("brand", e.target.value)} /></label>
+    <label>商品名<input value={item.item ?? item.productTitle ?? ""} onChange={(e) => onProductChange("item", e.target.value)} /></label>
     <label>平台出品编号（出品番号）<input value={listingNumber || ""} onChange={(e) => onChange(e.target.value)} /></label>
   </div>;
 }
@@ -3113,7 +3115,7 @@ function SalesAmountFields({ record, onChange }) {
   const isNbaa = String(record.platform || "").toUpperCase().includes("NBAA");
   const [mode, setMode] = useState("included");
   const excluded = isNbaa || mode === "excluded";
-  const amount = (key) => record[key] === "" || record[key] == null ? "" : Math.round(Number(record[key]) / (excluded ? 1 + TAX_RATE : 1));
+  const amount = (key) => record[key] === "" || record[key] == null || Number(record[key]) === 0 ? "" : Math.round(Number(record[key]) / (excluded ? 1 + TAX_RATE : 1));
   const change = (key, value) => onChange({ ...record, [key]: value === "" ? "" : Math.round(Number(value) * (excluded ? 1 + TAX_RATE : 1)) });
   const settlement = calcSalesSettlement(record);
   const receipt = Number(record.finalDepositJpy || 0);
@@ -6205,7 +6207,7 @@ function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, 
         {isSoldStatus(form.status) && (
           <>
             <FormSectionTitle title="销售信息" />
-            <SalesProductFields item={form} listingNumber={getSalesRecordFromProduct(form).listingNumber} onChange={(v) => setForm((current) => ({ ...current, salesRecord: { ...getSalesRecordFromProduct(current), listingNumber: v } }))} />
+            <SalesProductFields item={form} onProductChange={set} listingNumber={getSalesRecordFromProduct(form).listingNumber} onChange={(v) => setForm((current) => ({ ...current, salesRecord: { ...getSalesRecordFromProduct(current), listingNumber: v } }))} />
             <Input label="销售日期" type="date" value={form.soldDate || ""} onChange={(v) => set("soldDate", v)} />
             <Input label="销售平台" value={form.soldPlatform || ""} onChange={(v) => set("soldPlatform", v)} placeholder="EcoRing / Mercari / 店铺 / 其他" />
             <SalesAmountFields record={{ ...getSalesRecordFromProduct(form), platform: form.soldPlatform || "", salePriceTaxIncludedJpy: form.soldPriceJpy || "" }} onChange={(record) => setForm((current) => ({ ...current, soldPriceJpy: record.salePriceTaxIncludedJpy, salesRecord: record }))} />
@@ -8842,6 +8844,8 @@ function SalesReport({ items, updateListingItem, downloadCSV }) {
       productId: product.id || record.productId || "",
       salesNo: record.salesNo || "",
       listingNumber: record.listingNumber || "",
+      brand: product.brand ?? "",
+      item: product.item ?? product.productTitle ?? "",
       saleDate: record.saleDate || localDateString(),
       platform: record.platform || "",
       buyerName: record.buyerName || "",
@@ -9063,7 +9067,7 @@ function SalesReport({ items, updateListingItem, downloadCSV }) {
         {salesDraft && (
           <div className="sales-draft-grid">
             <label>商品<select value={salesDraft.productId} onChange={(e) => setSalesDraft(makeDraft(items.find((x) => x.id === e.target.value) || {}))}>{draftProductOptions.map((x) => <option key={x.id} value={x.id}>{x.id} / {x.brand} {x.item}</option>)}</select></label>
-            <SalesProductFields item={selectedDraftItem()} listingNumber={salesDraft.listingNumber} onChange={(v) => setSalesDraft((current) => ({ ...current, listingNumber: v }))} />
+            <SalesProductFields item={salesDraft} onProductChange={(key, value) => setSalesDraft((current) => ({ ...current, [key]: value }))} listingNumber={salesDraft.listingNumber} onChange={(v) => setSalesDraft((current) => ({ ...current, listingNumber: v }))} />
             <label>销售编号<input value={salesDraft.salesNo} onChange={(e) => setSalesDraft({ ...salesDraft, salesNo: e.target.value })} /></label>
             <label>销售日期<input type="date" value={salesDraft.saleDate} onChange={(e) => setSalesDraft({ ...salesDraft, saleDate: e.target.value })} /></label>
             <label>平台<select value={salesDraft.platform} onChange={(e) => setSalesDraft({ ...salesDraft, platform: e.target.value })}><option value="">选择平台</option>{platformOptions.map((x) => <option key={x} value={x}>{x}</option>)}</select></label>
@@ -10370,8 +10374,6 @@ createRoot(document.getElementById("root")).render(
     <App />
   </ErrorBoundary>
 );
-
-
 
 
 
