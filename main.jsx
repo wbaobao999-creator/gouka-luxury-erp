@@ -2924,7 +2924,11 @@ function calcTax(x) {
   const saleExTax = saleJpy - outputTax;
   const grossProfit = saleJpy - costJpy;
   const taxBalance = outputTax - inputTax;
-  const profitExTax = saleExTax - costJpy;
+  const sales = { ...parseSalesRecordMemo(x.soldMemo), ...(x.salesRecord || {}) };
+  const salesCosts = Number(sales.settlementVersion || 0) >= 2
+    ? Number(sales.platformFeeJpy || 0) / (1 + TAX_RATE) + Number(sales.shippingFeeJpy || 0) + Number(sales.refundJpy || 0) - Number(sales.adjustmentJpy || 0)
+    : 0;
+  const profitExTax = saleExTax - costJpy - salesCosts;
   const margin = saleJpy ? grossProfit / saleJpy * 100 : 0;
   const warnings = [baseSmart.warning, declaredSmart.warning].filter(Boolean);
   return { baseCostJpy, extraCostJpy, costJpy, declaredJpy, inputTax, saleJpy, outputTax, saleExTax, grossProfit, taxBalance, profitExTax, margin, warnings };
@@ -2960,7 +2964,7 @@ function parseSalesRecordMemo(memo = "") {
     if (idx <= 0) return acc;
     const key = line.slice(0, idx).trim();
     const value = line.slice(idx + 1).trim();
-    if (["salePriceTaxIncludedJpy", "platformFeeJpy", "shippingFeeJpy", "refundJpy", "adjustmentJpy", "finalDepositJpy"].includes(key)) acc[key] = Number(value || 0);
+    if (["settlementVersion", "salePriceTaxIncludedJpy", "platformFeeJpy", "shippingFeeJpy", "refundJpy", "adjustmentJpy", "finalDepositJpy"].includes(key)) acc[key] = Number(value || 0);
     else acc[key] = value;
     return acc;
   }, {});
@@ -2972,7 +2976,7 @@ function stripSalesRecordMemo(memo = "") {
 
 function buildSalesRecordMemo(record = {}, originalMemo = "") {
   const cleanMemo = stripSalesRecordMemo(originalMemo);
-  const keys = ["salesNo", "buyerName", "buyerContact", "paymentMethod", "depositDate", "salesStatus", "platform", "salePriceTaxIncludedJpy", "platformFeeJpy", "shippingFeeJpy", "refundJpy", "adjustmentJpy", "finalDepositJpy", "memo"];
+  const keys = ["settlementVersion", "salesNo", "saleDate", "buyerName", "buyerContact", "paymentMethod", "depositDate", "salesStatus", "platform", "salePriceTaxIncludedJpy", "platformFeeJpy", "shippingFeeJpy", "refundJpy", "adjustmentJpy", "finalDepositJpy", "memo"];
   const block = keys.map((key) => key + ": " + (record[key] ?? "")).join("\n");
   return [cleanMemo, "GOUKA_SALES_RECORD_START", block, "GOUKA_SALES_RECORD_END"].filter(Boolean).join("\n");
 }
@@ -2980,7 +2984,7 @@ function calcSalesStatus(record = {}) {
   const status = record.salesStatus || "";
   if (status) return status;
   if (Number(record.refundJpy || 0) > 0) return "已退款";
-  if (record.finalDepositJpy || record.depositDate) return "已回款";
+  if (Number(record.finalDepositJpy || 0) > 0) return "已回款";
   if (record.shippingFeeJpy || String(record.memo || "").includes("発送済")) return "已发货";
   if (record.salePriceTaxIncludedJpy) return "已成交";
   return "销售准备";
@@ -2989,7 +2993,7 @@ function calcSalesStatus(record = {}) {
 function calcSalesProfit(record = {}, item = {}) {
   const sale = calcSalesTaxBreakdown(record.salePriceTaxIncludedJpy);
   const fee = calcPlatformFeeBreakdown(record.platformFeeJpy);
-  const inventoryCostJpy = Number(record.inventoryCostJpy || calcTax(item).costJpy || 0);
+  const inventoryCostJpy = Number(calcTax(item).costJpy || 0);
   const shippingFeeJpy = Number(record.shippingFeeJpy || 0);
   const refundJpy = Number(record.refundJpy || 0);
   const adjustmentJpy = Number(record.adjustmentJpy || 0);
@@ -3004,15 +3008,17 @@ function calcSalesSettlement(record = {}, item = {}) {
   const refundJpy = Number(record.refundJpy || 0);
   const adjustmentJpy = Number(record.adjustmentJpy || 0);
   const shippingFeeJpy = Number(record.shippingFeeJpy || 0);
-  const finalDepositJpy = Number(record.finalDepositJpy || 0) || (sale.taxIncluded ? sale.taxIncluded - fee.feeTaxIncluded - shippingFeeJpy - refundJpy + adjustmentJpy : 0);
+  const expectedDepositJpy = sale.taxIncluded ? sale.taxIncluded - fee.feeTaxIncluded - shippingFeeJpy - refundJpy + adjustmentJpy : 0;
+  const finalDepositJpy = Number(record.finalDepositJpy || 0);
   const profit = calcSalesProfit({ ...record, finalDepositJpy }, item);
-  return { ...sale, ...fee, refundJpy, adjustmentJpy, shippingFeeJpy, finalDepositJpy, ...profit };
+  return { ...sale, ...fee, refundJpy, adjustmentJpy, shippingFeeJpy, expectedDepositJpy, finalDepositJpy, ...profit };
 }
 
 function getSalesRecordFromProduct(item = {}) {
   const saved = { ...parseSalesRecordMemo(item.soldMemo), ...(item.salesRecord || {}) };
-  const salePriceTaxIncludedJpy = Number(saved.salePriceTaxIncludedJpy || item.soldPriceJpy || item.saleJpy || 0);
-  const platformFeeJpy = Number(saved.platformFeeJpy || item.platformFeeJpy || item.platformFee || 0);
+  const salePriceTaxIncludedJpy = Number(saved.salePriceTaxIncludedJpy ?? (item.soldPriceJpy || (isSoldStatus(item.status) ? item.saleJpy : 0)) ?? 0);
+  // Product-level platformFeeJpy is a purchase cost, not a selling fee.
+  const platformFeeJpy = Number(saved.platformFeeJpy ?? item.salesPlatformFeeJpy ?? 0);
   const record = {
     salesNo: saved.salesNo || item.salesNo || makeSalesNo(item),
     productId: saved.productId || item.id || "",
@@ -3023,11 +3029,12 @@ function getSalesRecordFromProduct(item = {}) {
     buyerContact: saved.buyerContact || item.buyerContact || "",
     salePriceTaxIncludedJpy,
     platformFeeJpy,
-    shippingFeeJpy: Number(saved.shippingFeeJpy || item.salesShippingFeeJpy || 0),
-    refundJpy: Number(saved.refundJpy || item.refundJpy || item.returnJpy || item.refundAmountJpy || 0),
-    adjustmentJpy: Number(saved.adjustmentJpy || item.adjustmentJpy || item.adjustJpy || item.adjustmentAmountJpy || 0),
-    finalDepositJpy: Number(saved.finalDepositJpy || item.finalReceiptJpy || item.netReceiptJpy || 0),
-    depositDate: saved.depositDate || item.depositDate || "",
+    shippingFeeJpy: Number(saved.shippingFeeJpy ?? item.salesShippingFeeJpy ?? 0),
+    refundJpy: Number(saved.refundJpy ?? item.refundJpy ?? item.returnJpy ?? item.refundAmountJpy ?? 0),
+    adjustmentJpy: Number(saved.adjustmentJpy ?? item.adjustmentJpy ?? item.adjustJpy ?? item.adjustmentAmountJpy ?? 0),
+    settlementVersion: Number(saved.settlementVersion || 0),
+    finalDepositJpy: Number(saved.finalDepositJpy ?? item.finalReceiptJpy ?? item.netReceiptJpy ?? 0),
+    depositDate: saved.depositDate ?? item.depositDate ?? "",
     paymentMethod: saved.paymentMethod || item.paymentMethod || "",
     salesStatus: saved.salesStatus || item.salesStatus || "",
     memo: saved.memo || item.soldMemo || "",
@@ -3041,10 +3048,11 @@ function getSalesRecordFromProduct(item = {}) {
     outputConsumptionTaxJpy: settlement.outputConsumptionTaxJpy,
     platformFeeTaxJpy: settlement.feeTaxJpy,
     finalDepositJpy: settlement.finalDepositJpy,
+    expectedDepositJpy: settlement.expectedDepositJpy,
     inventoryCostJpy: settlement.inventoryCostJpy,
     actualProfitJpy: settlement.actualProfitJpy,
     margin: settlement.margin,
-    salesStatus: calcSalesStatus({ ...record, finalDepositJpy: settlement.finalDepositJpy })
+    salesStatus: calcSalesStatus(record)
   };
 }
 
@@ -3054,6 +3062,8 @@ function buildSalesRecordPatch(item, draft, user = "gouka") {
   const rawRecord = {
     ...baseRecord,
     ...draft,
+    settlementVersion: 2,
+    salesStatus: draft.salesStatus === "销售准备" ? "" : (draft.salesStatus || ""),
     productId: item.id,
     productCode: item.id,
     salesNo: draft.salesNo || baseRecord.salesNo || makeSalesNo({ ...item, soldDate: draft.saleDate }),
@@ -3075,7 +3085,6 @@ function buildSalesRecordPatch(item, draft, user = "gouka") {
     soldDate: record.saleDate,
     soldPlatform: record.platform,
     soldPriceJpy: Math.round(record.salePriceTaxIncludedJpy || 0),
-    platformFeeJpy: Math.round(record.platformFeeJpy || 0),
     salesShippingFeeJpy: Math.round(record.shippingFeeJpy || 0),
     refundJpy: Math.round(record.refundJpy || 0),
     adjustmentJpy: Math.round(record.adjustmentJpy || 0),
@@ -3089,6 +3098,31 @@ function buildSalesRecordPatch(item, draft, user = "gouka") {
     salesRecord: record,
     soldMemo: buildSalesRecordMemo(record, draft.memo || item.soldMemo || "")
   };
+}
+
+function SalesAmountFields({ record, onChange }) {
+  const [mode, setMode] = useState("included");
+  const excluded = mode === "excluded";
+  const amount = (key) => record[key] === "" || record[key] == null ? "" : Math.round(Number(record[key]) / (excluded ? 1 + TAX_RATE : 1));
+  const change = (key, value) => onChange({ ...record, [key]: value === "" ? "" : Math.round(Number(value) * (excluded ? 1 + TAX_RATE : 1)) });
+  const settlement = calcSalesSettlement(record);
+  return <div className="sales-amount-fields full span-3">
+    <div className="sales-amount-mode" role="group" aria-label="销售金额输入方式">
+      <button type="button" aria-pressed={!excluded} onClick={() => setMode("included")}>含税金额</button>
+      <button type="button" aria-pressed={excluded} onClick={() => setMode("excluded")}>税前金额</button>
+    </div>
+    <div className="sales-amount-inputs">
+      <label>成交价 JPY（{excluded ? "税前" : "含税"}）<input type="number" min="0" step="1" value={amount("salePriceTaxIncludedJpy")} onChange={(e) => change("salePriceTaxIncludedJpy", e.target.value)} /></label>
+      <label>销售手续费 JPY（{excluded ? "税前" : "含税"}）<input type="number" min="0" step="1" value={amount("platformFeeJpy")} onChange={(e) => change("platformFeeJpy", e.target.value)} /></label>
+    </div>
+    <dl className="sales-amount-summary">
+      <div><dt>含税销售额</dt><dd>{jpy(settlement.taxIncluded)}</dd></div>
+      <div><dt>商品消费税</dt><dd>{jpy(settlement.outputConsumptionTaxJpy)}</dd></div>
+      <div><dt>手续费（含税）</dt><dd>{jpy(settlement.feeTaxIncluded)}</dd></div>
+      <div><dt>手续费消费税</dt><dd>{jpy(settlement.feeTaxJpy)}</dd></div>
+      <div><dt>应结算金额</dt><dd>{jpy(settlement.expectedDepositJpy)}</dd></div>
+    </dl>
+  </div>;
 }
 
 function calcSalesBreakdown(item) {
@@ -4331,6 +4365,14 @@ function App() {
       productTitle: form.productTitle || makeAutoTitle(form) || `${form.brand || "未识别品牌"} ${form.item || "未识别商品"}`,
       images: Array.isArray(form.images) ? form.images : []
     };
+    if (isSoldStatus(safeForm.status)) {
+      const sales = getSalesRecordFromProduct(safeForm);
+      const draft = { ...sales, saleDate: safeForm.soldDate || "", platform: safeForm.soldPlatform || "", salePriceTaxIncludedJpy: safeForm.soldPriceJpy || 0, memo: stripSalesRecordMemo(safeForm.soldMemo || "") };
+      if (Number(draft.salePriceTaxIncludedJpy) <= 0) return alert("请输入成交价。");
+      if ([draft.platformFeeJpy, draft.shippingFeeJpy, draft.refundJpy, draft.finalDepositJpy].some((v) => !Number.isFinite(Number(v)) || Number(v) < 0)) return alert("销售费用和实收金额不能为负数。");
+      Object.assign(safeForm, buildSalesRecordPatch(safeForm, draft));
+      safeForm.status = form.status;
+    }
     const dutyJpyValue = amountToJpyWithFallback(
       safeForm.dutyAmount,
       safeForm.dutyCurrency || "JPY",
@@ -4383,7 +4425,7 @@ function App() {
           soldDate: form.soldDate || "",
           soldPlatform: form.soldPlatform || "",
           soldPriceJpy: Number(form.soldPriceJpy || 0),
-          soldMemo: form.soldMemo || ""
+          soldMemo: safeForm.soldMemo || ""
         }, session?.username, "编辑商品信息");
 
         return updatedItem;
@@ -6093,7 +6135,7 @@ function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, 
         <Input label={`关税金额 ${form.dutyCurrency || "JPY"} / Duty`} type="number" value={form.dutyAmount ?? form.dutyJpy ?? ""} onChange={(v) => setFxAmount("dutyAmount", "dutyCurrency", "dutyRateToJpy", "dutyJpy", v)} />
         <Input label={`${form.dutyCurrency || "JPY"}→JPY 汇率 / Duty Rate`} type="number" value={form.dutyRateToJpy || defaultRateFor(form.dutyCurrency || "JPY")} onChange={(v) => setFxRate("dutyRateToJpy", "dutyAmount", "dutyCurrency", "dutyJpy", v)} />
         <Input label="报关代行费 JPY / Customs Fee" type="number" value={form.customsFeeJpy || ""} onChange={(v) => set("customsFeeJpy", v)} />
-        <Input label="拍卖/平台手续费 JPY / Platform Fee" type="number" value={form.platformFeeJpy || ""} onChange={(v) => set("platformFeeJpy", v)} />
+        <Input label="采购手续费 JPY / Purchase Fee" type="number" value={form.platformFeeJpy || ""} onChange={(v) => set("platformFeeJpy", v)} />
         <Select label="其他费用币种 / Other Currency" value={form.otherCostCurrency || "JPY"} onChange={(v) => setFxCurrency("otherCostCurrency", "otherCostRateToJpy", "otherCostJpy", "otherCostAmount", v)} options={CURRENCY_OPTIONS} />
         <Input label={`其他费用金额 ${form.otherCostCurrency || "JPY"} / Other Cost`} type="number" value={form.otherCostAmount ?? form.otherCostJpy ?? ""} onChange={(v) => setFxAmount("otherCostAmount", "otherCostCurrency", "otherCostRateToJpy", "otherCostJpy", v)} />
         <Input label={`${form.otherCostCurrency || "JPY"}→JPY 汇率 / Other Rate`} type="number" value={form.otherCostRateToJpy || defaultRateFor(form.otherCostCurrency || "JPY")} onChange={(v) => setFxRate("otherCostRateToJpy", "otherCostAmount", "otherCostCurrency", "otherCostJpy", v)} />
@@ -6147,7 +6189,9 @@ function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, 
             <FormSectionTitle title="销售信息" />
             <Input label="销售日期" type="date" value={form.soldDate || ""} onChange={(v) => set("soldDate", v)} />
             <Input label="销售平台" value={form.soldPlatform || ""} onChange={(v) => set("soldPlatform", v)} placeholder="EcoRing / Mercari / 店铺 / 其他" />
-            <Input label="实际销售额 JPY（税込）" type="number" value={form.soldPriceJpy || ""} onChange={(v) => set("soldPriceJpy", v)} />
+            <SalesAmountFields record={{ ...getSalesRecordFromProduct(form), salePriceTaxIncludedJpy: form.soldPriceJpy || "" }} onChange={(record) => setForm((current) => ({ ...current, soldPriceJpy: record.salePriceTaxIncludedJpy, salesRecord: record }))} />
+            <Input label="实收金额 JPY（未到账留空）" type="number" value={getSalesRecordFromProduct(form).finalDepositJpy || ""} onChange={(v) => setForm((current) => ({ ...current, salesRecord: { ...getSalesRecordFromProduct(current), finalDepositJpy: v } }))} />
+            <Input label="到账日期" type="date" value={getSalesRecordFromProduct(form).depositDate || ""} onChange={(v) => setForm((current) => ({ ...current, salesRecord: { ...getSalesRecordFromProduct(current), depositDate: v } }))} />
             <label className="full">
               销售备注
               <textarea value={form.soldMemo || ""} onChange={(e) => set("soldMemo", e.target.value)} placeholder="拍卖成交 / 线下销售 / 买家备注" />
@@ -8810,15 +8854,15 @@ function SalesReport({ items, updateListingItem, downloadCSV }) {
   const draftProductOptions = editingSalesId === "new" ? saleCandidateItems : items;
 
   function salesActualDepositJpy(item, record) {
-    return Number(item.salesRecord?.finalDepositJpy || item.finalReceiptJpy || item.netReceiptJpy || 0);
+    return Number(record.finalDepositJpy || 0);
   }
 
   function salesIsDeposited(item, record) {
-    return salesActualDepositJpy(item, record) > 0 || !!record.depositDate;
+    return salesActualDepositJpy(item, record) > 0 && salesActualDepositJpy(item, record) >= salesExpectedDepositJpy(record);
   }
 
   function salesExpectedDepositJpy(record) {
-    return Number(record.finalDepositJpy || 0);
+    return Number(record.expectedDepositJpy || 0);
   }
 
   function salesRecordQuality(item, record) {
@@ -8850,6 +8894,7 @@ function SalesReport({ items, updateListingItem, downloadCSV }) {
     const product = selectedDraftItem();
     if (!product?.id) return alert("请选择商品。");
     if (Number(salesDraft.salePriceTaxIncludedJpy || 0) <= 0) return alert("请输入售价（含税）。");
+    if ([salesDraft.platformFeeJpy, salesDraft.shippingFeeJpy, salesDraft.refundJpy, salesDraft.finalDepositJpy].some((v) => !Number.isFinite(Number(v)) || Number(v) < 0)) return alert("销售费用和实收金额不能为负数。");
     const patch = buildSalesRecordPatch(product, salesDraft);
     await updateListingItem(product.id, patch, "Sales Record更新");
     setEditingSalesId(null);
@@ -8857,8 +8902,8 @@ function SalesReport({ items, updateListingItem, downloadCSV }) {
     alert("销售记录已保存。");
   }
 
-  const headers = ["销售编号", "商品图片", "商品编号", "品牌", "商品名", "销售日期", "平台", "售价（含税）", "销售收入（未税）", "销项消费税", "库存成本", "实际利润", "回款状态", "资料状态", "销售状态", "操作"];
-  const csvHeaders = ["销售编号", "商品编号", "品牌", "商品名", "销售日期", "平台", "买家", "联系方式", "售价（含税）", "销售收入（未税）", "销项消费税", "平台手续费", "手续费消费税", "发货费", "退款", "调整金额", "最终到账", "到账日期", "支付方式", "库存成本", "实际利润", "利润率", "回款状态", "资料状态", "缺失项目", "销售状态", "备注"];
+  const headers = ["销售编号", "商品图片", "商品编号", "品牌", "商品名", "销售日期", "平台", "售价（含税）", "手续费（含税）", "应结算", "实收", "销售收入（未税）", "销项消费税", "库存成本", "实际利润", "回款状态", "资料状态", "销售状态", "操作"];
+  const csvHeaders = ["销售编号", "商品编号", "品牌", "商品名", "销售日期", "平台", "买家", "联系方式", "售价（含税）", "销售收入（未税）", "销项消费税", "平台手续费", "手续费消费税", "发货费", "退款", "调整金额", "应结算", "实收", "到账日期", "支付方式", "库存成本", "实际利润", "利润率", "回款状态", "资料状态", "缺失项目", "销售状态", "备注"];
 
   const rows = filteredSalesRows.map(({ item, record }) => {
     const deposited = salesIsDeposited(item, record);
@@ -8874,11 +8919,14 @@ function SalesReport({ items, updateListingItem, downloadCSV }) {
       record.saleDate || "—",
       record.platform || "—",
       jpy(record.salePriceTaxIncludedJpy),
+      jpy(record.platformFeeJpy),
+      jpy(expectedDeposit),
+      actualDeposit > 0 ? jpy(actualDeposit) : "未到账",
       jpy(record.saleRevenueExTaxJpy),
       jpy(record.outputConsumptionTaxJpy),
       jpy(record.inventoryCostJpy),
       moneyCell(record.actualProfitJpy),
-      <span className={deposited ? "status ok" : "status warn"}>{deposited ? "已回款" : "未回款"}</span>,
+      <span className={deposited ? "status ok" : "status warn"}>{deposited ? "已回款" : actualDeposit > 0 ? "部分回款" : "未回款"}</span>,
       <span className={quality.ok ? "status ok" : "status warn"} title={quality.missing.join(" / ")}>{quality.label}</span>,
       <span className="status">{record.salesStatus}</span>,
       <div className="table-actions">
@@ -8909,13 +8957,16 @@ function SalesReport({ items, updateListingItem, downloadCSV }) {
       Math.round(record.shippingFeeJpy || 0),
       Math.round(record.refundJpy || 0),
       Math.round(record.adjustmentJpy || 0),
+      Math.round(record.expectedDepositJpy || 0),
       Math.round(actualDeposit || 0),
       record.depositDate || "",
       record.paymentMethod || "",
       Math.round(record.inventoryCostJpy || 0),
       Math.round(record.actualProfitJpy || 0),
       pct(record.margin || 0),
-      deposited ? "已回款" : "未回款",
+      deposited ? "已回款" : actualDeposit > 0 ? "部分回款" : "未回款",
+      quality.label,
+      quality.missing.join(" / "),
       record.salesStatus || "",
       stripSalesRecordMemo(record.memo || "")
     ];
@@ -8926,7 +8977,7 @@ function SalesReport({ items, updateListingItem, downloadCSV }) {
   const totalOutputTax = filteredSalesRows.reduce((a, x) => a + Number(x.record.outputConsumptionTaxJpy || 0), 0);
   const expectedDepositTotal = filteredSalesRows.reduce((a, x) => a + salesExpectedDepositJpy(x.record), 0);
   const totalDeposit = filteredSalesRows.reduce((a, x) => a + salesActualDepositJpy(x.item, x.record), 0);
-  const pendingDeposit = Math.max(0, expectedDepositTotal - totalDeposit);
+  const pendingDeposit = filteredSalesRows.reduce((a, x) => a + Math.max(0, salesExpectedDepositJpy(x.record) - salesActualDepositJpy(x.item, x.record)), 0);
   const totalProfit = filteredSalesRows.reduce((a, x) => a + Number(x.record.actualProfitJpy || 0), 0);
   const missingDeposit = filteredSalesRows.filter((x) => !salesIsDeposited(x.item, x.record)).length;
   const completeSalesRecords = filteredSalesRows.filter((x) => salesRecordQuality(x.item, x.record).ok).length;
@@ -8993,12 +9044,11 @@ function SalesReport({ items, updateListingItem, downloadCSV }) {
             <label>平台<select value={salesDraft.platform} onChange={(e) => setSalesDraft({ ...salesDraft, platform: e.target.value })}><option value="">选择平台</option>{platformOptions.map((x) => <option key={x} value={x}>{x}</option>)}</select></label>
             <label>买家<input value={salesDraft.buyerName} onChange={(e) => setSalesDraft({ ...salesDraft, buyerName: e.target.value })} /></label>
             <label>联系方式<input value={salesDraft.buyerContact} onChange={(e) => setSalesDraft({ ...salesDraft, buyerContact: e.target.value })} /></label>
-            <label>售价（含税）<input type="number" value={salesDraft.salePriceTaxIncludedJpy} onChange={(e) => setSalesDraft({ ...salesDraft, salePriceTaxIncludedJpy: e.target.value })} /></label>
-            <label>平台手续费（含税）<input type="number" value={salesDraft.platformFeeJpy} onChange={(e) => setSalesDraft({ ...salesDraft, platformFeeJpy: e.target.value })} /></label>
+            <SalesAmountFields record={salesDraft} onChange={setSalesDraft} />
             <label>发货费<input type="number" value={salesDraft.shippingFeeJpy} onChange={(e) => setSalesDraft({ ...salesDraft, shippingFeeJpy: e.target.value })} /></label>
             <label>退款<input type="number" value={salesDraft.refundJpy} onChange={(e) => setSalesDraft({ ...salesDraft, refundJpy: e.target.value })} /></label>
             <label>调整金额<input type="number" value={salesDraft.adjustmentJpy} onChange={(e) => setSalesDraft({ ...salesDraft, adjustmentJpy: e.target.value })} /></label>
-            <label>最终到账<input type="number" value={salesDraft.finalDepositJpy} onChange={(e) => setSalesDraft({ ...salesDraft, finalDepositJpy: e.target.value })} /></label>
+            <label>实收金额 JPY（未到账留空）<input type="number" min="0" value={salesDraft.finalDepositJpy} onChange={(e) => setSalesDraft({ ...salesDraft, finalDepositJpy: e.target.value })} /></label>
             <label>到账日期<input type="date" value={salesDraft.depositDate} onChange={(e) => setSalesDraft({ ...salesDraft, depositDate: e.target.value })} /></label>
             <label>支付方式<input value={salesDraft.paymentMethod} onChange={(e) => setSalesDraft({ ...salesDraft, paymentMethod: e.target.value })} /></label>
             <label>销售状态<select value={salesDraft.salesStatus} onChange={(e) => setSalesDraft({ ...salesDraft, salesStatus: e.target.value })}>{salesStatuses.map((x) => <option key={x} value={x}>{x}</option>)}</select></label>
@@ -10292,13 +10342,6 @@ createRoot(document.getElementById("root")).render(
     <App />
   </ErrorBoundary>
 );
-
-
-
-
-
-
-
 
 
 
