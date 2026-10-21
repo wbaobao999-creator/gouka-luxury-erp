@@ -1,6 +1,9 @@
 import { supabase } from "./supabase.js";
 import { sharedCloudReader } from "./lib/cloudItems.js";
 import { uploadProductImages } from "./lib/imageUpload.js";
+import { createRecordWriteQueue } from "./lib/writeQueue.js";
+
+const queueWrite = createRecordWriteQueue();
 
 const IMAGE_BUCKET = "product-images";
 const IMPORT_BATCH_BUCKET = "import-batch-files";
@@ -28,7 +31,12 @@ export async function getItems() {
   return getCloudItems();
 }
 
-export async function upsertCloudItem(item) {
+export function upsertCloudItem(item) {
+  const snapshot = structuredClone(item);
+  return queueWrite(snapshot.product_no, () => writeCloudItem(snapshot));
+}
+
+async function writeCloudItem(item) {
   const payload = {
     ...item,
     updated_at: new Date().toISOString()
@@ -187,9 +195,7 @@ export async function uploadImportBatchAttachments(batchId, files = [], document
 
     if (error) throw error;
 
-    const { data } = supabase.storage
-      .from(IMPORT_BATCH_BUCKET)
-      .getPublicUrl(storagePath);
+
 
     result.push({
       name: file.name || originalName,
@@ -201,7 +207,7 @@ export async function uploadImportBatchAttachments(batchId, files = [], document
       storageMode: "supabase-storage",
       bucket: IMPORT_BATCH_BUCKET,
       path: storagePath,
-      url: data?.publicUrl || ""
+      url: ""
     });
   }
 

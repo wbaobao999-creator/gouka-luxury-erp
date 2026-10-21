@@ -1,10 +1,20 @@
 import React, { useMemo, useState } from "react";
+import { readItemAudit, writeItemAudit } from "./lib/itemMetadata.js";
+import { buildPortableBackup, validatePortableBackup } from "./lib/portableBackup.js";
+import { allocateWholeYen, isCancelledSale, salesAmounts, receiptState, inAccountingPeriod } from "./lib/financialMath.js";
+import { canonicalSaleStatus, salesEvents, calendarSalesTotals, saleStockDisposition } from "./lib/salesEvents.js";
 import { createRoot } from "react-dom/client";
 import { Package, FileText, Calculator, Search, Plus, Building2, Download, Edit3, Trash2, ImagePlus, Save, X, Lock, Database, Upload } from "lucide-react";
 import "./style.css";
 import "./simplify.css";
 import JapaneseAuctionPage from "./pages/JapaneseAuctionPage.jsx";
 import ProductImage from "./components/ProductImage.jsx";
+import SecureErpAccess from "./components/SecureErpAccess.jsx";
+import ImportAttachmentLink from "./components/ImportAttachmentLink.jsx";
+import { createImportAttachmentReader } from "./lib/importAttachments.js";
+import { loadCompanySeal } from "./lib/companyAssets.js";
+import { supabase } from "./supabase.js";
+const readImportAttachment = createImportAttachmentReader(supabase);
 import { getCloudItems, upsertCloudItem, deleteItemCloud, uploadItemImages, deleteProductImages, uploadImportBatchAttachments } from "./itemService.js";
 
 
@@ -1455,15 +1465,10 @@ const CUSTOMS_BATCH_KEY = "gouka_erp_v7_customs_batches";
 const GLOBAL_STATE_PRODUCT_NO = "__GOUKA_ERP_GLOBAL_STATE__";
 const GLOBAL_STATE_MEMO_PREFIX = "__GOUKA_ERP_GLOBAL_STATE_JSON__";
 const GLOBAL_STATE_EVENT = "gouka-cloud-state-loaded";
-const USERS = {
-  gouka: { password: "931205", role: "owner", name: "管理者账号" },
-  staff: { password: "123456", role: "staff", name: "员工账号" },
-  zeirishi: { password: "123456", role: "tax", name: "税理士窗口" }
-};
 const TAX_RATE = 0.10;
 const CURRENCY_OPTIONS = ["CNY", "USD", "HKD", "EUR", "JPY"];
 const DEFAULT_JPY_RATES = { CNY: 21.8, USD: 157, HKD: 20.1, EUR: 170, JPY: 1 };
-const WORKFLOW_STATUSES = ["采购中", "运输中", "已入库", "待出品", "已出品", "已售出", "已发货", "报关准备", "保留", "退货"];
+const WORKFLOW_STATUSES = ["采购中", "运输中", "已入库", "待出品", "已出品", "已售出", "已发货", "待退回", "报关准备", "保留", "退货"];
 const LISTING_PLATFORMS = ["Mercari", "Yahoo", "楽天", "店铺", "NBAA", "OBA", "ECO Ring", "JBA", "AUCNET", "Star Buyers", "其他"];
 
 function defaultRateFor(currency) {
@@ -1490,7 +1495,7 @@ function smartAmountToJpy(amount, currency, rate, saleJpy = 0) {
 
   // 防止误把“日元金额”录成 CNY/USD/HKD/EUR 后把消费税拉爆。
   // 例：1000000 实际是JPY，但币种选了CNY，系统会算成 21,800,000。
-  // 如果换算后金额远高于售价，而原始金额本身接近售价，则按JPY保护计算。
+  // 异常只提示，不得用预计售价改变已确认的采购金额。
   if (
     currency !== "JPY" &&
     raw >= 100000 &&
@@ -1499,8 +1504,8 @@ function smartAmountToJpy(amount, currency, rate, saleJpy = 0) {
     raw <= Number(saleJpy || 0) * 2
   ) {
     return {
-      value: raw,
-      warning: `疑似币种误选：${raw.toLocaleString()} ${currency} 按汇率会变成 ${Math.round(converted).toLocaleString()} JPY，已按JPY保护计算。请检查币种。`
+      value: converted,
+      warning: `疑似币种误选：${raw.toLocaleString()} ${currency} 按汇率为 ${Math.round(converted).toLocaleString()} JPY。请检查币种；确认前仍按原币种和汇率计算。`
     };
   }
 
@@ -1855,11 +1860,10 @@ function applyBatchAllocations(items, batches) {
   const allocMap = {};
   Object.entries(grouped).forEach(([batchId, arr]) => {
     const batch = normalizeImportBatch(batchMap[batchId]);
-    const totalDeclared = arr.reduce((a, x) => a + getDeclaredJpyForAllocation(x), 0) || arr.length || 1;
-    const countRatio = arr.length ? 1 / arr.length : 0;
-    arr.forEach((x) => {
-      const declared = getDeclaredJpyForAllocation(x);
-      const ratio = totalDeclared ? declared / totalDeclared : countRatio;
+    const allocations = calcImportBatchAllocation(batch, arr);
+    const totalDeclared = arr.reduce((a, x) => a + getDeclaredJpyForAllocation(x), 0);
+    allocations.forEach((allocation) => {
+      const x = allocation.item;
       allocMap[x.id] = {
         customsBatchId: batchId,
         batchName: batch.name || batchId,
@@ -1867,11 +1871,16 @@ function applyBatchAllocations(items, batches) {
         importBatchId: batch.id,
         importBatchEmsNo: batch.emsNo || "",
         importBatchCustomsDeclarationNo: batch.customsDeclarationNo || "",
-        batchAllocatedDutyJpy: Number(batch.dutyJpy || 0) * ratio,
-        batchAllocatedShippingJpy: Number(batch.internationalShippingJpy || batch.shippingJpy || 0) * ratio,
-        batchAllocatedCustomsFeeJpy: Number(batch.agencyFeeJpy || batch.customsFeeJpy || 0) * countRatio,
-        batchAllocatedOtherCostJpy: Number(batch.otherCostJpy || 0) * ratio,
-        batchAllocatedImportTaxJpy: Number(batch.totalImportConsumptionTaxJpy || 0) * ratio,
+        allocatedDutyJpy: allocation.allocatedDutyJpy,
+        allocatedInternationalShippingJpy: allocation.allocatedInternationalShippingJpy,
+        allocatedAgentFeeJpy: allocation.allocatedAgentFeeJpy,
+        allocatedOtherImportCostJpy: allocation.allocatedOtherImportCostJpy,
+        importTaxCreditJpy: allocation.importTaxCreditJpy,
+        batchAllocatedDutyJpy: allocation.allocatedDutyJpy,
+        batchAllocatedShippingJpy: allocation.allocatedInternationalShippingJpy,
+        batchAllocatedCustomsFeeJpy: allocation.allocatedAgentFeeJpy,
+        batchAllocatedOtherCostJpy: allocation.allocatedOtherImportCostJpy,
+        batchAllocatedImportTaxJpy: allocation.importTaxCreditJpy,
         batchImportConsumptionTaxJpy: Number(batch.totalImportConsumptionTaxJpy || 0),
         batchDeclaredTotalJpy: totalDeclared
       };
@@ -1956,17 +1965,22 @@ function calcImportBatchAllocation(batch, linkedProducts = []) {
   const cost = calcImportBatchCostSummary(b);
   const tax = calcImportBatchTaxSummary(b);
   const products = linkedProducts || [];
-  const totalDeclared = products.reduce((sum, x) => sum + Number(calcTax(x).declaredJpy || getDeclaredJpyForAllocation(x) || 0), 0) || products.length || 1;
+  const weights = products.map((x) => Math.max(0, getDeclaredJpyForAllocation(x)));
+  const totalDeclared = weights.reduce((sum, x) => sum + x, 0);
   const count = products.length || 1;
-  return products.map((x) => {
-    const declaredJpy = Number(calcTax(x).declaredJpy || getDeclaredJpyForAllocation(x) || 0);
+  const duty = allocateWholeYen(cost.dutyJpy, weights);
+  const agent = allocateWholeYen(cost.agencyFeeJpy, products.map(() => 1));
+  const shipping = allocateWholeYen(cost.internationalShippingJpy, weights);
+  const other = allocateWholeYen(cost.otherCostJpy, weights);
+  const credits = allocateWholeYen(tax.taxCreditJpy, weights);
+  return products.map((x, index) => {
+    const declaredJpy = weights[index];
     const ratio = totalDeclared ? declaredJpy / totalDeclared : 1 / count;
-    const countShare = 1 / count;
-    const allocatedDutyJpy = Math.round(cost.dutyJpy * ratio);
-    const allocatedAgentFeeJpy = Math.round(cost.agencyFeeJpy * countShare);
-    const allocatedInternationalShippingJpy = Math.round(cost.internationalShippingJpy * ratio);
-    const allocatedOtherImportCostJpy = Math.round(cost.otherCostJpy * ratio);
-    const importTaxCreditJpy = Math.round(tax.taxCreditJpy * ratio);
+    const allocatedDutyJpy = duty[index];
+    const allocatedAgentFeeJpy = agent[index];
+    const allocatedInternationalShippingJpy = shipping[index];
+    const allocatedOtherImportCostJpy = other[index];
+    const importTaxCreditJpy = credits[index];
     return {
       item: x,
       declaredJpy,
@@ -2018,13 +2032,16 @@ function calcImportBatchTradeSummary(batch, products = []) {
   const expectedCostJpy = expectedProducts.reduce((sum, x) => sum + Number(calcTax(x).costJpy || 0), 0);
   const expectedProfitJpy = expectedProducts.length ? expectedRevenueExTax - expectedCostJpy : 0;
 
-  const soldProducts = linkedProducts.filter((x) => isSoldStatus(x.status));
+  const soldProducts = linkedProducts.filter(isActualSale);
   const soldCount = soldProducts.length;
   const unsoldProducts = linkedProducts.filter((x) => !isSoldStatus(x.status));
   const unsoldCount = unsoldProducts.length;
   const receivedJpy = soldProducts.reduce((sum, x) => sum + Number(calcSalesBreakdown(x).finalReceiptJpy || 0), 0);
   const soldTaxIncluded = soldProducts.reduce((sum, x) => sum + Number(calcSalesBreakdown(x).saleTaxIncluded || 0), 0);
-  const unreceivedJpy = Math.max(0, soldTaxIncluded - receivedJpy);
+  const unreceivedJpy = soldProducts.reduce((sum, x) => {
+    const record = getSalesRecordFromProduct(x);
+    return sum + Math.max(0, record.expectedDepositJpy - record.finalDepositJpy);
+  }, 0);
   const actualProfitJpy = soldProducts.reduce((sum, x) => sum + Number(calcSalesBreakdown(x).actualProfitJpy || 0), 0);
 
   const unrealizedProducts = unsoldProducts.filter((x) => Number(x.saleJpy || x.expectedSaleJpy || x.listingPriceJpy || 0) > 0);
@@ -2166,7 +2183,7 @@ let storageAlerted = false;
 function stripImagesForStorage(items) {
   return (items || []).map((x) => ({
     ...x,
-    images: [],
+    images: (Array.isArray(x.images) ? x.images : []).filter((url) => /^https?:\/\//.test(String(url))),
     imageCount: Array.isArray(x.images) ? x.images.length : Number(x.imageCount || 0)
   }));
 }
@@ -2608,7 +2625,7 @@ function auctionDetailText(item) {
 function memoForCloud(item) {
   // Enterprise rule: new saves keep auction data in item.auction only.
   // memo is reserved for human notes. Old memo auction blocks are still readable by readAuctionFromMemo().
-  return stripAuctionBlocks(item?.memo || "");
+  return writeItemAudit(stripAuctionBlocks(item?.memo || ""), item);
 }
 
 
@@ -2809,16 +2826,16 @@ function consumptionTaxBalanceDisplay(value) {
   const amount = Math.round(Number(value || 0));
   if (amount > 0) {
     return {
-      title: "预计应缴消费税",
+      title: "消费税差额参考（销项较多）",
       value: jpy(amount),
       note: "销项税大于进项税，正式申告交由税理士确认"
     };
   }
   if (amount < 0) {
     return {
-      title: "预计留抵消费税",
+      title: "消费税差额参考（进项较多）",
       value: jpy(Math.abs(amount)),
-      note: "进项税大于销项税，作为留抵参考"
+      note: "进项税大于销项税，不代表已获准抵扣或退税"
     };
   }
   return {
@@ -2838,6 +2855,15 @@ function productNameCell(value) {
 }
 function isSoldStatus(status) {
   return status === "已售出" || status === "已发货";
+}
+
+function savedSalesRecord(item = {}) {
+  const saved = { ...parseSalesRecordMemo(item.soldMemo), ...(item.salesRecord || {}) };
+  return { ...saved, salesStatus: canonicalSaleStatus(item, saved) };
+}
+
+function isActualSale(item = {}) {
+  return isSoldStatus(item.status) && !isCancelledSale(savedSalesRecord(item));
 }
 
 function normalizeIdText(value) {
@@ -2886,8 +2912,32 @@ function makeNextId(items, draft = {}) {
   return prefix + String(next).padStart(4, "0");
 }
 
+function hasRestoredSalesStock(record) {
+  if (!["已取消", "已退款"].includes(record.salesStatus) && !(Number(record.refundJpy) > 0)) return false;
+  if (record.stockDisposition === "not_shipped") return true;
+  return record.stockDisposition === "returned"
+    && saleStockDisposition(record, { asOf: localDateString() }).available
+    && (!record.saleDate || record.returnDate >= record.saleDate);
+}
+
+function inventoryStatusForSales(item, asOf = localDateString()) {
+  const saved = savedSalesRecord(item);
+  const record = { ...item, ...saved, saleDate: saved.saleDate || item.soldDate || "" };
+  const cancelled = record.salesStatus === "已取消";
+  const refundCase = record.salesStatus === "已退款" || Number(record.refundJpy) > 0;
+  const explicitDisposition = ["pending_return", "returned", "not_shipped"].includes(record.stockDisposition);
+  if (!cancelled && !(refundCase && explicitDisposition)) return item.status;
+  const available = saleStockDisposition(record, { asOf }).available
+    && (record.stockDisposition !== "returned" || !record.saleDate || record.returnDate >= record.saleDate);
+  return available ? "已入库" : "待退回";
+}
+
 function calcTax(x) {
-  const saleJpy = Number(x.soldPriceJpy || x.saleJpy || 0);
+  const sales = savedSalesRecord(x);
+  const stockRecord = { ...sales, stockDisposition: sales.stockDisposition ?? x.stockDisposition, returnDate: sales.returnDate ?? x.returnDate, saleDate: sales.saleDate || x.soldDate || "" };
+  const restoredSale = !isCancelledSale(sales) && hasRestoredSalesStock(stockRecord)
+    && Number(sales.salePriceTaxIncludedJpy ?? x.soldPriceJpy ?? 0) > 0;
+  const saleJpy = isActualSale(x) || restoredSale ? Number(sales.salePriceTaxIncludedJpy ?? x.soldPriceJpy ?? 0) : Number(x.saleJpy || 0);
   const baseSmart = smartAmountToJpy(
     x.purchaseCny,
     x.purchaseCurrency || "CNY",
@@ -2919,16 +2969,23 @@ function calcTax(x) {
     costJpy = Number(auction.inventoryCost || 0) + batchExtra;
   }
 
-  const inputTax = auction ? Number(auction.taxCredit || 0) : declaredJpy * TAX_RATE;
-  const outputTax = saleJpy * TAX_RATE / (1 + TAX_RATE);
-  const saleExTax = saleJpy - outputTax;
-  const grossProfit = saleJpy - costJpy;
-  const taxBalance = outputTax - inputTax;
-  const sales = { ...parseSalesRecordMemo(x.soldMemo), ...(x.salesRecord || {}) };
-  const salesCosts = Number(sales.settlementVersion || 0) >= 2
-    ? Number(sales.platformFeeJpy || 0) / (1 + TAX_RATE) + Number(sales.shippingFeeJpy || 0) + Number(sales.refundJpy || 0) - Number(sales.adjustmentJpy || 0)
+  const inputTax = auction ? Number(auction.taxCredit || 0) : Number(x.importTaxCreditJpy ?? x.batchAllocatedImportTaxJpy ?? 0);
+  const actual = isActualSale(x) || restoredSale;
+  const amounts = salesAmounts({
+    ...sales,
+    salePriceTaxIncludedJpy: saleJpy,
+    platformFeeJpy: sales.platformFeeJpy ?? x.salesPlatformFeeJpy ?? 0,
+    refundJpy: sales.refundJpy ?? x.refundJpy ?? x.returnJpy ?? x.refundAmountJpy ?? 0
+  }, TAX_RATE);
+  const outputTax = actual ? amounts.outputConsumptionTaxJpy : 0;
+  const saleExTax = actual ? amounts.revenueExTax : saleJpy / (1 + TAX_RATE);
+  const recognizedCostJpy = restoredSale ? 0 : costJpy;
+  const grossProfit = actual ? amounts.netSaleTaxIncludedJpy - recognizedCostJpy : saleJpy - costJpy;
+  const taxBalance = outputTax - inputTax - (actual ? amounts.feeTaxJpy : 0);
+  const salesCosts = actual
+    ? amounts.feeExTax + Number(sales.shippingFeeJpy ?? x.salesShippingFeeJpy ?? 0) - Number(sales.adjustmentJpy ?? x.adjustmentJpy ?? 0)
     : 0;
-  const profitExTax = saleExTax - costJpy - salesCosts;
+  const profitExTax = isCancelledSale(sales) ? 0 : saleExTax - recognizedCostJpy - salesCosts;
   const margin = saleJpy ? grossProfit / saleJpy * 100 : 0;
   const warnings = [baseSmart.warning, declaredSmart.warning].filter(Boolean);
   return { baseCostJpy, extraCostJpy, costJpy, declaredJpy, inputTax, saleJpy, outputTax, saleExTax, grossProfit, taxBalance, profitExTax, margin, warnings };
@@ -2976,7 +3033,7 @@ function stripSalesRecordMemo(memo = "") {
 
 function buildSalesRecordMemo(record = {}, originalMemo = "") {
   const cleanMemo = stripSalesRecordMemo(originalMemo);
-  const keys = ["settlementVersion", "salesNo", "listingNumber", "saleDate", "buyerName", "buyerContact", "paymentMethod", "depositDate", "salesStatus", "platform", "salePriceTaxIncludedJpy", "platformFeeJpy", "shippingFeeJpy", "refundJpy", "adjustmentJpy", "finalDepositJpy", "memo"];
+  const keys = ["settlementVersion", "salesNo", "listingNumber", "saleDate", "refundDate", "cancellationDate", "stockDisposition", "returnDate", "buyerName", "buyerContact", "paymentMethod", "depositDate", "salesStatus", "platform", "salePriceTaxIncludedJpy", "platformFeeJpy", "shippingFeeJpy", "refundJpy", "adjustmentJpy", "finalDepositJpy", "memo"];
   const block = keys.map((key) => key + ": " + (record[key] ?? "")).join("\n");
   return [cleanMemo, "GOUKA_SALES_RECORD_START", block, "GOUKA_SALES_RECORD_END"].filter(Boolean).join("\n");
 }
@@ -2991,32 +3048,29 @@ function calcSalesStatus(record = {}) {
 }
 
 function calcSalesProfit(record = {}, item = {}) {
-  const sale = calcSalesTaxBreakdown(record.salePriceTaxIncludedJpy);
-  const fee = calcPlatformFeeBreakdown(record.platformFeeJpy);
+  const sale = salesAmounts(record, TAX_RATE);
   const inventoryCostJpy = Number(calcTax(item).costJpy || 0);
   const shippingFeeJpy = Number(record.shippingFeeJpy || 0);
-  const refundJpy = Number(record.refundJpy || 0);
   const adjustmentJpy = Number(record.adjustmentJpy || 0);
-  const actualProfitJpy = sale.revenueExTax - inventoryCostJpy - fee.feeExTax - shippingFeeJpy - refundJpy + adjustmentJpy;
+  const actualProfitJpy = sale.cancelled ? 0 : sale.revenueExTax - (hasRestoredSalesStock(record) ? 0 : inventoryCostJpy) - sale.feeExTax - shippingFeeJpy + adjustmentJpy;
   const margin = sale.revenueExTax > 0 ? actualProfitJpy / sale.revenueExTax * 100 : 0;
   return { inventoryCostJpy, actualProfitJpy, margin };
 }
 
 function calcSalesSettlement(record = {}, item = {}) {
-  const sale = calcSalesTaxBreakdown(record.salePriceTaxIncludedJpy);
-  const fee = calcPlatformFeeBreakdown(record.platformFeeJpy);
+  const sale = salesAmounts(record, TAX_RATE);
   const refundJpy = Number(record.refundJpy || 0);
   const adjustmentJpy = Number(record.adjustmentJpy || 0);
   const shippingFeeJpy = Number(record.shippingFeeJpy || 0);
-  const expectedDepositJpy = sale.taxIncluded ? sale.taxIncluded - fee.feeTaxIncluded - shippingFeeJpy - refundJpy + adjustmentJpy : 0;
+  const expectedDepositJpy = sale.cancelled || !sale.grossTaxIncludedJpy ? 0 : sale.netSaleTaxIncludedJpy - sale.feeTaxIncluded - shippingFeeJpy + adjustmentJpy;
   const finalDepositJpy = Number(record.finalDepositJpy || 0);
   const profit = calcSalesProfit({ ...record, finalDepositJpy }, item);
-  return { ...sale, ...fee, refundJpy, adjustmentJpy, shippingFeeJpy, expectedDepositJpy, finalDepositJpy, ...profit };
+  return { ...sale, taxIncluded: sale.grossTaxIncludedJpy, refundJpy, adjustmentJpy, shippingFeeJpy, expectedDepositJpy, finalDepositJpy, ...profit };
 }
 
 function getSalesRecordFromProduct(item = {}) {
-  const saved = { ...parseSalesRecordMemo(item.soldMemo), ...(item.salesRecord || {}) };
-  const salePriceTaxIncludedJpy = Number(saved.salePriceTaxIncludedJpy ?? (item.soldPriceJpy || (isSoldStatus(item.status) ? item.saleJpy : 0)) ?? 0);
+  const saved = savedSalesRecord(item);
+  const salePriceTaxIncludedJpy = Number(saved.salePriceTaxIncludedJpy ?? item.soldPriceJpy ?? 0);
   // Product-level platformFeeJpy is a purchase cost, not a selling fee.
   const platformFeeJpy = Number(saved.platformFeeJpy ?? item.salesPlatformFeeJpy ?? 0);
   const record = {
@@ -3025,6 +3079,10 @@ function getSalesRecordFromProduct(item = {}) {
     productId: saved.productId || item.id || "",
     productCode: saved.productCode || item.id || "",
     saleDate: saved.saleDate || item.soldDate || "",
+    refundDate: saved.refundDate || "",
+    cancellationDate: saved.cancellationDate ?? item.cancellationDate ?? "",
+    stockDisposition: saved.stockDisposition ?? item.stockDisposition ?? "",
+    returnDate: saved.returnDate ?? item.returnDate ?? "",
     platform: saved.platform || item.soldPlatform || item.platform || "",
     buyerName: saved.buyerName || item.buyerName || "",
     buyerContact: saved.buyerContact || item.buyerContact || "",
@@ -3050,6 +3108,7 @@ function getSalesRecordFromProduct(item = {}) {
     platformFeeTaxJpy: settlement.feeTaxJpy,
     finalDepositJpy: settlement.finalDepositJpy,
     expectedDepositJpy: settlement.expectedDepositJpy,
+    netSaleTaxIncludedJpy: settlement.netSaleTaxIncludedJpy,
     inventoryCostJpy: settlement.inventoryCostJpy,
     actualProfitJpy: settlement.actualProfitJpy,
     margin: settlement.margin,
@@ -3078,8 +3137,9 @@ function buildSalesRecordPatch(item, draft, user = "gouka") {
     updatedAt: now
   };
   const record = getSalesRecordFromProduct({ ...item, salesRecord: rawRecord, soldPriceJpy: rawRecord.salePriceTaxIncludedJpy });
-  const nextStatus = ["已取消", "已退款"].includes(record.salesStatus)
-    ? item.status
+  const refundCase = record.salesStatus === "已退款" || Number(record.refundJpy) > 0;
+  const nextStatus = record.salesStatus === "已取消" || refundCase
+    ? inventoryStatusForSales({ ...item, salesRecord: record })
     : (["已发货", "已签收", "已回款", "已完成"].includes(record.salesStatus) ? "已发货" : "已售出");
   return {
     status: nextStatus,
@@ -3097,10 +3157,50 @@ function buildSalesRecordPatch(item, draft, user = "gouka") {
     depositDate: record.depositDate || "",
     paymentMethod: record.paymentMethod || "",
     salesStatus: record.salesStatus,
+    cancellationDate: record.cancellationDate,
+    stockDisposition: record.stockDisposition,
+    returnDate: record.returnDate,
     salesNo: record.salesNo,
     salesRecord: record,
     soldMemo: buildSalesRecordMemo(record, draft.memo || item.soldMemo || "")
   };
+}
+
+function salesMonthPeriod(month) {
+  if (!month) return {};
+  const [year, number] = month.split("-").map(Number);
+  const last = new Date(Date.UTC(year, number, 0)).getUTCDate();
+  return { from: `${month}-01`, to: `${month}-${String(last).padStart(2, "0")}` };
+}
+
+function salesEventRecords(items) {
+  return items.map(getSalesRecordFromProduct).filter((record) =>
+    Number(record.salePriceTaxIncludedJpy) > 0 || record.salesStatus === "已取消" || Number(record.refundJpy) > 0);
+}
+
+function calendarProductSales(items, period = {}) {
+  return calendarSalesTotals(salesEventRecords(items), period, { taxRate: TAX_RATE });
+}
+
+function salesDraftDateError(draft, previous = {}) {
+  // Keep undated legacy cancellations editable, but never invent their date.
+  if (draft.salesStatus === "已取消" && !draft.cancellationDate && previous.salesStatus !== "已取消") return "请填写取消日期。";
+  if (draft.stockDisposition === "returned" && !draft.returnDate) return "请填写退回日期。";
+  const ledger = salesEvents(draft, { taxRate: TAX_RATE });
+  const invalid = ledger.issues.find((code) => /_before_sale$|^cancellation_before_sale$|^missing_or_invalid_(sale|refund|return)_date$/.test(code));
+  if (invalid) return "请核对销售、退款和退回日期。";
+  if (draft.cancellationDate && ledger.issues.includes("undated_cancellation")) return "请核对取消日期。";
+  return "";
+}
+
+function SalesReturnFields({ record, onChange }) {
+  return <>
+    {record.salesStatus === "已取消" && <label>取消日期<input type="date" value={record.cancellationDate || ""} onChange={(e) => onChange({ ...record, cancellationDate: e.target.value })} /></label>}
+    <label>商品去向<select value={record.stockDisposition || ""} onChange={(e) => onChange({ ...record, stockDisposition: e.target.value })}>
+      <option value="">未确认</option><option value="pending_return">待退回</option><option value="returned">已退回</option><option value="not_shipped">未发货</option>
+    </select></label>
+    {record.stockDisposition === "returned" && <label>退回日期<input type="date" value={record.returnDate || ""} onChange={(e) => onChange({ ...record, returnDate: e.target.value })} /></label>}
+  </>;
 }
 
 function SalesProductFields({ item, listingNumber, onChange, onProductChange }) {
@@ -3136,8 +3236,8 @@ function SalesAmountFields({ record, onChange }) {
       <label>销售手续费 JPY（{excluded ? "税前" : "含税"}）<input type="number" min="0" step="1" value={amount("platformFeeJpy")} onChange={(e) => change("platformFeeJpy", e.target.value)} /></label>
     </div>
     <dl className="sales-amount-summary">
-      <div><dt>销售合计（含税）</dt><dd>{jpy(settlement.taxIncluded)}</dd></div>
-      <div><dt>商品消费税</dt><dd>{jpy(settlement.outputConsumptionTaxJpy)}</dd></div>
+      <div><dt>{settlement.refundJpy > 0 ? "销售净额（含税，扣退款）" : "销售合计（含税）"}</dt><dd>{jpy(settlement.netSaleTaxIncludedJpy)}</dd></div>
+      <div><dt>{settlement.refundJpy > 0 ? "商品消费税（扣退款）" : "商品消费税"}</dt><dd>{jpy(settlement.outputConsumptionTaxJpy)}</dd></div>
       <div><dt>手续费（含税）</dt><dd>{jpy(settlement.feeTaxIncluded)}</dd></div>
       <div><dt>手续费消费税</dt><dd>{jpy(settlement.feeTaxJpy)}</dd></div>
       <div><dt>应结算金额</dt><dd>{jpy(settlement.expectedDepositJpy)}</dd></div>
@@ -3148,9 +3248,9 @@ function SalesAmountFields({ record, onChange }) {
 function calcSalesBreakdown(item) {
   const t = calcTax(item);
   const auction = getAuction(item);
-  const sold = isSoldStatus(item.status);
   const record = getSalesRecordFromProduct(item);
-  const saleTaxIncluded = Number(record.salePriceTaxIncludedJpy || item.soldPriceJpy || item.saleJpy || 0);
+  const sold = isActualSale(item) || (!isCancelledSale(record) && hasRestoredSalesStock(record) && record.salePriceTaxIncludedJpy > 0);
+  const saleTaxIncluded = isCancelledSale(record) ? 0 : Number(record.netSaleTaxIncludedJpy || 0);
   const expectedSaleTaxIncluded = Number(item.saleJpy || item.expectedSaleJpy || item.listingPriceJpy || 0);
   const salesRevenueExTax = Number(record.saleRevenueExTaxJpy || 0);
   const salesOutputTax = Number(record.outputConsumptionTaxJpy || 0);
@@ -3164,12 +3264,44 @@ function calcSalesBreakdown(item) {
   const finalReceiptJpy = Number(record.finalDepositJpy || 0);
   const inventoryCostJpy = Number(t.costJpy || 0);
   const inputConsumptionTaxJpy = auction ? Number(auction.taxCredit || 0) : Number(item.importTaxCreditJpy || item.batchAllocatedImportTaxJpy || 0);
-  const grossProfitJpy = saleTaxIncluded > 0 ? salesRevenueExTax - inventoryCostJpy : 0;
+  const grossProfitJpy = sold ? salesRevenueExTax - (hasRestoredSalesStock(record) ? 0 : inventoryCostJpy) : 0;
   const expectedProfitJpy = expectedSaleTaxIncluded > 0 ? expectedRevenueExTax - inventoryCostJpy : 0;
-  const actualProfitJpy = sold && saleTaxIncluded > 0 ? Number(record.actualProfitJpy || 0) : 0;
-  const payableConsumptionTaxJpy = salesOutputTax - inputConsumptionTaxJpy;
+  const actualProfitJpy = sold ? Number(record.actualProfitJpy || 0) : 0;
+  const payableConsumptionTaxJpy = salesOutputTax - inputConsumptionTaxJpy - platformFeeTax;
   const margin = salesRevenueExTax > 0 ? actualProfitJpy / salesRevenueExTax * 100 : 0;
   return { ...t, sold, salesRecord: record, saleTaxIncluded, expectedSaleTaxIncluded, salesRevenueExTax, salesOutputTax, expectedRevenueExTax, platformFeeTaxIncluded, platformFeeExTax, platformFeeTax, shippingFeeJpy, refundJpy, adjustmentJpy, finalReceiptJpy, inventoryCostJpy, inputConsumptionTaxJpy, grossProfitJpy, expectedProfitJpy, actualProfitJpy, payableConsumptionTaxJpy, margin };
+}
+
+function buildConsumptionTaxSummary(items = [], customsBatches = [], period = {}) {
+  const auctionItems = items.map((item) => ({ item, auction: getAuction(item) }))
+    .filter(({ item, auction }) => auction && inAccountingPeriod(auction.auctionDate || item.purchaseDate, period));
+  const importBatches = customsBatches.map(normalizeImportBatch).filter((batch) => inAccountingPeriod(batch.importDate, period));
+  const salesEntries = items.filter(isActualSale).map((item) => {
+    const record = getSalesRecordFromProduct(item);
+    const saleInPeriod = inAccountingPeriod(record.saleDate, period);
+    const refundInPeriod = Number(record.refundJpy || 0) > 0 && inAccountingPeriod(record.refundDate, period);
+    const amount = (saleInPeriod ? record.salePriceTaxIncludedJpy : 0) - (refundInPeriod ? record.refundJpy : 0);
+    const tax = calcSalesTaxBreakdown(Math.abs(amount));
+    const sign = amount < 0 ? -1 : 1;
+    return {
+      item,
+      date: saleInPeriod ? record.saleDate : record.refundDate,
+      included: saleInPeriod || refundInPeriod,
+      sales: {
+        ...calcSalesBreakdown(item),
+        saleTaxIncluded: amount,
+        salesRevenueExTax: sign * tax.revenueExTax,
+        salesOutputTax: sign * tax.outputConsumptionTaxJpy,
+        platformFeeTax: saleInPeriod ? record.platformFeeTaxJpy : 0
+      }
+    };
+  }).filter((entry) => entry.included);
+  const auctionInputTax = auctionItems.reduce((sum, x) => sum + Number(x.auction.taxCredit || 0), 0);
+  const importConsumptionTax = importBatches.reduce((sum, x) => sum + Number(x.totalImportConsumptionTaxJpy || 0), 0);
+  const salesOutputTax = salesEntries.reduce((sum, x) => sum + x.sales.salesOutputTax, 0);
+  const salesFeeInputTax = salesEntries.reduce((sum, x) => sum + x.sales.platformFeeTax, 0);
+  const inputTaxTotal = auctionInputTax + importConsumptionTax + salesFeeInputTax;
+  return { auctionItems, importBatches, salesEntries, auctionInputTax, importConsumptionTax, salesOutputTax, salesFeeInputTax, inputTaxTotal, taxDifference: salesOutputTax - inputTaxTotal };
 }
 
 
@@ -3177,9 +3309,9 @@ function getNbaaSellerSettlement(item) {
   const sales = calcSalesBreakdown(item || {});
   const source = item?.nbaaListing || item?.listingSettlement || item?.sellerSettlement || item?.seller_settlement || {};
   const platformText = String(item?.soldPlatform || item?.platform || item?.listingPlatform || source.platform || "").toUpperCase();
-  const feeTaxIncluded = Number(source.sellerFeeTaxIncludedJpy || source.platformFeeTaxIncludedJpy || item?.platformFeeJpy || item?.platformFee || 0);
-  const sellerFeeExTax = Number(source.sellerFeeJpy || source.sellerFeeExTaxJpy || item?.sellerFeeJpy || 0) || (feeTaxIncluded ? feeTaxIncluded / (1 + TAX_RATE) : Number(sales.platformFeeExTax || 0));
-  const sellerFeeTax = Number(source.sellerFeeTaxJpy || item?.sellerFeeTaxJpy || 0) || (feeTaxIncluded ? feeTaxIncluded - sellerFeeExTax : Number(sales.platformFeeTax || 0));
+  const feeTaxIncluded = Number(source.sellerFeeTaxIncludedJpy ?? source.platformFeeTaxIncludedJpy ?? sales.platformFeeTaxIncluded ?? 0);
+  const sellerFeeExTax = Number(source.sellerFeeJpy ?? source.sellerFeeExTaxJpy ?? item?.sellerFeeJpy ?? feeTaxIncluded / (1 + TAX_RATE));
+  const sellerFeeTax = Number(source.sellerFeeTaxJpy ?? item?.sellerFeeTaxJpy ?? feeTaxIncluded - sellerFeeExTax);
   const saleAmountExTax = Number(source.saleAmountJpy || source.amountJpy || source.hammerPriceJpy || item?.nbaaSaleAmountJpy || item?.sellerSaleAmountJpy || 0) || Number(sales.salesRevenueExTax || 0);
   const saleTaxJpy = Number(source.saleTaxJpy || source.consumptionTaxJpy || item?.nbaaSaleTaxJpy || item?.sellerSaleTaxJpy || 0) || Number(sales.salesOutputTax || 0);
   const settlementTotalJpy = Number(source.settlementTotalJpy || source.totalJpy || item?.listingSettlementTotalJpy || item?.sellerSettlementTotalJpy || item?.finalReceiptJpy || item?.netReceiptJpy || 0) || (saleAmountExTax + saleTaxJpy - sellerFeeExTax - sellerFeeTax - Number(sales.refundJpy || 0) + Number(sales.adjustmentJpy || 0));
@@ -3331,74 +3463,6 @@ function buildTaxAuditRows(items) {
     ];
   });
   return [headers, ...rows];
-}
-
-function LoginPage({ onLogin }) {
-  const loginOptions = [
-    { key: "gouka", label: "管理者入口", note: "全权限" },
-    { key: "staff", label: "员工入口", note: "日常操作" },
-    { key: "zeirishi", label: "税理士窗口", note: "只读审查" }
-  ];
-  const [username, setUsername] = useState("gouka");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
-
-  function chooseLogin(key) {
-    setUsername(key);
-    setPassword("");
-    setError("");
-  }
-
-  function submit(e) {
-    if (e) e.preventDefault();
-    const user = USERS[username];
-    if (user && password === user.password) {
-      const nextSession = { username, role: user.role, name: user.name };
-      localStorage.setItem(LOGIN_KEY, JSON.stringify(nextSession));
-      onLogin(nextSession);
-    } else {
-      setError("账号或密码错误");
-    }
-  }
-
-  return (
-    <div className="login-page">
-      <form className="login-card" onSubmit={submit}>
-        <div className="login-logo"><Lock size={28} /></div>
-        <h1>豪嘉ERP V7.0</h1>
-        <p>豪嘉株式会社内部管理系统</p>
-        <p className="note">库存先按来源分组：中国进货、日本拍卖、日本本地、其他来源。商品编号先保留原编号，避免旧资料混乱；查货时先点上方来源按钮，再搜索品牌/商品名/编号。<br />请选择入口后输入密码。密码不在页面显示。</p>
-
-        <div className="login-role-select">
-          {loginOptions.map((option) => (
-            <button
-              key={option.key}
-              type="button"
-              className={username === option.key ? "active" : ""}
-              onClick={() => chooseLogin(option.key)}
-            >
-              <b>{option.label}</b>
-              <span>{option.note}</span>
-            </button>
-          ))}
-        </div>
-
-        <label>
-          账号
-          <input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="请输入账号" onKeyDown={(e) => { if (e.key === "Enter") submit(e); }} />
-        </label>
-
-        <label>
-          密码
-          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="请输入密码" autoFocus onKeyDown={(e) => { if (e.key === "Enter") submit(e); }} />
-        </label>
-
-        {error && <div className="login-error">{error}</div>}
-
-        <button className="login-btn" type="submit">登录</button>
-      </form>
-    </div>
-  );
 }
 
 function RestrictedPanel({ message }) {
@@ -3808,7 +3872,8 @@ function useGoukaJapaneseDisplay(enabled) {
     };
   }, [enabled]);
 }
-function App() {
+function App({ verifiedSession, onVerifiedLogout }) {
+  const isPreviewReadOnly = false;
   const [japaneseMode, setJapaneseMode] = useState(() => localStorage.getItem("gouka_ja_mode") === "yes");
   useGoukaJapaneseDisplay(japaneseMode);
   function toggleJapaneseMode() {
@@ -3817,16 +3882,8 @@ function App() {
     localStorage.setItem("gouka_ja_mode", next ? "yes" : "no");
     if (!next) window.location.reload();
   }
-  const [session, setSession] = useState(() => {
-    try {
-      const raw = localStorage.getItem(LOGIN_KEY);
-      if (raw === "yes") return { username: "gouka", role: "owner", name: "管理者账号" };
-      return raw ? JSON.parse(raw) : null;
-    } catch {
-      return null;
-    }
-  });
-  const [isLoggedIn, setIsLoggedIn] = useState(() => !!session);
+  const session = verifiedSession;
+  const isLoggedIn = !!session?.userId;
   const [tab, setTab] = useState("dashboard");
   const [items, setItems] = useState(loadItems);
   const [dictionaries, setDictionaries] = useState(loadDictionaries);
@@ -3835,6 +3892,7 @@ function App() {
   const [customsBatches, setCustomsBatches] = useState(loadCustomsBatches);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("全部");
+  const [taxPeriod, setTaxPeriod] = useState({ from: "", to: "" });
   const [inventoryQuickSignal, setInventoryQuickSignal] = useState({ signal: "全部", nonce: 0 });
   const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState(null);
@@ -3842,9 +3900,21 @@ function App() {
   const [previewScale, setPreviewScale] = useState(1);
   const [syncStatusText, setSyncStatusText] = useState("云端待机");
   const [globalSyncNonce, setGlobalSyncNonce] = useState(0);
+  const fileBackupRunningRef = React.useRef(false);
   const cloudGlobalHydratedRef = React.useRef(false);
   const autoCloudReadRunningRef = React.useRef(false);
   const lastAutoCloudReadRef = React.useRef(0);
+  const batchWriteRunningRef = React.useRef(false);
+  const batchRevisionRef = React.useRef(0);
+  const pendingImportIdsRef = React.useRef(null);
+  const pendingGlobalRef = React.useRef(localStorage.getItem("gouka_global_pending_v1") === "yes");
+  const globalRevisionRef = React.useRef(0);
+  const globalStateRef = React.useRef(null);
+  globalStateRef.current = { dictionaries, suppliers, deleteLogs, customsBatches, cashflow: readCashflowFromLocal() };
+  if (!pendingImportIdsRef.current) {
+    try { pendingImportIdsRef.current = new Set(JSON.parse(localStorage.getItem("gouka_pending_import_item_ids_v1") || "[]")); }
+    catch { pendingImportIdsRef.current = new Set(); }
+  }
 
   React.useEffect(() => {
     safeLocalSet(STORAGE_KEY, stripImagesForStorage(items), "商品文字数据");
@@ -3887,14 +3957,17 @@ function App() {
 
   async function applyCloudSnapshotSilently(reason = "自动读取") {
     if (!isLoggedIn) return;
+    if (batchWriteRunningRef.current || pendingImportIdsRef.current.size || pendingGlobalRef.current) return;
     if (autoCloudReadRunningRef.current) return;
     if (tab === "add" || editingId) return;
     autoCloudReadRunningRef.current = true;
     lastAutoCloudReadRef.current = Date.now();
+    const batchRevision = batchRevisionRef.current;
 
     try {
       setSyncStatusText(reason + "云端…");
       const cloudItems = await getCloudItems();
+      if (batchRevision !== batchRevisionRef.current || pendingImportIdsRef.current.size || pendingGlobalRef.current) return;
       if (!Array.isArray(cloudItems) || cloudItems.length === 0) {
         setSyncStatusText("云端待机");
         return;
@@ -3917,13 +3990,13 @@ function App() {
         return normalizeItem({
           ...localItem,
           ...cloudItem,
-          customsBatchId: cloudItem.customsBatchId || localItem.customsBatchId || "",
-          importBatchId: cloudItem.importBatchId || localItem.importBatchId || cloudItem.customsBatchId || localItem.customsBatchId || "",
-          allocatedDutyJpy: cloudItem.allocatedDutyJpy || localItem.allocatedDutyJpy || localItem.batchAllocatedDutyJpy || 0,
-          allocatedAgentFeeJpy: cloudItem.allocatedAgentFeeJpy || localItem.allocatedAgentFeeJpy || localItem.batchAllocatedCustomsFeeJpy || 0,
-          allocatedInternationalShippingJpy: cloudItem.allocatedInternationalShippingJpy || localItem.allocatedInternationalShippingJpy || localItem.batchAllocatedShippingJpy || 0,
-          allocatedOtherImportCostJpy: cloudItem.allocatedOtherImportCostJpy || localItem.allocatedOtherImportCostJpy || localItem.batchAllocatedOtherCostJpy || 0,
-          importTaxCreditJpy: cloudItem.importTaxCreditJpy || localItem.importTaxCreditJpy || localItem.batchAllocatedImportTaxJpy || 0
+          customsBatchId: cloudItem.customsBatchId ?? localItem.customsBatchId ?? "",
+          importBatchId: cloudItem.importBatchId ?? localItem.importBatchId ?? cloudItem.customsBatchId ?? localItem.customsBatchId ?? "",
+          allocatedDutyJpy: cloudItem.allocatedDutyJpy ?? localItem.allocatedDutyJpy ?? localItem.batchAllocatedDutyJpy ?? 0,
+          allocatedAgentFeeJpy: cloudItem.allocatedAgentFeeJpy ?? localItem.allocatedAgentFeeJpy ?? localItem.batchAllocatedCustomsFeeJpy ?? 0,
+          allocatedInternationalShippingJpy: cloudItem.allocatedInternationalShippingJpy ?? localItem.allocatedInternationalShippingJpy ?? localItem.batchAllocatedShippingJpy ?? 0,
+          allocatedOtherImportCostJpy: cloudItem.allocatedOtherImportCostJpy ?? localItem.allocatedOtherImportCostJpy ?? localItem.batchAllocatedOtherCostJpy ?? 0,
+          importTaxCreditJpy: cloudItem.importTaxCreditJpy ?? localItem.importTaxCreditJpy ?? localItem.batchAllocatedImportTaxJpy ?? 0
         });
       });
 
@@ -3943,9 +4016,16 @@ function App() {
     let cancelled = false;
 
     async function autoLoadCloudItems() {
+      if (pendingImportIdsRef.current.size || pendingGlobalRef.current) {
+        cloudGlobalHydratedRef.current = true;
+        setSyncStatusText("批次变更待同步，请保存到云端");
+        return;
+      }
+      const batchRevision = batchRevisionRef.current;
       try {
         setSyncStatusText("正在读取云端…");
         const cloudItems = await getCloudItems();
+        if (batchRevision !== batchRevisionRef.current || pendingImportIdsRef.current.size || pendingGlobalRef.current) return;
         if (cancelled || !Array.isArray(cloudItems) || cloudItems.length === 0) {
           cloudGlobalHydratedRef.current = true;
           setSyncStatusText("云端待机");
@@ -3968,13 +4048,13 @@ function App() {
           return normalizeItem({
             ...localItem,
             ...cloudItem,
-            customsBatchId: cloudItem.customsBatchId || localItem.customsBatchId || "",
-            importBatchId: cloudItem.importBatchId || localItem.importBatchId || cloudItem.customsBatchId || localItem.customsBatchId || "",
-            allocatedDutyJpy: cloudItem.allocatedDutyJpy || localItem.allocatedDutyJpy || localItem.batchAllocatedDutyJpy || 0,
-            allocatedAgentFeeJpy: cloudItem.allocatedAgentFeeJpy || localItem.allocatedAgentFeeJpy || localItem.batchAllocatedCustomsFeeJpy || 0,
-            allocatedInternationalShippingJpy: cloudItem.allocatedInternationalShippingJpy || localItem.allocatedInternationalShippingJpy || localItem.batchAllocatedShippingJpy || 0,
-            allocatedOtherImportCostJpy: cloudItem.allocatedOtherImportCostJpy || localItem.allocatedOtherImportCostJpy || localItem.batchAllocatedOtherCostJpy || 0,
-            importTaxCreditJpy: cloudItem.importTaxCreditJpy || localItem.importTaxCreditJpy || localItem.batchAllocatedImportTaxJpy || 0
+          customsBatchId: cloudItem.customsBatchId ?? localItem.customsBatchId ?? "",
+          importBatchId: cloudItem.importBatchId ?? localItem.importBatchId ?? cloudItem.customsBatchId ?? localItem.customsBatchId ?? "",
+          allocatedDutyJpy: cloudItem.allocatedDutyJpy ?? localItem.allocatedDutyJpy ?? localItem.batchAllocatedDutyJpy ?? 0,
+          allocatedAgentFeeJpy: cloudItem.allocatedAgentFeeJpy ?? localItem.allocatedAgentFeeJpy ?? localItem.batchAllocatedCustomsFeeJpy ?? 0,
+          allocatedInternationalShippingJpy: cloudItem.allocatedInternationalShippingJpy ?? localItem.allocatedInternationalShippingJpy ?? localItem.batchAllocatedShippingJpy ?? 0,
+          allocatedOtherImportCostJpy: cloudItem.allocatedOtherImportCostJpy ?? localItem.allocatedOtherImportCostJpy ?? localItem.batchAllocatedOtherCostJpy ?? 0,
+          importTaxCreditJpy: cloudItem.importTaxCreditJpy ?? localItem.importTaxCreditJpy ?? localItem.batchAllocatedImportTaxJpy ?? 0
           });
         });
         setItems(nextItems);
@@ -4017,23 +4097,38 @@ function App() {
   }, [isLoggedIn, tab, editingId, items]);
 
   React.useEffect(() => {
-    if (!isLoggedIn || !cloudGlobalHydratedRef.current) return;
+    if (isPreviewReadOnly || session.role !== "owner" || !isLoggedIn || !cloudGlobalHydratedRef.current) return;
+    pendingGlobalRef.current = true;
+    localStorage.setItem("gouka_global_pending_v1", "yes");
+    batchRevisionRef.current += 1;
+    globalRevisionRef.current += 1;
     const timer = setTimeout(async () => {
       try {
-        await upsertCloudItem(buildGlobalStateCloudRow({ dictionaries, suppliers, deleteLogs, customsBatches, cashflow: readCashflowFromLocal() }));
-        setSyncStatusText("全局资料已同步");
-      } catch (e) { console.error("Global cloud sync failed", e); }
+        if (await persistGlobalSnapshot()) setSyncStatusText("全局资料已同步");
+      } catch (e) { console.error("Global cloud sync failed", e); setSyncStatusText("全局资料待同步，请保存到云端"); }
     }, 900);
     return () => clearTimeout(timer);
   }, [isLoggedIn, dictionaries, suppliers, deleteLogs, customsBatches, globalSyncNonce]);
 
   function requestGlobalCloudSave() { setGlobalSyncNonce((x) => x + 1); }
 
-  if (!isLoggedIn) {
-    return <LoginPage onLogin={(nextSession) => { setSession(nextSession); setIsLoggedIn(true); }} />;
+  async function persistGlobalSnapshot(payload = globalStateRef.current) {
+    const revision = globalRevisionRef.current;
+    await upsertCloudItem(buildGlobalStateCloudRow(payload));
+    if (revision !== globalRevisionRef.current) return false;
+    pendingGlobalRef.current = false;
+    localStorage.removeItem("gouka_global_pending_v1");
+    return true;
   }
 
-  const role = session?.role || "owner";
+  const role = session?.role || "";
+  const [companySeal, setCompanySeal] = useState("");
+  React.useEffect(() => {
+    let active = true;
+    setCompanySeal("");
+    if (["owner", "tax"].includes(role)) loadCompanySeal(supabase).then(value => { if (active) setCompanySeal(value); }).catch(() => {});
+    return () => { active = false; };
+  }, [session.userId, role]);
   const isOwner = role === "owner";
   const isStaff = role === "staff";
   const isTaxViewer = role === "tax";
@@ -4044,7 +4139,7 @@ function App() {
   const canEditBusiness = isOwner || isStaff;
   const canExportBusinessPdf = isOwner || isTaxViewer;
   const restrictedTabMessage = isTaxViewer ? "税理士窗口为只读审查模式。" : "员工入口没有此模块权限。";
-  const computedItems = useMemo(() => sortGoukaItems(applyBatchAllocations(items, customsBatches)), [items, customsBatches]);
+  const computedItems = useMemo(() => sortGoukaItems(applyBatchAllocations(items.filter((x) => !x.deletedAt).map((x) => ({ ...x, salesStatus: savedSalesRecord(x).salesStatus, status: inventoryStatusForSales(x) })), customsBatches)), [items, customsBatches]);
   function appStockAgeDays(item) {
     if (!item?.purchaseDate) return 0;
     const d = new Date(item.purchaseDate);
@@ -4052,7 +4147,7 @@ function App() {
     return Math.max(0, Math.floor((Date.now() - d.getTime()) / 86400000));
   }
   const headerTodo = useMemo(() => {
-    const active = computedItems.filter((x) => !isSoldStatus(x.status) && x.status !== "退货");
+    const active = computedItems.filter((x) => !isSoldStatus(x.status) && !["退货", "待退回"].includes(x.status));
     return {
       missingPrice: active.filter((x) => Number(x.saleJpy || 0) <= 0).length,
       noImage: active.filter((x) => !(Array.isArray(x.images) && x.images.length)).length,
@@ -4068,8 +4163,7 @@ function App() {
 
   function logout() {
     localStorage.removeItem(LOGIN_KEY);
-    setSession(null);
-    setIsLoggedIn(false);
+    onVerifiedLogout();
   }
 
   function buildEnterpriseBackupData() {
@@ -4107,21 +4201,78 @@ function App() {
 
   function exportBackup() {
     const data = buildEnterpriseBackupData();
+    data.fileBackup = { complete: false, mode: "links_only" };
+    downloadBackupData(data, "links");
+  }
+
+  async function exportFileBackup() {
+    if (fileBackupRunningRef.current) return;
+    fileBackupRunningRef.current = true;
+    try {
+      const month = window.prompt("完整照片和附件备份：输入月份（如2026-09）；留空备份全部，单次上限100MB。", "");
+      if (month === null) return;
+      if (month && !/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw new Error("月份格式应为YYYY-MM");
+      const data = buildEnterpriseBackupData();
+      if (month) {
+        data.items = data.items.filter((item) => String(item.purchaseDate || "").startsWith(month));
+        data.deleteLogs = data.deleteLogs.filter((log) => String(log.snapshot?.purchaseDate || "").startsWith(month));
+        const batchIds = new Set(data.items.map((item) => item.importBatchId || item.customsBatchId).filter(Boolean));
+        data.customsBatches = data.customsBatches.filter((batch) => batchIds.has(batch.id) || String(batch.importDate || batch.customsDate || batch.declarationDate || "").startsWith(month));
+        data.counts = { items: data.items.length, suppliers: data.suppliers.length, deleteLogs: data.deleteLogs.length, customsBatches: data.customsBatches.length };
+        data.backupScope = { purchaseMonth: month, mode: "merge" };
+      }
+      const hydrated = await hydrateItemsWithImages(data.items);
+      if (hydrated.some((item) => Number(item.imageCount || 0) > (item.images || []).length)) throw new Error("部分照片索引缺失，请补齐照片后再做完整备份");
+      data.items = hydrated;
+      const portable = await buildPortableBackup(data, {
+        loadBlob: async (url, attachment) => {
+          if (attachment) return readImportAttachment(attachment);
+          const response = await fetch(url);
+          if (!response.ok) throw new Error("照片或附件下载失败，未生成不完整备份");
+          return response.blob();
+        },
+        toDataUrl: readFileAsDataUrl,
+        onProgress: (count) => setSyncStatusText("正在备份文件 " + count + " 个")
+      });
+      downloadBackupData(portable, "with-files" + (month ? "-" + month : ""));
+      setSyncStatusText("完整文件备份已生成");
+    } catch (e) { alert("完整备份未完成：" + (e?.message || e)); }
+    finally { fileBackupRunningRef.current = false; }
+  }
+
+  function downloadBackupData(data, suffix) {
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "gouka_erp_enterprise_backup_" + new Date().toISOString().slice(0,10) + ".json";
+    a.download = "gouka_erp_backup_" + suffix + "_" + new Date().toISOString().slice(0,10) + ".json";
     a.click();
     URL.revokeObjectURL(url);
   }
 
   function importBackup(file) {
     if (!file) return;
+    if (batchWriteRunningRef.current) return alert("商品正在保存，请稍后再恢复备份。");
+    const restoreRevision = batchRevisionRef.current;
     const reader = new FileReader();
     reader.onload = async () => {
       try {
         const parsed = JSON.parse(reader.result);
+        await validatePortableBackup(parsed);
+        for (const key of ["suppliers", "deleteLogs", "customsBatches"]) {
+          if (parsed[key] === undefined) continue;
+          if (!Array.isArray(parsed[key])) throw new Error("备份中的资料列表格式错误：" + key);
+          const ids = parsed[key].map(record => record?.id);
+          if (ids.some(id => typeof id !== "string" || !id.trim()) || new Set(ids).size !== ids.length) throw new Error("备份中的资料编号为空或重复：" + key);
+        }
+        const mergeRecords = (existing, restored) => {
+          const merged = new Map(existing.map((record) => [record.id, record]));
+          for (const record of restored) {
+            if (!record?.id) throw new Error("备份中的记录缺少编号");
+            merged.set(record.id, record);
+          }
+          return [...merged.values()];
+        };
         const nextItems = Array.isArray(parsed) ? parsed : parsed.items;
         if (!Array.isArray(nextItems)) throw new Error("bad file");
 
@@ -4135,26 +4286,54 @@ function App() {
           "删除日志：" + (Array.isArray(parsed.deleteLogs) ? parsed.deleteLogs.length : 0) + " 件",
           hasAuction ? "包含日本拍卖 auction 数据" : "未检测到结构化 auction 数据",
           "",
-          "确定导入吗？当前浏览器数据会被覆盖。"
+          "确定合并恢复吗？同编号商品将按备份恢复，其他现有商品保留。图片链接备份不能恢复已经删除的图片文件。"
         ].join("\n");
 
         if (window.confirm(message)) {
           const normalizedItems = nextItems.map(normalizeItem);
+          if (normalizedItems.some((x) => !x.id) || new Set(normalizedItems.map((x) => x.id)).size !== normalizedItems.length) throw new Error("备份商品编号为空或重复");
           await Promise.all(normalizedItems.map((item) => saveItemImagesToDb(item.id, item.images || [])));
-          setItems(normalizedItems);
+          pendingGlobalRef.current = true;
+          localStorage.setItem("gouka_global_pending_v1", "yes");
+          for (let i = 0; i < normalizedItems.length; i++) {
+            const item = normalizedItems[i];
+            item.images = await uploadItemImages(item.id, item.images || []);
+            await saveItemImagesToDb(item.id, item.images);
+          }
+          for (const batch of parsed.customsBatches || []) {
+            for (let i = 0; i < (batch.attachments || []).length; i++) {
+              const attachment = batch.attachments[i];
+              if (!attachment?.dataUrl) continue;
+              const response = await fetch(attachment.dataUrl);
+              const blob = await response.blob();
+              const files = await uploadImportBatchAttachments(batch.id, [new File([blob], attachment.name || "attachment", { type: blob.type })], attachment.documentType);
+              batch.attachments[i] = files[0];
+            }
+          }
+          if (restoreRevision !== batchRevisionRef.current) throw new Error("恢复期间商品或全局资料有新修改，请重新导入备份");
+          const restoredById = new Map(normalizedItems.map((item) => [item.id, item]));
+          const merged = items.map((item) => restoredById.get(item.id) || item);
+          const existingIds = new Set(items.map((item) => item.id));
+          merged.push(...normalizedItems.filter((item) => !existingIds.has(item.id)));
+          const productsSaved = await persistImportItems(merged);
           if (parsed.dictionaries) setDictionaries(normalizeGoukaDictionaries(parsed.dictionaries));
-          if (Array.isArray(parsed.suppliers)) setSuppliers(parsed.suppliers);
-          if (Array.isArray(parsed.deleteLogs)) setDeleteLogs(parsed.deleteLogs);
-          if (Array.isArray(parsed.customsBatches)) setCustomsBatches(parsed.customsBatches);
+          if (Array.isArray(parsed.suppliers)) { parsed.suppliers = mergeRecords(suppliers, parsed.suppliers); setSuppliers(parsed.suppliers); }
+          if (Array.isArray(parsed.deleteLogs)) { parsed.deleteLogs = mergeRecords(deleteLogs, parsed.deleteLogs); setDeleteLogs(parsed.deleteLogs); }
+          if (Array.isArray(parsed.customsBatches)) { parsed.customsBatches = mergeRecords(customsBatches, parsed.customsBatches); setCustomsBatches(parsed.customsBatches); }
           if (parsed.cashflow) localStorage.setItem(CASHFLOW_KEY, JSON.stringify(parsed.cashflow));
-        upsertCloudItem(buildGlobalStateCloudRow({ dictionaries: parsed.dictionaries || [], suppliers: parsed.suppliers || [], deleteLogs: parsed.deleteLogs || [], customsBatches: parsed.customsBatches || [], cashflow: parsed.cashflow || readCashflowFromLocal() })).catch((e) => console.error("Global backup cloud sync failed", e));
-          alert("企业备份已恢复。商品、图片索引、字典、供应商、报关批次、删除日志已按备份内容恢复。");
+          await upsertCloudItem(buildGlobalStateCloudRow({ dictionaries: parsed.dictionaries || dictionaries, suppliers: parsed.suppliers || suppliers, deleteLogs: parsed.deleteLogs || deleteLogs, customsBatches: parsed.customsBatches || customsBatches, cashflow: parsed.cashflow || readCashflowFromLocal() }));
+          if (productsSaved) {
+            pendingGlobalRef.current = false;
+            localStorage.removeItem("gouka_global_pending_v1");
+          }
+          alert(productsSaved ? "备份已合并恢复，商品和全局资料均已同步云端。" : "备份已合并到本机，部分商品待同步。请点击保存到云端重试。");
         }
       } catch (e) {
         console.error(e);
-        alert("备份文件格式不正确，或文件已损坏。");
+        alert("恢复未全部完成，已保留本机数据。请检查文件或重试保存到云端：" + (e?.message || e));
       }
     };
+    reader.onerror = () => alert("无法读取备份文件，原有资料未修改。");
     reader.readAsText(file);
   }
 
@@ -4205,6 +4384,17 @@ function App() {
       supplier_address: x.address || "",
       id_check: x.idCheck || "",
       customs_batch_text: x.importBatchId || x.customsBatchId || "",
+      import_batch_id: x.importBatchId || x.customsBatchId || "",
+      allocated_duty_jpy: Number(x.allocatedDutyJpy ?? x.batchAllocatedDutyJpy ?? 0),
+      allocated_agent_fee_jpy: Number(x.allocatedAgentFeeJpy ?? x.batchAllocatedCustomsFeeJpy ?? 0),
+      allocated_international_shipping_jpy: Number(x.allocatedInternationalShippingJpy ?? x.batchAllocatedShippingJpy ?? 0),
+      allocated_other_import_cost_jpy: Number(x.allocatedOtherImportCostJpy ?? x.batchAllocatedOtherCostJpy ?? 0),
+      import_tax_credit_jpy: Number(x.importTaxCreditJpy ?? x.batchAllocatedImportTaxJpy ?? 0),
+      batch_allocated_duty_jpy: Number(x.allocatedDutyJpy ?? x.batchAllocatedDutyJpy ?? 0),
+      batch_allocated_customs_fee_jpy: Number(x.allocatedAgentFeeJpy ?? x.batchAllocatedCustomsFeeJpy ?? 0),
+      batch_allocated_shipping_jpy: Number(x.allocatedInternationalShippingJpy ?? x.batchAllocatedShippingJpy ?? 0),
+      batch_allocated_other_cost_jpy: Number(x.allocatedOtherImportCostJpy ?? x.batchAllocatedOtherCostJpy ?? 0),
+      batch_allocated_import_tax_jpy: Number(x.importTaxCreditJpy ?? x.batchAllocatedImportTaxJpy ?? 0),
       platform: x.platform || "",
       status: x.status || "",
       memo: memoForCloud(x),
@@ -4220,7 +4410,10 @@ function App() {
   }
 
   function fromCloudItem(x) {
+    const stored = readItemAudit(x.memo || "");
     return normalizeItem({
+      ...stored.audit,
+      ...stored.audit.recordExtras,
       id: x.product_no || x.id,
       purchaseDate: x.purchase_date || "",
       category: x.category || "",
@@ -4255,7 +4448,9 @@ function App() {
       importTaxCreditJpy: x.import_tax_credit_jpy || x.batch_allocated_import_tax_jpy || 0,
       platform: x.platform || "",
       status: x.status || "已入库",
-      memo: x.memo || "",
+      memo: stored.memo,
+      ledgerStatus: stored.audit.ledgerStatus || x.ledger_status || "有效",
+      ledgerVoidReason: stored.audit.ledgerVoidReason || x.ledger_void_reason || "",
       auction: x.auction || null,
       soldDate: x.sold_date || "",
       soldPlatform: x.sold_platform || "",
@@ -4266,27 +4461,41 @@ function App() {
   }
 
   async function syncToCloud() {
+    if (!["owner", "staff"].includes(role)) return alert("当前账号为只读模式");
+    if (batchWriteRunningRef.current) return alert("批次正在保存，请稍候。");
+    if (!window.confirm(`同步 ${items.length} 件商品到云端吗？`)) return;
+    batchWriteRunningRef.current = true;
+    batchRevisionRef.current += 1;
+    items.forEach((item) => pendingImportIdsRef.current.add(item.id));
+    safeLocalSet("gouka_pending_import_item_ids_v1", [...pendingImportIdsRef.current], "商品同步状态");
     try {
-      if (!window.confirm(`同步 ${items.length} 件商品到云端吗？`)) return;
       setSyncStatusText("正在同步云端…");
       for (const item of items) {
         const cloudImages = await uploadItemImages(item.id, item.images || []);
         await upsertCloudItem(toCloudItem({ ...item, images: cloudImages }));
       }
-      await upsertCloudItem(buildGlobalStateCloudRow({ dictionaries, suppliers, deleteLogs, customsBatches, cashflow: readCashflowFromLocal() }))
-      setSyncStatusText(`已同步 ${items.length} 件`);
-      alert("已同步到云端。另一台电脑请点击“从云端读取”。");
+      const globalSaved = role === "owner" ? await persistGlobalSnapshot() : true;
+      pendingImportIdsRef.current.clear();
+      safeLocalSet("gouka_pending_import_item_ids_v1", [], "批次同步状态");
+      lastAutoCloudReadRef.current = Date.now();
+      setSyncStatusText(globalSaved ? `已同步 ${items.length} 件` : "商品已同步，新全局修改待同步");
+      alert(globalSaved ? "已同步到云端。另一台电脑请点击“从云端读取”。" : "商品已同步；操作期间全局资料有新修改，请再次保存到云端。");
     } catch (e) {
       console.error(e);
       setSyncStatusText("同步失败");
       alert("同步失败：" + (e?.message || e));
+    } finally {
+      batchWriteRunningRef.current = false;
     }
   }
 
   async function loadFromCloud() {
+    if (batchWriteRunningRef.current || pendingImportIdsRef.current.size || pendingGlobalRef.current) return alert("本机修改尚未同步，请先保存到云端，避免被旧数据覆盖。");
+    const readRevision = batchRevisionRef.current;
     try {
       setSyncStatusText("正在读取云端…");
       const cloudItems = await getCloudItems();
+      if (readRevision !== batchRevisionRef.current || pendingImportIdsRef.current.size || pendingGlobalRef.current) return;
       const globalState = extractGlobalStateFromCloudItems(cloudItems);
       const productCloudItems = (cloudItems || []).filter((raw) => !isGlobalStateCloudRow(raw));
       const localItemsByIdForCloudMerge = Object.fromEntries((items || []).map((x) => [x.id, x]));
@@ -4296,13 +4505,13 @@ function App() {
         return normalizeItem({
           ...localItem,
           ...cloudItem,
-          customsBatchId: cloudItem.customsBatchId || localItem.customsBatchId || "",
-          importBatchId: cloudItem.importBatchId || localItem.importBatchId || cloudItem.customsBatchId || localItem.customsBatchId || "",
-          allocatedDutyJpy: cloudItem.allocatedDutyJpy || localItem.allocatedDutyJpy || localItem.batchAllocatedDutyJpy || 0,
-          allocatedAgentFeeJpy: cloudItem.allocatedAgentFeeJpy || localItem.allocatedAgentFeeJpy || localItem.batchAllocatedCustomsFeeJpy || 0,
-          allocatedInternationalShippingJpy: cloudItem.allocatedInternationalShippingJpy || localItem.allocatedInternationalShippingJpy || localItem.batchAllocatedShippingJpy || 0,
-          allocatedOtherImportCostJpy: cloudItem.allocatedOtherImportCostJpy || localItem.allocatedOtherImportCostJpy || localItem.batchAllocatedOtherCostJpy || 0,
-          importTaxCreditJpy: cloudItem.importTaxCreditJpy || localItem.importTaxCreditJpy || localItem.batchAllocatedImportTaxJpy || 0
+          customsBatchId: cloudItem.customsBatchId ?? localItem.customsBatchId ?? "",
+          importBatchId: cloudItem.importBatchId ?? localItem.importBatchId ?? cloudItem.customsBatchId ?? localItem.customsBatchId ?? "",
+          allocatedDutyJpy: cloudItem.allocatedDutyJpy ?? localItem.allocatedDutyJpy ?? localItem.batchAllocatedDutyJpy ?? 0,
+          allocatedAgentFeeJpy: cloudItem.allocatedAgentFeeJpy ?? localItem.allocatedAgentFeeJpy ?? localItem.batchAllocatedCustomsFeeJpy ?? 0,
+          allocatedInternationalShippingJpy: cloudItem.allocatedInternationalShippingJpy ?? localItem.allocatedInternationalShippingJpy ?? localItem.batchAllocatedShippingJpy ?? 0,
+          allocatedOtherImportCostJpy: cloudItem.allocatedOtherImportCostJpy ?? localItem.allocatedOtherImportCostJpy ?? localItem.batchAllocatedOtherCostJpy ?? 0,
+          importTaxCreditJpy: cloudItem.importTaxCreditJpy ?? localItem.importTaxCreditJpy ?? localItem.batchAllocatedImportTaxJpy ?? 0
         });
       });
       if (!window.confirm(`从云端读取 ${nextItems.length} 件商品，并覆盖当前浏览器库存吗？`)) return;
@@ -4346,17 +4555,19 @@ function App() {
         if (!x.customsBatchId || !batchIdsWithActualTax.has(x.customsBatchId)) a.inputTax += t.inputTax;
         a.outputTax += t.outputTax;
         a.profitExTax += t.profitExTax;
-        if (isSoldStatus(x.status)) {
+        if (isActualSale(x)) {
           a.soldCount += Number(x.qty || 0);
-          a.soldAmount += Number(x.soldPriceJpy || x.saleJpy || 0);
+          a.soldAmount += getSalesRecordFromProduct(x).netSaleTaxIncludedJpy;
           a.soldProfit += t.profitExTax;
         }
         return a;
       },
       { qty: 0, declared: 0, cost: 0, sale: 0, profit: 0, inputTax: 0, outputTax: 0, taxBalance: 0, profitExTax: 0, soldCount: 0, soldAmount: 0, soldProfit: 0 }
     );
-    base.inputTax += (customsBatches || []).reduce((a, b) => a + Number(normalizeImportBatch(b).totalImportConsumptionTaxJpy || 0), 0);
-    base.taxBalance = base.outputTax - base.inputTax;
+    const actualTax = buildConsumptionTaxSummary(computedItems, customsBatches);
+    base.inputTax = actualTax.inputTaxTotal;
+    base.outputTax = actualTax.salesOutputTax;
+    base.taxBalance = actualTax.taxDifference;
     return base;
   }, [computedItems, customsBatches]);
 
@@ -4390,6 +4601,8 @@ function App() {
       const draft = { ...sales, saleDate: safeForm.soldDate || "", platform: safeForm.soldPlatform || "", salePriceTaxIncludedJpy: safeForm.soldPriceJpy || 0, memo: stripSalesRecordMemo(safeForm.soldMemo || "") };
       if (Number(draft.salePriceTaxIncludedJpy) <= 0) return alert("请输入成交价。");
       if ([draft.platformFeeJpy, draft.shippingFeeJpy, draft.refundJpy, draft.finalDepositJpy].some((v) => !Number.isFinite(Number(v)) || Number(v) < 0)) return alert("销售费用和实收金额不能为负数。");
+      if (draft.refundJpy > draft.salePriceTaxIncludedJpy) return alert("退款不能大于成交金额。");
+      if (draft.refundJpy > 0 && !draft.refundDate) return alert("请填写退款日期。");
       Object.assign(safeForm, buildSalesRecordPatch(safeForm, draft));
       safeForm.status = form.status;
     }
@@ -4451,20 +4664,11 @@ function App() {
         return updatedItem;
       });
 
-      setItems(updatedItems);
-
-      let cloudSaved = true;
-      try {
-        setSyncStatusText("正在同步云端…");
-        if (updatedItem) await upsertCloudItem(toCloudItem(updatedItem));
-        setSyncStatusText("商品已同步");
-      } catch (e) {
-        console.error("Cloud update failed", e);
-        cloudSaved = false;
-        setSyncStatusText("商品同步失败，本地已保存");
+      if (!await persistImportItems(updatedItems)) {
+        setForm((prev) => ({ ...prev, images: safeForm.images }));
+        return;
       }
-
-      alert(cloudSaved ? "商品已更新，并已同步云端" : "商品已在本地更新，但云端同步失败。请稍后点击保存到云端。");
+      alert("商品已更新，并已同步云端");
     } else {
       const next = {
         ...safeForm,
@@ -4505,20 +4709,12 @@ function App() {
       if (cloudImages === null) return;
       const savedNext = { ...next, images: cloudImages.length ? cloudImages : next.images };
       await saveItemImagesToDb(savedNext.id, savedNext.images || []);
-      setItems([savedNext, ...items]);
-
-      let cloudSaved = true;
-      try {
-        setSyncStatusText("正在同步云端…");
-        await upsertCloudItem(toCloudItem(savedNext));
-        setSyncStatusText("商品已同步");
-      } catch (e) {
-        console.error("Cloud insert failed", e);
-        cloudSaved = false;
-        setSyncStatusText("商品同步失败，本地已保存");
+      if (!await persistImportItems([savedNext, ...items])) {
+        setForm((prev) => ({ ...prev, images: savedNext.images }));
+        setEditingId(savedNext.id);
+        return;
       }
-
-      alert(cloudSaved ? "商品已添加，并已同步云端" : "商品已在本地添加，但云端同步失败。请稍后点击保存到云端。");
+      alert("商品已添加，并已同步云端");
     }
 
     resetForm();
@@ -4526,9 +4722,10 @@ function App() {
   }
 
   function editItem(item) {
+    const editable = role === "staff" ? (items.find(record => record.id === item.id) || item) : item;
     setForm({
       ...emptyForm,
-      ...item,
+      ...editable,
       images: item.images || []
     });
     setEditingId(item.id);
@@ -4556,45 +4753,31 @@ function App() {
       restoredAt: ""
     };
 
-    await deleteItemImagesFromDb(id);
-
-    try {
-      setSyncStatusText("正在同步删除…");
-      await deleteProductImages(id);
-      await deleteItemCloud(id);
-      setSyncStatusText("删除已同步");
-    } catch (e) {
-      console.error("Cloud delete failed", e);
-      setSyncStatusText("删除同步失败");
-    }
-
-    setItems(items.filter((x) => x.id !== id));
-    setDeleteLogs([deleteLog, ...deleteLogs]);
-    alert("已删除该库存记录，并保存完整删除日志。需要时可在删除日志恢复。");
+    const nextLogs = [deleteLog, ...deleteLogs];
+    if (!safeLocalSet(DELETE_LOG_KEY, nextLogs, "删除日志")) return;
+    pendingGlobalRef.current = true;
+    localStorage.setItem("gouka_global_pending_v1", "yes");
+    setDeleteLogs(nextLogs);
+    const saved = await persistImportItems((prev) => prev.map((x) => x.id === id ? {
+      ...x, deletedAt: deleteLog.date, deletedReason: deleteLog.reason
+    } : x));
+    alert(saved ? "已移入删除日志，图片和原始记录保留，可恢复。" : "删除已在本机记录，云端待同步；图片未删除。");
   }
 
   async function restoreDeletedItem(log) {
     if (!isOwner) return alert("员工账号无恢复权限");
     if (!log?.snapshot) return alert("这条删除日志没有完整商品快照，无法自动恢复。旧版本删除日志只能查看记录。");
     if (log.restoredAt) return alert("这条记录已经恢复过。若需再次恢复，请从完整JSON备份导入。 ");
-    if (items.some((x) => x.id === log.snapshot.id)) return alert("当前库存已经存在同商品编号，不能重复恢复。");
+    if (items.some((x) => x.id === log.snapshot.id && !x.deletedAt)) return alert("当前库存已经存在同商品编号，不能重复恢复。");
     if (!window.confirm("确认恢复商品 " + log.snapshot.id + " 吗？")) return;
 
-    const restored = normalizeItem({ ...log.snapshot, status: log.snapshot.status || log.status || "已入库" });
+    const restored = normalizeItem({ ...log.snapshot, deletedAt: "", deletedReason: "", status: log.snapshot.status || log.status || "已入库" });
     await saveItemImagesToDb(restored.id, restored.images || []);
-    setItems([restored, ...items]);
+    if (!await persistImportItems([restored, ...items.filter((x) => x.id !== restored.id)])) return;
+    pendingGlobalRef.current = true;
+    localStorage.setItem("gouka_global_pending_v1", "yes");
     setDeleteLogs(deleteLogs.map((x) => x.id === log.id ? { ...x, restoredAt: new Date().toISOString() } : x));
-
-    try {
-      const cloudImages = await uploadItemImages(restored.id, restored.images || []);
-      await upsertCloudItem(toCloudItem({ ...restored, images: cloudImages }));
-      setSyncStatusText("恢复已同步");
-    } catch (e) {
-      console.warn("恢复云端同步失败", e);
-      setSyncStatusText("恢复成功，云端待同步");
-    }
-
-    alert("商品已从删除日志恢复。 ");
+    alert("商品已从删除日志恢复并同步。历史版本已经删除的图片文件需要重新上传。");
   }
 
   async function updateListingItem(id, patch, actionText = "出品管理更新") {
@@ -4606,16 +4789,45 @@ function App() {
       ...patch
     }, session?.username || "gouka", actionText);
 
-    setItems((prev) => prev.map((x) => x.id === id ? nextItem : x));
+    if (!await persistImportItems((prev) => prev.map((x) => x.id === id ? nextItem : x))) {
+      return false;
+    }
+    return true;
+  }
 
+  async function persistImportItems(updater) {
+    if (batchWriteRunningRef.current) {
+      alert("批次正在保存，请稍候。");
+      return false;
+    }
+    const next = typeof updater === "function" ? updater(items) : updater;
+    const changed = next.filter((item) => item !== items.find((old) => old.id === item.id));
+    if (!changed.length) return true;
+    batchWriteRunningRef.current = true;
+    batchRevisionRef.current += 1;
+    changed.forEach((item) => pendingImportIdsRef.current.add(item.id));
+    const markersSaved = safeLocalSet("gouka_pending_import_item_ids_v1", [...pendingImportIdsRef.current], "商品同步状态");
+    const recordsSaved = safeLocalSet(STORAGE_KEY, stripImagesForStorage(next), "商品文字数据");
+    setItems(next);
+    if (markersSaved === false || recordsSaved === false) {
+      batchWriteRunningRef.current = false;
+      setSyncStatusText("本机空间不足，请先导出备份");
+      return false;
+    }
     try {
-      setSyncStatusText("正在同步出品状态…");
-      await upsertCloudItem(toCloudItem(nextItem));
-      setSyncStatusText("出品状态已同步");
+      setSyncStatusText("正在保存商品修改…");
+      for (const item of changed) await upsertCloudItem(toCloudItem(item));
+      changed.forEach((item) => pendingImportIdsRef.current.delete(item.id));
+      safeLocalSet("gouka_pending_import_item_ids_v1", [...pendingImportIdsRef.current], "批次同步状态");
+      lastAutoCloudReadRef.current = Date.now();
+      setSyncStatusText("商品修改已同步");
+      return true;
     } catch (e) {
-      console.error("Listing cloud update failed", e);
-      setSyncStatusText("出品同步失败");
-      alert("出品状态已在本机更新，但云端同步失败：" + (e?.message || e));
+      setSyncStatusText("修改已保存在本机，云端待同步");
+      alert("修改已保存在本机，云端同步未完成。请点击保存到云端重试；自动读取不会覆盖这些变更。\n" + (e?.message || e));
+      return false;
+    } finally {
+      batchWriteRunningRef.current = false;
     }
   }
 
@@ -4654,7 +4866,7 @@ function App() {
       .replaceAll('"', "&quot;");
   }
 
-  const COMPANY_STAMP_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAKAAAACICAYAAABgMOB2AAC+EUlEQVR42oT9Z5MkaZaliT2vEuOcO+ckOMsgyasqq7qqyUwPdheyKyuyAvyPIRiZnwLBApDBkO3uqi6SPCNJcB4eER7OuZsb52ZKXnxQM3Nzz2ggSiIrxN1MTU316iXnnnuuMDuGFIqCRCKlRFEUbMsGKZEChBD9vwBSSmzbxrIsVFVFVVVs28ZGogiBIhQs0wRAUVWEBFPaCEWgoiAVABCS/p/eMQEURUFK2f9MKWX359DpdACl/5nOey2EUFEUpX+OvT+D5wxg2yaqqgEC27RQVBWEcy5SAAKQYNoWlmkjhIKiqAjFco4vASmQOMeTwkba3c8RAud/YCOxhQDLwjmsOD4/W2I7VxvRvT5COidhGAaWaaG7ded4snttup9nS4lAoKsqUsr+9+p9T1vaCEVBQSKl6H+eUAS9y927br1rjQSkBOX4Wg9ev+NrZ6Np2on7ZNv2iXMY/JmiKCeufe/fvdcJISgUCigowrnwA19EURWE4tzonnEMfmGl+7uesdC7d7bEsiwQAkVRkd2bIQHLspyL3jU+Qdewu58ruicl6V4M4VwbRVG6X0agqhpCcOpLCsTg+XffJxDO65DOz6TEtiW96yEUBYSN6D5kUhFI6fxbUzVA0jE6gMS2hfNXglR6xipAKGiahkBgGAbStp0LLBRU6F8/MXgDut9HKAq2ZdHutLFsExBomo5QFeda9RxA97qoioquqgikY2hdo3e+d/e+CKV7XZVj4xG9u3NsfL0HBUAisbv39rSjGbznUjr31rKs/rEGf9/7Wc/A3mVwvb+WZfVfq3HqT+9NvZvWs+rTT4Wu647n6z0R4qQX5dihoKkK4DxtAnHCIHrXRwpQheLccCGQ0u6/X3BsHI5BqgCYpomUOMcRdv+8hSKgf8qib2So2rGhKgPfWTl+KECiSHCrKi5FoNiOF3OeBsejIG3npBUBUqIC7q7noWscUjoPUe8h6X6wc8ORjvH0rrXS/b5CQdXU/j2wbRtp22iajrRtVEVBKmr/OsueIQKK4vha5+fH98mybYQ4vid0H3rksXcTiuhfF8uyThhi7zi9qHPC6Qy87rTRnbapQQc3GN203kEHQ9+g1fe8Xe91p6198KDHN7dr7bZ07EAee6djS+4dRzphQlPBdnyklPaxYQiBtGX/Tb2nafAJVVW1ezCJVAWqUJCqRBoSadugCNSuZ5N9oxfdkArYJsIWYNtgdqDVRhgG0rBo12sYjSYIsBHoHg/eQBDbtmm1GkgJmq45BqUqqG4XuseDcHsQuoaiCKRQ+g9d73NtywYh0DTnvT1D6V1T27ahZzjd7ygFWIbh2K6qgSlR1d49EM61HDACoSiIU16qFyEkEiQn0pnePR1MhQZD8Gm7eFeac+LzT4XwnjMbNFBt8OCD1j3478EnctDae6Fi8GcoAmnZ3RAnUHrGgpO/9A2gezGE4lwRYUtk16MosvsKKbCl7RiUPHVzTj1JAEJV+l4G27k5dL2nYXTQNNXxsqaFaLWg08EuV2jlCkjbyTPblRLlwyxWs4lVb9Gs17DbBu1mg3qjgS8YIhiNo7hctNpNbClxez0IRWC0WiAgmkmTnp3F8rhxhcOoHg/oLhS/F3QdoaooQmB1o4EApKJ0czwGHIGTR9MzBNEN07KbtHY9OlY3NeimO4pwrpvs3g8hnRywbyz2see1pf0zj9W7r4MP++A1Hwytg+H6xL0YeN2ggZ92ZJqmaf2YfPqm/ktWPZjEWpaFLSVqL4ntvs+2bVRNo590SfoXu5d79I/b+xK2RB04uV7OeDI5/vl59M7b7ho5iK5hS4Rlg2WgGhY0m9Bs0T48orS1g9bpcLi6xtH6JtFkCpfHTbWYRzMt7E6bVq2Gx+VFVzQ6pSJGvU5ZUbDjSRLpNC7DoFSt4kvGwbKQ5RIH27tsC5vExARKwEd0ZART1RBendHpaYTHjaWp+NNptGQCNA2pKghFdTJmKR0Ph1Oc9HI9KSWWaaKpKqL/QHYv78DN7ufitoWNRFXUbgpjOwViN4ejl5ZIp7hRBh7uQQN5V3gdLPgGa4Te707njvIdOWbfAI+ryZ9bcc9qBwuO0+FPCIGqKv0wKeWxp7MsC3XgZPtFxmBuRi9Ud9/XNTzlRKrcc/u9rLBbuHUvjGma/c9Qpey/hmYHKkVaR0dUszk8qBhHRfZevqKwu0fI7aVWKmHU6zRtBTvgx6y3UG2bTr1Op9nC0iSRWBx/JIEvHKdttPEHgiiqTqfdwUSh3mxTyeVQWx2Ujo3SamPuHCJ0jcJBDncwiOLRWX+7Rr3VpGlZJKYmmLx2jeDMJMLvB68X1e3GQmJZ3Wgk5AmDsCwLpVuQ0K23hZN50MtwpLS7OWCvGj6OOD2j7BVBzv0AwclC43QI7n1+72e9/z8dlgedwaCBDh7rdKGiDVr04AEHP7SXvA5WmCcTTscwTnhNAXb3gg3mf3Ig/tq283snTHR/b9nYAscTSgdacC6Mia5rCKGCkF30QGL1IB5NRRgGNFvIVguzUKS6usH+0muauSNalQqKBaolqeaKuD0eWoZA94VxRRJ0PDrDZxexOm2Olt/SqdVpmyZG2yC9MMvUwgKGBNM0yB9lqRsmrlSUsFAJBIPoxSKlrR10rxeqdVS/D01RMAyToCdAp9WkuneASxV0Gg0Odw4ovXzD0NkFtEgYbzpJZHYWz+gIqsfTLcTANk3HQwoVTXGKERsLRRH0akPTNlGFgqoq3ZvrVOXKALIgu+iG0jOYXpok+xlhN6pr2KZ1wikN5m2nHdTp4vR02H2XUZ7wgINudvBNJ5J8TcPGqfyUgfCoKAo2YFlmF35wLHQw2bRtG0Vznthe/ueEx26o7OFnA0+M6D+NZte7OU+QaZpomsDq5RlSgGmiC4GoVqFUofB6mcLqOsWtbUobO5jVBsLoIARYioriduMKR/CkE/gzaYbm59G8HmxNEJ6dBcMkPjTEzv2HrDx+SqvVolmrY7TbBBJJXMEArkQMdShFcGIMwzDQfUFso0PjMEvrMEdhZxfRbEOn44RNl4vi27eUG018mgu/24+r06axf8Rho4nq9YLfi//5EmNXLxOenECJRCAQQNE1JE6EcUACp2BBUY+RAbq5nO14M4GKrusnDO048jhoQz9HFAPYpnQchaqq/defrnKFcIx7EFZ5V9VrGAa2beNyuU6EdFVV+w9HPwQP4jSDCaeuaViyl084ca8XUs1uuT5YJSOE47nEQI5o29im2QWlu+7Ylsce0zrpotWBpPs4BAx+0W5IkRLVttHqTaxcjvLaJpXNLcrrW+TXt2jXGuguDx63F1v30LIMwhNjzN94D08qhSsSRA/6UaNhZLuFbVl0Wg2segdL0WjaUG+1kKbJ5utlNje3CMQTuAN+ItMTjA+nsQXoQT+4NJSwl0AiSuDMLLF2B1mpY5crCEVFCEFgeozIyjrNXBG3ULAaDaydHWSzgQsNn+qmubLO8vYermgUXyZJeHaa9NlzKIk46DqoYPZTFdE1yK7HsWxsbMcLDiTbdje3dm5IL4wO5vpO2O4Vj3SrZ+RxSD4dgnuow7sMr+cd+xjoQH46GF37HrXdbkvR61p0caDewdWuAaEIDMs64aF60EDP8wkJ9HC8U2i5KS0URUWR3UpVSichlrbj1VQVo2PQarUIBoN9YNi2bceDKGq3qqabG9qItomxf0D5zVsOn73i4NVrlGYHr6JRqdYIpNOMnD+DqYBl2UhdI3PxDOHFRaSqYAuJ3Wxy+GKJg7U1vLrbOW/DopUr0czlqWYP0aVAEwK314svEOBwbx81EWXx4/dxxSIYnTaay+V4xnAQPRnFHQqAaWM3Owi3G+HyOOlLqUQjV0A1bCprW5RWN6jt79E4yuKyQdM0LGnTbDaoG02UcIDRS5dILM4TnJrEPZJBCYexu0YibduBnrqe0YmoNkJo/Th1GmI5Xb32jKpnaKcr3B74LKV0IKNT+WHP+ZzO9U5XwoPG2nttsVhEtDptCXSrKwEnCk6J2e8mdF1/12urioKC+FnF1MPjHCu1sbtJXy/3EwgnN1RACBVL2t2kWmJ0TBRFoGhO5dbL/1ShIMABei0LKjVaG9ts33tAbXef8s4hdrMJpsTsdGi5XUx/cIMzv/klSsCLsCyMfAmpKbQsm/2dbQxpMjQyytH+AcI0icZiuHQXbgSyZZJf26BdrWI22+QPDxkbHUMIwdrL10QzaRauXeXVyxcUjnKgge534fL78SWixDIZms06lmkjFZ1ANEJ0eAjN50H3+1DCEex6i9bhEc2DLPm3qxTWNnBJQcDtpri7SzV/5FwT1cJ0ufAODTHziw+Z+vhDiMXA5cK2u07Bpgt6C6SQYCvdCrmbvymnWoXdDokiHGcgbbvfdToNJAshuoD/yWLkdPHac0anW3HvKkp6xygUCgjTtmQPnxGK4nipXl/PshyAtAtU976MlLLbOei2tAaxK7qYnrQxjA4oCi6Xu4/e03X5gx0C2Q0Pwu5CL72+qxBI20axnJaZPMpReL1MeWWN/JtVavtZIuEIHQF6JILm89Fod/AOJZn7xUf4RofpFPKU3q6y9uI1nqAPt9uNEIJIJk1yeAQsC9M0kKqKEFA6OCK7voVRb4Ai8bh91Op1/H4/rWaTejYPUtJptTGqdVQBkUQUbyRIrVajbRp4PF7MWoVIJEYHQaXZBE2l1G4Smhjjvb/7HaHhEef7tw0oVihvbWNWq3ikwu7zl2Rfv8bM5aBVx+i0aEkbz/gIC598hHd8lOi5M2ipBDbCwQx6rTkhsUy73x0RPRC8FzJ7RUjvP13ozB70fOIYKzwNqZwOvT3P2gvL/1Lv911dkmKx6FTBvQNYloUUjmu3TuV4/f6pHGyy0cUAlV5LASmPW0hOQ3egELEcAxbi+GnpdSWkOGYo9I0b6XQnKhWMQoHi8yXWv79Dc/cAq97EsCVHQhBfnGfm00/wjg5j2jaK34MnHsEolnn+3Q/k364RjEQZnZkmEA7hkgomkuL+Pkd7B7SaDaRbZ3J2lmKlQqXVZHx2EsXvIZgaQvX5kEJiGQZYNkalTvPgCL1joGsKgZEh8Lhp1moomkI7l2f1ux9xCZ1oKsHs+Ci7W9vUNjecfm0PYkGieDTEcJxwOgKGAYbN5MQwofFh9h89pbq+jlIqENZU9GaHw+/vUBGQvnGZhV/9En0og/T6sbsWJVBQFLBtq2tkDqTl9KEFstcCtB2jUxSl/7o+PivEie7HYOg+DSyfjoBCnOo7v6NqPtFJMSxT9qy4b6FSYnQM3G73iQ84/SSctvDB3nD/ybElmkt3DK/3KPYS6V5RIQQWzkXpPn4o0gbDQGZzZB8+obG9S3V7D2pNOrUGpUoFJRYmcm6R+b/6FYGzZ0AbYGDYFu1Sme2Xr9EkDE1P4fH7OPzuR1bvPSKQTpBZnKMlJC6PF9XnITE1hWVaSGk73QtFYJs2ms+LYZnoPl+3/wtU2jReLtEu5NDTcbzTk6jhsJN+lMts/dNfePrFt+jBADf/t/+F6MIcrXYDLRBACwWwFfoPuSqUvkdSesbQaFN+8Zrso6cUX77CzOXRpYVtGTRNE8PvJnXpPFOffkxofh6CQaSmOfCXbTuFh3JM+qCLuUox4Mnkz+GTd93nHhZ82phO53fvOtagMfbyyN7vi8UiGtJ24JOeY+4ma6qqDFixA2z2ChS1S2OS1kmc6PjfSpeCJLB77kyChd11+XTzPvpVmKIIbARC2ii2DaUSnY1Ndu8/YufxC/S2ieyYdCRYbhf+cwukL5xn+MYlPBPj2KqClDaWtJ32HQpa0M/srfcQigaKQmdji/vf/kBtc5vFYIDE6AhKKo5Vq9KoNyhlDzGEID42iuL306lUaFQrBBVBR5pobjey0kCxJI31bX78P/4R0+oQnJlgIewnEYlwtLKKKJbxxGKERkeotJocFvNEw5fwuMInbmyvUuyRCBASS+JUsz434euXCE6MUhwbZvfeY+p7e3QKRehINLtF7tkr7LbB0OER4YVFvBNj4HEde7cu2G9DvyfcA6L7DYNThteHa+TJ/v5pIsJgbtcz0Hf1gd/VjhuspDW1W5b3juvkehaadtzy6eVqJ6ocIfr54GBLxskDRd9wFUXpdziEEP0EuE/N6tFhbFCFAMNE7h+wc/tH1n+8S2s/i11vYhgWnlgCJRln7MZVht+7jH9qAhHwYiGwpI20DSxboqgqpuxCEqrmfI5pg6oxef4sdiqNJxKiWSohjRZWpw2oqJqG2++FVptOq0klX8Sot6gc5QjGY7hsweajJ9Q2dmjs7JNb32B0fpZzZ87i1TzY+SLFjU1kpU5yaIjL/+qvKTfqeDMpUFWHBdMF1wfB/J5XEsLpVvTaiLYAZShJ7P330KJRKitrVNe3ya+u0alUiGgeqm9W2X31hvDcPFf/7nf4ZyYRHq9TyOl6P+L0mFkneJe2/Hno7IVHW/7MyE6TD04TV/6lVu6gUQ72mQGEbR+fxc8RbrtrmL2TsLplvtOa6xEgBxvYpnmMFTrhRfbbPsguO6b3lHXhmz6+V63RWt9g+9sf2PzhAbJaw2y1MS2B4XWRuHSeM3/1K5LXLkIw4ADSqsMCkbbE4mQTXcFGVTVsCVbHwGXbiFqT1ttVjlY3HEKAInAF/UhFxbRthCZotFoYSITuwuX2orpc+BMxgokYxRev2H3wjGauiCcaYnhxnsjIEFu7u6SGhigfFTA7HaavX0aPRZGdjgM9BQMO9COP+2a98Dh43U3TPOZAdgsB0cvZ8iVam7scPHrG9qMnWOUyVqOG0WljunUyZxfJXDyPZ3KM8PQ07mQSu0s4kEL2L7tlWWiadoLkYVnd3nEPv5PvpukNwi3vYk79DBA5RTTu2Ymu65RKJbSug+4bGf1+oux7MGzodBwakKJ28yzbGmi/iX6Roqh2v1BxTk45SfXptX6EREinCS9sCbUa9RevWfvqGwqvVgmhogYjlF0dXLEIsfMLTH38AZGzC+BzY2NjWT30X2BjOzcKBU3RuphYl1HS+4btNlYhT+0wy+HKKvmDLJZQSc1PERsdwRsK4nLpSCDs9+ONRPAlYlidNqrHgxYI4D27SER1cbixSebKBbyjI7RKFfylEv54DEsITMPA0hRktcLhyhpmrU5mdhp3Io7oMWK6MNPpBF5V1D4/z2GrOA8wikREQni9PsbjMTyJOAcvnlPb2IJcDgyTvWcvONzaIrE4x/THbdJuN0oogBQC53E8WbEOkj7sXtyyf+61BlOsXqQ7TYs7zZY6nT/2DP9ndCznYOqJXGDQEHugsdJlm9i9lpDiMIS78aNbTUl0VekapED2awqnAutXx8IBTVUBmCZUa9Sev2Tli2/Iv3iD2jbpeLyo4RC+qXFGPrjByI2rKMkYtnJ8cTRNPfYetnMhNPWYIe2EHRvFllCusH//EW/u3sclVHQhiKdT+EMRhuZm8KQS5A8PqTaaxEaHcYUCFBs13EJSatTRWi1CjSZ7T19QPTiiKSDqc6NjcbC/i9GtOt2BAKrRwRUM0mk0KWeP2H38jINnLwmMDzP78ft4h4cwhfJuaKNbRChd+ESIAX6krmCi4JkcIxMMEh4fYfvOHTbu3McrBEPhEJZt0dk/Yu2rb8GySV+97BhhD+eF4yq331SgP3LQa3n2W3nvYEq/yysO5oqn+QSDnNPTcIwGCrYtf/biHsmgl5hq3bZcb0LBtKXDuBACRdh9gqMTVmS/5dOr9HpJrY3jIRWhgmli7R6Qe/iE/afPKS6vIzomHSlRQkHiF88Qu3Se1HtXwOfGEoNkh+Mecq8vfczulU73wzZxARTKHNx5yOPf/xELwbXf/ZrY2Bj53X08LhemprC/vkHh6AjbBk8kTGhslJjPi2pBIhRDNU3yr5ZZ/fJ7Kq0GEx/cxJ9I0KqUaTfqKKpCs9mkXKqwu7/HtfFRfOkkc9evEejYbN29z70793C5dRb+5rfgciFU1Xkgew87XRZLDwftP98OxCUUBVXXsISNmgjh9y8yYhm0LQvR6jAUjdEsFKhmDzna3OXlP/8Z1aWTuHwREQgghKBjGoiuR7KljYI45lD2WniKOAGnDLJgehS8Pq3rVPo2CNUMwjiDcyMnPGDffVpWf6agR+s+bmx0XyPtbkhw2MvHMV9FWoZjEKrSnb2Qp9yt7CL3CpoiEKaNvbvP9lffsvHjXbSOycjwEIVKlZqAoVs3GP/oFu7JUaTbhc3AAAwqWI4nllJ2g7ziQCTd3NW2bHRVg3KF1S+/4+2X32NLm9lPPyT94QfIdge7UsYfj6MIQSidYvzcWWq5PLV6jdyrN+QLOQzTIhqOYBdK7D15Bo0m85fOM/vRB+geL3TazF44j+L2IjwuAu0OrlQMd8CPjcQ9OkLmSovy6jqhvT1yy2tM3izgGh5y8kGg023cu12uY17lqW6EbTtlS48hLW0Lq5Cn0Wwwe/M6llCob+9R2N7Grrfw25KDlVVWvvwGnz+Ab2EO6XZhGSa6GPBGA97N7lajg97vuFI/Dqe9UNqDZnrtuHcVKKcN+bQX1fqzA5aFrvbmE3o5nD14HVAVxWnLmDaK4iTMlmXh1jRURWOwjzc4l+C4PwXbBlURKJaFlS9w8MMdNr77Eb3eJBCL01JUjHiEsfNnmPrlp2iZFLYisCyzy6ihf7xB6Ej2U6bjVpOqOr3ndrbA/rOX0Gwy8+FN5n79S9REFHsvS9wfwCpXqbdatNstVJeLWrMFuka1UMDqWCQSSUIeN4cbOzRLZQI+D+l4ErtYZmdljY5p9Ie4IqkUwZEhRidGsTWBiY2uKriGUqTmZqjnc3hQsNsdh5bf7UAcD1z10pnjKbbBECikdCAqqYBpU1pb584//YErn3zE+Ge/wptJkd3epri2gSzm8WDT2dxh76e7DAvwTk3i8XmxBf380xlgUpxZli4I3SuEetHldGXb84Knsb93zYCcLlROU7W0E7x9ZH8wCOTPGtZdnpRjEIrad7O2tNCE0veaaneqrI/9SKD7xGjShkab1voWWz/cobOfxRAKIhQGt87kBzcZvnUNNRbBtCwnnxT0vYVDObcRqCeTeHFMhnXyJwEdi06+jNrsoGgqvvERtOEMmBbF3R0e/eFPKPUG/lAQr9+P0F0Mn1sgdv4CZrOJ0WyiqTqtQhHb42Li3BmMbJ7l73/CfvQELRknnEljYtMslXn95W1CmSSzH71P7NwCis+HJWw0twdPNIRpGDSLFdqNFl5FQUinc6SoWtcAxKlhInGCQmXVqxS3dlGaHYIeN/b+ATJXYPXeQ4ZvXEOfHCF57QLZ5RXMagXdNFCqNTbv3OPwMMvirz8jdm4RNeKA1s60okQKG0WRXVrXQPHRB6xP0vP7o7jv6HYM0rdOM2DexQvUTg+cvIte0690uuNrPTKkY2jWCQDTsXLZD+P9yggFVQE7V6Bw7zG5+0/o7GaRHYuOz40vlWLut5+RunEV6XFhY/VD6onxTUBIG6yO43UV0Z+b7WI6XRBWgiVp54oUd/awNcXhDzulPVarjWZDPJEiFI/iVlVW3r6lWMgzVK6QmZulaZh4/QqEAgxduoCvabDy+Zccrq3jzaRY/Ogm4x/cQnjclJZXefbf/4mtnx5TOjjiiut/InPpAiYCpInV6tAoV1ENid2dm3ZyYYmQEguJLXuDdw5cpQiHfyl6bKOOxduvvmP//hMy6RQLc7OMDw9zWCqSXXrFcDxK6uJ5Wrki2XuPKbxaQrbaaAIKL1+x1Ggw06iRvnIJNR7D0pwxAITiOIkud1AoAkU6ZAW7S1Swevli9yQHKXz/0rTcae83CMCfqIJPJ4unk0oGGtlCOnMGjneykV2uoOyFEI5ZzIMnowqBaDQoP13ixT/+kcbWNpolIRAgfu4Mc3/9GxLXryA9bmdOVpxoOTtPnpMw0VzfpLa/jysQwD8yhBaNIj0uh7jZpaMLCShOrmS02qh+H6p+PIXq8/uJJRKorQ7ZvQM6nQ6NZgsNgVsoeDUdn8uNaVl0TAPLMDna2uRoewdhWeh+P0MXziFScRAQuXSOS60ObvUrDrOHtCqVfj6KotBst/D5A+h+vwOK9xgpHN9ES1ooqH2ssEfw7YUWzbIJW7B7kGVzfRMlXyKYThDw+th+sUQgnSI4O8303/yGYDJJyzLp7O3hdrlwGR0qq+u8xUbTdVLXryEC/pOttG5fWKHLqunOVIsugdW07T5ranCa7nSH5F8a8RjkCJ4oQgY7HKd5+yfbKBaq1pvWcpgqAtBdLufJ6Q7E9BUVEKAKpG0i2h1ab1ZZ+fJbzGwOt+6i4dIIL8wy9dknJG5cwXJpSOkMtp8o6busXwyL9toGS//tv5NdXkN1u4ifW2T84w9JXjjnDPj0v7iCUBVcHg+6qiGEgtvj6U2l0zA6ZEtFEh4vQ2NjhEJhbMuiZRpobg+bS69ptlrobh2vz0vC48cqVamXKqjhIP7JMdRYFFsBw7LRXCrhS+eYODikeLvgDLf3shlVEIjECEZjGJbhYKjSwVSdFKaLuQocz2MD0nLerypg2djFMuUnz3DXmoR1N2gustu71FpNzn10i6NOi9d3HzCrQGxhkeTN97jk83Nw/wHeap3y+jpWq4ncz7Jx+wf80Sj+M/PgcXcn47pTjPJk4Sm6KZkz5vnuMcxBrPBd05Sn+8WDBYnmSFso/XD57nE7x/j689UKKFY3XqBC120PYnIOKK0c9/gKBXZ+/ImDV6+JeP1Yfh9Dc7OMf3CTxOXz2G4XpmX0S/3TD4CKxDzM8uZPn5N9+BxXs4Fhw0G1jhIIkFiYR9F1xxt38UsA0zKd7otpITtG/+fBRIzz168S1DSkBfn9LPt7e5iAuxTEH4ng8XhIppJIy6R8mGd7Y5OmWyMyNcvMxx+iRkMY9oCshwLlWgWj3cLVfWDQBKgq7mAAoSooKJittjNFp2oOubTrdVShQLtNbc/xoMF0Ck8yAR2Do+dLLP3jP2PuZtE9HqbPnqFWrbB7sM/ezjYLH7zPYbXK4cvXtJstMhcuEL12kUAmRf6Hexysb+LxBlAVSfbFK954PJwLBXCPjyFcOnYP7lGcwkOlKzSAMyYrhXznGGZ/GGwgrP5LRniaqNrNAXsJJifGM/vhg2NpDAYGoHu6IgLQBnq/tmKD7VTQtm2jSAXqLfJPnrN57xGy0cKOxklcOMfkZ5/in5tBel1YXe2RdwHiAgGmRevwiOzKOj5Nx+ML0mi1aBsm7XrTSeZ7ygZ0Kzurgy0tPH4vrUabai5PxjRBCIxmi/2NLbZLVWq1Ok3bJDI5RnpmhlgmRWx4GLNcZfPJY4oHh7gVDTUVY2p6nJErF4lePItUhJMWSGf21jYt2p0OulBYe/yY4OQY3rFhBzbRBJa0sAyTVr3Rv3aKAAW1z3Izy1WW/vwlR29XmLh0gXN//RsUn5fmUZ7GUQHNMAgNJ+kISWJ8FOnW2d7dw730mjPv32Rrf5fVew/RdTfxMwvowyl889N41tZorq4j2k08pkX+5St2R0cZd7nQhjMouubk0vZxsSe7RadQlC5TiROzJT9T03hH+D09nH48SdklI/RkLt5VUivK4JwnXd2SHkvZISP0EPtjUqPi6MHYNpoQ0G4jt7ZZ+/Eu9cMibn+Qps9DaHEO//wMlkvDsrqMW44rJ9FvjHdzIU1FuDy4/QE6+TK2lBiyjam68IbDoGv9STnnizuVtyIEqXSK/c1dCgdZaHfA5yVfq7NdzBNSPUzevEZydobg5DiEfA4HUTqyHKamkpmbYXRyCkXpzjlHQ9A2EO2W4+k1FXQXUlWJDmWo7u/TbLWwpHWMJgsF3eel3mz2aWi9YkkxTeczFYFimKiVMq3NLV4eHKAJWPj4I8LxOOHhIWSzSXh8lFq7RWFnG92WRLx+KnsHrDx6wvDMNK1Ai+zqKr5wCN/wEKELC0wZBlsuHWv3gJjbQ7lcZvune6iaxvD719FGh1F0FWkPsKa7XsWyrT6ZQXmHcsK72nA98ar/f8aqOYnhSc7W6cGRQQqW44UdL6ipDrGyh/lZloWmOK9ThYLoGHTWt9j88jsKb1bwejz4R0cZ+fQD0tcuI11OFauinng6juGU4zlhCXjHhpi4dZ0tC2qHOeqGSWRigsTUDIqmHU/qdR8GRVPxhEIYlomNpN1oYjZbaAE/IxfPEk/GcXm8eOKxXuccY/+IysEBLl3D63KzeO4cWCb1YslprR3lqNdr+AMBVNXhNGpBP8nJSVw+H0PjY/hVFdvrxh8M9yEiRXeBx4Xp0bG8OqhK3/hkrkhucwth23jbFl6hMDk1hY1g7c49WsUS525c58JffcbO8lti6RRDPj+Ha+ssP3yE7BhMzEyz+3qZWrnMzI1rKKEAhyur+KoVkgvzhC+fZc7v5+juQw4fPUHmCmjlOitffUvT7DD7u9+gJeIOobdHluirWtBntPfmIk+DzoP53b8k2fGzorbXiuthdoNtuNOcftntCWtCw+FNWE7yKo+nqHrsClVRUEwDeZRn+9tvWfn2NkaxDP4gyflZRj/5EDUdd2Z6T7XSTg/Fy9552BYi6GPoo1t4R8do50vUKzWCY2kyF852OW/HNC9b2iiqhhYM0JAWhgqhVBzF4wHLxKWp6KEg9d19Dl+9pniUQ5WC/H6W3MYWHo+HYCSI16UjOh2K+0dUKlW0UBDF5yXg86G2WjTLZSxNkBsbI5RMYEuLWDyG0W7R3N3HZVlooSCWbdLSVYbPn2H0zCKoAtFo0trYYvOHuyz/dAe/20PA42Nre5tbv/iE1Nw8y8+fs7e2wZItufjXv2M8FODND3cYnZpk8uMPUHweXv1wl0azxdTIGAfFHFvPljjz0Qc0jnIcbm7i9XgJzU7jWZgmUChysLaOdZTDiwK1Fhs/3CUxPUkiFHQoXIo4FmQaHM9V1J8NHvXu2+mOySAOOIgNDg4/dYuQ4yTy9DD6SQmIn8f+ntBXH0awLKdfiYR2m/LKW7JLr4m43ORdHoxgiOT5s6ipeFcOQjkeVBLd4ZieFxR0U/OespXqeN14lGQkDnY3bKkK0q1jScvBB8Xx1L4tBEokhDYyjCIthibHUGyJtbFDYWWVg+VVdt6u02w2Udw64XiMeq2O5nbhcXvQ2h0K6xsopk2z1cEdCjJ0+QLj711Fs20Ov/mevUIRxRbsr2/RaXUw2i3Wn7ygYVqk1tYZXZglGArhUnXOvPcerkQCze8D06K6tcPKX75m+859Gkd51FiMtqtOp9ViZ3OT9MI8c2fmiUTDrG5usr30jPHxSXRV4dE3X3PJthi/dg1Und2XrwiHQqDAxs4ur+89YO7WDfK1Mker6/j8AbREnOjZeRYtk7eqoLW5i8uwMQ5z7D15TmJhHi0ZdwbJumB4bxTXFu8eRn9X9+Nd6lmDueHgqKfWM7DBHt9JnZiTXlB06VmKqiG6btm2LAfPUhyQWrTa2Lv77Nx7SOMwRyKawIqliF29TOrSWUf1yrYRtuUkvarSl5uwOG5RKV1lrD6fUBWYpsSSJqouQNGxLYki7X7/WVe75FjpUL70TIrFz35BaWUVlw3Zb75n49kLDlY3UBWVcDzO6MQE0bERElPj2LrucAcrNY6eP0dmj2iYBr6RIdJXLzL121+hR6PIrR0sKWkJgS+d4uLVKwQSMYo72+y8XcXvcpHOZGgdHvHyT18QSsS59MtfoiNQbAFCpVGsYjZaBGJxPJEIw/NzREeGKexss7e2yv3PPycYCTE+Pc25xQUO9w7Zb5pMjo7RONznweefc10ojN94D13XWX72HBeSiaER8kd5Snt7DJ89w8aTJ2x+e5vk2CiaP0BwYpyzv/2M1//4J+qbm2jtDpW3azS3d/EGg6Bp2F3Y7fi+D4TUHpQyIJnSK0zfpQ9zmvN4onr+D/+3f/8fxSn+v9kVk5S21S0CFGdmo09hll19xuNeodOfVVAtiSiX2fv+J7Zu38GutjBcHiY+/ZCp3/0aPRV1MK56ncKzF+SevaCzn8WuVNABVdO7TW6lP2fcnxbo4oyK5oyR2rIn59ZX2+lyAp2ZZsWWCMPEbQvUSp3d50u8+fEe1WwefzRKamGW8WsXmLh6EV8iRltT8WZSeIaHae3s8vzzr6iWK2iZNNO//gXjv/oYLeCn+WqZ5//wB1ZfvMaXSTHzm18w/MuPcU+PExhOE5qeYPjqZdIXL2C2O5Q2d+hUauytrVE8OMTjduP1+VBNA384SHRqkvil80z88iNiVy+TnJ3BjeDoxSt2XixRPioQG0qTGB6hXK5Sr1RJx5PIap2tN69QXRpjFy8gLYuN129wqRrD6TQbb5dxaxpRAa+/+pb8i9fsv3lDpVph6Pw5XLZNbnsT0WyhCIFpW0QyGdRwAMumD6XJ3ryYPDlUZPc7YD3u6M8L2kFj6zm43qBbs9lEU+TJhjPyWEekz27pVaV0NfROxXWQmBZoSIRp0FpdZ+PHu1jFCpZUqaqC4Ow0WiaGxEa02lTfrPLmH/5IbWcPRVXRQwESY2PE52YIjY/gmxiHcOiEEdooCNXGlDZGV7LDUQftKXPZWE6DG1UC5QqVF6/Zvf+IreevsBF4YhHSE2Okz58hNjeNJxahtrHB6798jVGrk56fYfLiJTYePKKYyxEeHyNz8wojn7yP8Lop33/C89//haO1DSKTY8z/5pcM3bqO9LkdZ55MEEslHUBeSmKXznMtEaeytcP2i5cUdvfhp3uUV9dw+3wkF+fQRobB5wHdIWwomTTjV69Suv+Uzt4R7XyJV0+eMfH+dSauX+bNvUeIcpXhRJK91TUe//OfiSSSjF29TOUox/bLJQIBPwHdxcade7hNA1Es0m5bNFVBRcD8rZu4R9IInxcpJF7g6PlL3MkEk6nfovn8SDEISB/PiYiud5S2BYqKZfb4fseFRk8warA6HpyyPM4Be8hOrzWkqqj9wuCYJEmXUCC7rJjBZrWCgiJMaLUhX2D7zn2qGztgWKjJOJn3rhCen3KclGkjjwpkHz6jtLyO0upg2hZGrsTayibLt3/Ck06w8OH7JKcmsFQN1etBT0bwZIaQLg3FVvrYpaNP3VVqEKBIBdUwoFAme+chL778CrNUwZSC9LlFpj64QWRuGjWZgB5TF4FZa+BrdjDXtmmiY+byBGMxZj/9mOGPbyH8PupvVlj601dsLb0iOTPNpb//W2JXLiC9LgzT6vallb7kmUTiikcIxCMEFmbJLM5TXdmgns+xsfSKWqXKmVaLYLVGeHEGQkHn5uYK5F+8orifxTJtPBEPgWgEbzKGNj3OUL3B8//6j5iHORKROHWzw9L3P3D1t79h+sObKJrC1to6U+PjeF1uDlZWUISG8OgkY1FIp8DrwzcVwJNOYeaKSMtCVGrsPnpMcnEB/9lFGBAudZxUV/BScEw4HoicvdxuUC96kGc6WKz0i5f/8B/+w3/s93BFf5yo28XogsD9OG//nB2rKCiAYhko9Rrll0usf/MTVrFKG0Hq6iXm/+53eMaGnRH+Zov97+/y8uvvCISjDC0s4E0l8UQj6C4XRq0BlRqF9U2OXi+z+fAxOy9eUM7lCSfiuCMxFGmjWE4Hh24LUBWgAkqtTnVpma0vb/Pmq29RDJPRhXnG3rvC6Ec3iZw/i+J209jeoPh2BUpVPIBH0TDqdYp7e1T3DxCdDrZLZ+TDmwTm55F7h6x+/i3bS68IDKc5+ze/IfPBdSxddWZTlIHBbymxegRO0e0aNdtY9QZms0UoHkXTNYxihYPXb3n98DEer4fISAahahw9esqP/+//Qml3n2A6QWRuitjcLO5YDE3TCXg8yGqDTrNNZjhDOBajkC9ykD1geHGe+NQ0OxsbVMsVMpOTqJqGYUvCQxkMt44WjzN04TxqIoZdq9PKFaDdwdUNi0LTiU2Mg9fjDND25IkHZnkYwGsHKXv/0lzwaXleIUQ3BHep9FZ3llRR1L5IpM0AqbQLs/Q+UXbp9X2DtQWd/SP2Hz6llS/iCQTRo2GGrl8lMDvpGF+7TfvtCrvPnhCJRzjz2a+JnD+PxKZTrVDPHlF4u0Z1c4vy9i6dUgWjXsdSBMVCgdjoCLPxBI2jLAe7eyQmJghPjiEVBWFJ7GKB3P2nrN++w8HyCuFohDM3ruAdHsI7M4WWSdLZ2SL3ZIn1x49ROiamkARSSS58+CEYHUrFPM1aHVlvovu82HtZ2g+esPPoMVuPnuJPJTn3d39F5tZ7SJeK1Z1lVsWA9LAQ6NJBzJRGG+vgkKMnzzhaWaFSqTF07QrTH76PrShs3X+MvbXNi798RWw0Q/jMGZqGQXB0hNTEBOHhDMOXzuEfHmbzyWNK23fxur2kLiwSnxgl/3Ydo1Jl+tJFdrIHvLn/iLO//IQzv/yYg7erKNEwAVWhaFukFxaQbp2nz56z9/IFY598xPCtG5jFMtUXS5j5PO52m6OXr0hdOk84HERo4gSFv8e5PB5mlP3BsmPBy58zof+l2WOtx/NTFYWBAbnj0cue6ma3yyGljbB7tPquu7Ul1FsUl5Zpbu2hGAbEQ6QW5ggF/TTfLINl4+p0WPn8Sxr7h5y9fp3IUAoCbpRwAI9I4pmdIn7hPM29PSrr2+TX1iltbdNutXBpIAwLuXfA0l++YOXtCpPv3+T9qTGEbWHvHbD6xde8vX0XpWMSGRli8twC7nCQ/M4OeiGPtG1KO/tk365RzR4RDvjpWCa1/QP8upvhhQXOffoJhd09tp49x6jW2PjxLgH/c7ZXVnF5PMxdPk/m8gVw691KUHSH7nsCVF0v2O5AoUjx2RKbd+5w+OYttmHgSyfRjA64dEZuvEcolSSx9Jq1tVV2ni4RHh9n9NIF4pkhUJ3ZZk8iBm43o+02L/7xDyytrPDR//V/I3nlIhvb29TybeYvniHWmeXe19+wvbbGzIfvg89Lc++Q1MQY2WadhioYX5gjtrvD+tPnJM8t4kmmiV84S2Vnl8rmNrJRp9VpcfT8JeHJcZRYFDmA1fapYT32jOlwQ3tC8H39oB455R0Clj8PwV08TznF4+qurzh+k1AGoJmucr20USwDubnN1je3Ka9u0Gl3CE5PsfjZp2S3trj3j3+gsvSK8tIbsq/eoJs2tXqdhtHCH4mghcNIVXV2a3hduFJxAlMTxBbmSM7NEJ2dInNmnqGxUcpbu7z88hu8Xi8jZxdJzE9DNsebf/4LS3/6ErvZIjw1wcJf/ZLM5QusPnnCy6++Yf/5C3KvV7CLZVTDwu3zEojH0XQXstHiaHeHcqNOYm6WxHtX8QSDtBsNrEoVs1iieniIy+3GHYugaU61r1gWqhDOpotOx9EENDrIoyMqz16x9sU3rHz5NUdPXyAbTVx+P4F4DLfbRbNUAo+byJlFIjNTIKF4mEW1bLxuL+5QCPfYMFo0hNSc9RS6otF6s8z+qzfEJseJLi4QSsQp7u9TKJcZm5ul1WxSq1RIjA3jjUbZWVnFljbJ4Qx1s0M4FsPvdrGx8hZPyE9kbBRXNIpVLFHe3EFpt7o9bZP46CiuVLKvvd3Th3QYPPbPRjV72xJ6LlJITnRUxCm2davVcgzwXUqXPXX607wucWqGQJEg6jWO7txn5avvMMtV2kIhfG6RkU/ep1Mqk3+7AodHVLa3oN1CMU2ym1sUs4fouk4wFEFzu1F0V19sW2gKiteDno7jnxghMDqEqFZ59ZevqZUrLH50i+mP30fpdMjde8Sjf/oj0rIZvnCOub/+Nclb11HicVoHWXafvcAlwaUo2KaJy+MlPDHGzKcfo/j9VLNHKO0O+VwObzpJ6sP3CU5P4A8EaBbKVA+z6F0Vr1qxxMGbFQ5fL9M6zKE1mshcjuLzJXJPX2CubJB98Jjlz7+mub0D9QbtjoMjjp07x/D4OIXNTZ7euUO10WD48kX0oRTxyXF04PDla559/jWNwyOCkSiucBBh29iFIo3lFbZ/vEt17wB3LEJ0fBTv5DhGtdqd9hOMz8+QOzzk8PCAkZkZdK+X1ZcvmZiaJpCIsbe5ydBQhmI+RzlXIDM5gRqNoqs6zYMDZKOFz6XTabcwVJXE5CTC63X614Ma3+LUpoQBwSq1p7wq+FneN2iwrVbreChpkOc/qHD6LqmFY2q807C3a3Wyr9/SLpbRNQ01GiYwNgrhCIkL57hhGLz+w5/p5Ap4fF48Hi/ttoHVaLF39wGV/UOSi3NkLl7AlUqAxwO6BprqwDC2hcwesffgKdnNPWJTk4zfvI7m81G4c5elL7/GbLXInD/Dmb/5K0JnFx0enargHR0ltLBAUFHxCIEsV2hWa3RUgf/CGdxn5qiVilTfruKtVsivrmEX8ijDGSJXL0PHolko0O4Y6F4v7nCUWrNBfXuf+n6W3ItX6Iogv3+AMC38bg+tRh3VtgjFYzS9XnzpFLMfv8/4whkKj56xv7aBEJJQIoHm8zhtxICfzNXLNIsV9pbXKKyusx8KMeNz0axU2H34FHv/kOLqGrLdolIqOx0LVWH4+lWqh4e8XloiOTbKuQ8/ZP3NG8rbu0QzKRLxBAcr68QSMcpb25R1N/FwlNcvlzha3WA4kcQzNkxkYQ4jV0AUi6iNBgdPnjF27gwB73mUgA9b7c0Wq31SgmVZTgtWOIWrbVr9ScjTmjLvUlXte8DBfRyn+fsnOF/9fRfd3zfb1F68Zuv7O7RzRTS/n+jCAnO/+SWu0QyKx4NWqbH55DnNVhstGsFw6XSkxOP1EfR4Ke3ts/bwCeV1R7SxuL6BZhjolg3NJqJUJfvTfZ5/eRvd5Wbhs08In5mn9nqZJ//wB3Lbu6Rmprn4t78lPD/H3pOnrD18jNvrc0LV5ARDF84xcmaRdqlMbnObqtlh6PJFfGfm8bpcVPYPaRWLdJotNK+XyMgIIuDDHQxi50rkNrfxBPzMvH+T2MwUqtdLMBikVijRzJdQDQvbtFAVgdvjBp8Xz/gI6SuXmf7wFpnLF2ns7/Ps8y+p1RvEFuc597e/wzOUQXQ1GBW3m1AqRdDtRjaaFHd28Ng2pa0dXn//A8ZRnnqhiAgFmPrkE4auXcZ2aWgeD5FwmI2XSzQKRUYmppD5IhsvXxKfmCDo87H2+Am13X3cQrC5tcX07Bz1ao1qo0F6fAwlGsYlVFrZI8qbO3TKFTq1KvVmA3cohDcWR7hdfXLCSZJpd9Khpxd+Sk3/XfIdiuKMsWonafOKQzQ4JbfwLsFphz1rQ71O/uUb6tkcqqajuDy4wmG0UBAUgVkus/HiNeVyjdTiImOXz1NrNWmVK7SrNRTLwu9xYxomhZfL5F4sg8dFdmqM2GgGW1Vxo3L45i21XI7Z92+QmhzF2N5h6c9fUT3MMTI/z+T1K4TSaXI/PeD+f/sHctUylmlx+V//DbFzC07FVq7TvK1hWibNozwHz14SXJzDvzhPbG2DaiGP25as3/4RfyRK6uY1RMBHcHoc15MI1XoDw+ciefMGwXKZTqGId2uXdrGEjqDTbmFZBrrbhakKkmcXSF24AJ0OxtYOS59/wcHuDpHZaRY++wXBqQmsQolmuYwa8OOJx1BjYZJXLiENk/r9B2w8e8HQ2BhjU9NUDrNgGEQmxhh57wrS58awbHQFXJkMZ69fZ/PuA17+4S+UdnbYzu4Rn5xg6r33CIbD5F6+YvLiOXLNBraqsvj+LZ4/fkx1/5BoNIpnJENiZobso5e4NDduYbFx9yFKPEZkZgot4EWg9GQIT4ztKl2ZYCGEs9vklF7QIDxzipA6gNkooq94NTiueaKp3NeydrT7mnsHlDa3EIblbAbyemlKm0q1SlyCkSux9eQpjWqV8NQEQ3/3W6RLQ3Y62LU6zUqFVrFIbXOX/NsNSlu7mI0aSq3Bzk+PsNoGbq+XpmUQnxxn9Mwi1dVNXtz+gaONbdITE0zcuEpmfo7DB095+ccvMI5yjM+Mk4iGsY+OyK6vExwdxef1oYaCRNJpgs0Ga/fuMXz5Av4LZxj75SeYjSaF5y+xs3le/elzbEWQ+fAmoYUZgpNjZJ8t8freAwLzs3gX5/BISejqBUf/RYLsmNiWgd1V6fLE4shCiY0/f8XRi1dsr60RHB3m/N//DZn3rmDuZ3n7xTesrSwzdu0y5377a9RgCD0VJ3X5AkajwfqTJ5jAhd9+RrHe4OgoR3A4Q2B8BFvauATQaGI324yfO4dHwu7jpwghyQwNUT08BAGpsRG2nj5DBAOcGx9jd2eX+cuXiEejFHZ3ic5OgttN26UhfW6oKSiWhQ9BpdtK1DJpZ2iqSz2S/bkW5QQgPUg4Pb0f7p0q+YOh9rRO8AkWjMTh//VYYe0WjYM9Kvv7qEALgScZY+K9y3hTcWeAaGcPs1hGtbqCiS4d4fcg/F6UaJigHCYoJclLTcaKJSob2zSyR9R2D9HX1ukcZLEMg3AqycIHt4hNT3L3v/4fbL1dYeHceabfu0JkeIj9+w958ucvaGfzBCMRFhcWGEukefXF16weHHD+b3/H5LWrpBcXqL9ZxSiXKe5s8/KPf+LqcBptJM3Ypx9SL5VoV6vIXIGtH+8Sm5rANTbC2NVL1Da3aeUKbD9+yuz4CCIUQOqK00br5cXOkAI6QKXG0d1HbPxwl2axjBYMMHztMkPXr0Glyqvf/5nXP/yI7XahtDuIehNLUVH9PvTRDKMf3aRWqbCy/BbPcIahyxeJXT4HXh+4VBTTglKZg0dP2Xu7ytjcPKm5eag3ybrcJEeGaLkUjpbfoLlcxMZHaUuL4WSC9e1tsrk8k7OzrK6v0DjM4hsfJzo9SXJuhmypjN0w8GgqRrlMp1bDxyAO3Q2/9kmCas8ATdPs5389b9j7mTKY1v27f/fv/qMyIMH7LimFPlm1S0YV0mFCcJTn4M598ktvsJodKppK6sZVFv7VX6NHw7T2Dtn+/kdqG1uoloXw6KTGRlH9fofZqij9LoJ0u1DCQXxjI4RmZ4jMTpPOpKjs7VHMF0idWWDi0/cRbhdrdx8Qisc4/6tP8MejLH97mzff/UTE4yUSDqO63YTCQfbfvGXpxzskEglGz5/Dm0zicXvoHGbJbm0jG00qxSLecJjoxARqPIZHd1Pa3qFdKNAolVAVQXRoCJeuUd7axq5WabSaxEaGcKdTjjewewJIzrVBSmh1qD1+wf3/8g/Y9Qap2UlGr11k8upFVCS7dx7x8qtviMZinHv/JrM3b1LYO2B/Z5toKon0uFGDAQIeH5svljh4u4JimXgiYfSQHzQNK1/k8O4DVr74hp1Hz6iWKgzNzSKQ5PJ5ps+ewfDovH7ylMnZWdSAj93NDUbm50EIqgeHDI2McrCxSXn/gFAigTsWQ1bqtA+yqJaJaVsoHg+jly7gTsS7Ooz0ham6bOTjFWGnBtpO5IBIR62ia8WtVgv13/7bf/sfe+7yNJv1Z1RqRfSlc4Vl01rd4M1fvsI4zNM2LVyjQ0z96mMiC7OgCNqFIpW1TSo7uwRUhU6tyt7KCp1cHlpt3IEQqst1fNO6UhFSU7qLXjS2Hj6mWiozfvMqscV5SuubHK5ucPbWdaJT4xw8fsrWkxdoNsxdusDo9CStZp385ha1vUPcbhdTF8+TmV+gtLJK4/CQRDqFz+tzBM2rVUqHWUKxGIGRIbzpFC5Fo7y3j6hWKWxvU8tmiaUSuHQXxbVN9lbW0H1ekgvzCLeGYkk6RzmMXA5Ra6BUapSfvmDj9h2q+SLh8VFmP77JyLlFCrt77D19ydbzJXx+H2dv3WR0doZWvsTjP/+FZqvD6OIiwudBKKCHI9BsUt/epb67z/7WJsnRMXS/j+qrt2z8cAe96cyhWLpKZnoczefh9b37YBjEx0Yo5fKER4cJDQ+TX99AQyGou9l++RyvriM6JntvV3G5XYTHxrGqNVo7+8hWE02FWr2BK5UgNjON7XY5Q19OHHYYMz3muuguYewWrD+zowGic68IUf/Tf/pP//G0nOppNnSfTj3Yz2t3aK9tcPTkOc1CiYZtMXL9ClO//hQ96lDRXT4vbqFwsLmJZRhoQqW0t8fuq9eUN7eRtQoe06Sdy2OUqwhpofm8ThVVrVO8/4it+w/x+LzM3LyOYpm8/uIrOsUiE+Pj5N6usf7gCV4UwtEowVCIRqWKYpiUjo5wayo+vx9/IEA7l+fRP/6B19/9iN/tZvzieVxeN1a7TfXwEMMwCGfSuNJJfMkELsOguLlNJ3tEIZslOjxMbHKS7Moq2c1tOoZJ5twinlgMq1Bk+fMv2PnxLp2tbUqv37L24BH1Wp2J82eY//AmwXiM3RevePz1bWr1GuOzs8yfPU/A62f3xSuef/UtR7v7xGenGTp3BsXrobu+gEgyhdposvHoMbvrGyQzacKxGBs/3iO/sU0glWTiwgVMl4Yr4Cc84Vyb3TdvmTp/Dn8wQKvTITo8jCjX2Hn1hpjXy+HmFkf5HItnz1ErlchubJFJpXBLQXbpNZ1KBdsw6XQMTE1n+OxZlHDoGAwUvTW68piefGqg7PRGrUGTPAFED8ou/P/idPXVvcol9n68T2trB0yblltn/P33yFy91KfQo2m4PW784RCBTAZPLIJl2Vj1OlbFUYbfe/6S3Wcv2Xr6gtJhlsTQEFowSOX5Sx7+l/8OxTLRdJrU8DDZV6/Zf/ocs1qnfOBQ50WrjUsohEIhKqUS21tbdCwDVdPx+bwoQlA+OCK/vomRzdE5KnCwtYMWCzN26Tz1eo3azj7tSgXV7SY6OowSDRFMJqjs7VFY20Q22yiaxtCF83gjIZrNFqamE12YJjQ6jLl/wMF3P1J9vUJra5vi9hY+r4+RxXmmb95A2pJ7f/wT+8uruL0+Ln7yIWNXLtMulnj47W1WX7ykWa8RGRlm4eMPCE6NOxiodCTwNJ8z21xcXaOSzxFJp0hOjrG/uo6tqMz/4kMSN9+jWipSKVcYOrOI27bZfrOMrmkMT07w6vUbgh4vId3N+qPH+BSVaDzGUanEzJVLqAE/a/cfUt7dJR4JUjnKUS8U8CjOPHXLtolNTeJJp50BsW6rrd/yEMeKZQzqv/TYCqcWd/eAaPXf//t//x8H4/W7QvDPtiXaEnN7l707D/A0O+huL1Y4wMyHN3EFAix/9z2tfJFgwEfpMIs7FiV99RLh+VkiI0MoLpeTw3QszEYLo1CheXjEwdYOqtdLamaawsPHbP5wF49QiQ1laOWL7Lx8hWy3u2sfIB5PoCNoNxsU8nkanQ6eRIT4xCiZ0VE6jSam0aFlmKBraF4fAoV2x6Rsthm+eplgMkF5axezUqVZraC6XYSHhyASxud209g/pJErUCwV8WcyDH/0Aa5oFD0cJD49jTcUxNzc4uD+YzyGBZ0OSElyYoqhmRnq9TrPv/ia3N4uo7OzzN+6RnxmhvLKCs+/u018KMPMlQuk52cIphOkJ8YdUXehILphTAhweb10KmUAYuk0sbERvMEgIugncfUiaiIGnTa53R2Sw0P44nEqu/vktrYYmZ7GtGysQhG/orL2+DFGs8XImUVKtTqhTJrwyBDlnV1293aIZTKEE3FqxRK65eR5TbNNcGSY4NREd45Y9tftigFdIHEcLvsK/NKWP5ui6xtgj47V43OdVkM/ns3F2eeLRGl3qC8ts/79T7g6JiaC4PQEkxfOsvfkGbf/H/9PrHyBACpPvrlNrd1maHEONR7FOzJMfGaS6PQ0icV5wmNjSE1HuDyogRDe4TRDU+MUn70ku7ZJenKc5OgwG6/f0Gk0CQylcUdjjE5PEQwEqOQLWKZBwzbxDWWY++wXjFx/D4wO+Y1tDCHwTowy9atfkLx4Bt/YCP6hFDIaInl+kfDcLKJeZ2/pDY1slka1SmRkGE8mhTuZRDMtSnsHdFotmsJm7Po1IgtzJEaG8Hu9VJ6+ZPnPX7H/eplINIqmaRitFqoiyO7ssPX6Da12i8lLF1j44BaeUJjK6xWe/vlzapUyM7euk/nVJ0RmJlEqFd58/xP7z1/SyRfRpcDldYNLB7cL3aXhQVDc2UdqKqmxEVq2hT8eQ/V6cQcCNItFijvbJMfGEIbBzvMlUuNjJEZGqe/sUlpe4XB9A+lxM3HjGqV8kYOdPdJTE7gjMdR4lNGrVwhNT2HVHVpcp1bDsDqooQCJ+XlEwGnNHat3DITbAailX5DIn1Py+62406OYg2s4B8OxPBbyhY5B4yBL6SCLUN2IaJThTAqrY7D83Q/Y2TxaNMHWnXt0iiWi589gFoq0Dg4JphJoqQThdKq/UjXzXpZ69ggbCIxmUHWNQq2Okk4ycuMaHq8fsbyMLxpi8pOPiIRi1NbWWb1/n3o2hy8YYHhijOjMFLHJMUpra2zcuUuzVCQ2OsL49at4L5yHRstJpKVNwzAITIyDz0Pi6iWSr96y/+gJza1dDu8/ITI+DvEI8etXGd4/4ODtCp5gALPTQrNMOodHVFbWeHv3PqWDLKnFeRLDw3RyeRrVCmatRsuSuCIhFm7dIH3uHOWdXVbv3qOwtonRaOAdSqJoKmb2iNruLm9/uMPKk5e4fD42X77Gc/sH5j68xdRHt9DSCUKzM8hckVff/kC9WmYklWbnzVuq1RoLn36MGgyQmpzkm//7/040FCEzNkY0Fmd3c4vzIyM0222q+QKKpuOJxPFNjhPIHvHs6+9I7C0y+/5NkuIaqt8Hikp4Zobd+4/xCxWrWqS8s4uRPcKdiCJ0rS9m0FsDMbisyFl0ZPcXKfZHN04NuGmnlYsGRb5PDBf3esGmhdoxMWt1rGYLNRHCN5ImMTuFqSrUSmXS6QypWIL9/SOEWycWi9E8yvHDf/0HRmcnmb7xHv6xUXC7we3CMzOKZ6q7OUhxgNXg5DjuoSTx69cor21guVz4J8aIvHcVylVe/vMfqO3u4LZtjLbD4hamwd533/H6pzvIfAlVaJBJ0TjIsrf5J0qFPKrHRWxygtBwGuPgED0Uwp1KsPCLj6DVIr+xwdoPd9DjESZ/8wv0TJLZ335Gamoc2zDxtNqU7j5g+fYP1A9zdGybmetXmb55HZeElT99Tse2Cao6mmITHxoiPT9HK5tn6atvqe8fomoK3kyKibNn8Ks6D/73/0z58BCj1SE1Ocn0hXM0a1VWHz7h0X/7RxrlCgt/9Qs84yNoPj/CtCivb1Jb30Qr1zg4esnslctoPi/ecAS/18veyhrJW2mCiQSH23sopkX6zDzVYgnFtAhPT0HAT+rMIqPFAu5kDMKBEziwKxLBF03gbzQwWg0qhRLNbBb34gxCqn0hAIeqdbxkUtWcWfNeddxbxysHhNn7c8E/C7XvGC5mYJOO6Oo6F4+OkJaFIW28yRi+iTEURSGRySBrdSLxOFt7+/jSSbzDw3QKBdprW6y9WSH/+AWZhTm0aJj02UVc0Qi4VVTNBaqG5vUy+6tPsKWF0myz/+QpRrvN+Nkz6MkErUoVLRbGl05CuQqWhag3yL5exrZMZKmCYlrYtulgerUG+0c5pK6iedwUlpbRPG5sRcM/lGTm5nvEpsaZ/ewTXLc1Np4vsfT5V/jSSTLX30NPpQjmCuRfLLH65i3Fg0OalQqqz8vUhXNMffwhqq6z991tDvd30YNBOkC1XEHd2WX3mx/Y297BaLcZOrNIenIYo91Gtky2nr6gUSzjDoZJnBtl/P0bJM8sYuXySE1j/dEzXn15G6kILv8v/wPueJz4UIb9oyNWHjzCm0xSqdc5XF1lJBHFlYoz/941lh89plUpMXbhLIdfHLDy5jXTn37EbDJJZHffyXOjMYIBPx+MDuPy+5A48iECgYpAuHSES8OomPh8fmpGm8r+IZGOhXA5nu0Ywutq8dgWtulIfOiadgKCcfTC7XfvCx6Mze/S/u1rBAsF2zLRdA2vz0e5kMffdetISSgeQw8FcPncWIozDO6JRcjt7+IJBvEaJq1sjvWjHJYi2H/wCFcoiHDp6B4vbSHwphPMffYrfEMZ2juv2H3+klatQnN3F2t9C08kxPm/+oz25g7b3/xAcW2Dw+1dLK+LsYU5NE0lt7qOYoFsdzDrDeLJJImzC9TNDs1ihfJBlmYpS25zk6PVNS799jeMXLxAO1dgZ3UdAbSyWdjZ4/D1MvkXSxwsvaFWKuOPhIlOjJI+t8jwhXNYzSYHj5+wvbKCOxYlGksQ0HRYWqKws8v+zh6eVIKpWzfJXDqP16VRePSMpw/vYfu8pM8ukDh3htjCPK5kDHQN1eti+KMbqD4v22/eUj44pH6YxZ9MMbywQHVjk1KpxPTMNMPxCAcbmwydO4sSCTN04QK7b99ysLPD5LWrJMdG2N3dZdiyiVw4S3hhBqGo2KrAFjout6srOGo5Xqw77aj53BgqGB0DjxBY7Q7ZrR1G6g3UoB9FnFrz1eWMyp+tcTsl9zfQXNNOr1PvUWj+xQV1to0wHVlet6bQLDbYerbE1PMlYmOjtKo1DKON9Afwetz9ijcxN8v83/4VVs6ZV+0USljVKtX1LYxOByEUVM1F0zJp+dzo0Rhn/+o35DZ3MCoVlFaTx7//A/q9+8x++jHTn3xIYGSYw+cvabxs4fG4CaRGiS7M48kecri5jdvvxbBtqsUimUya8c8+hZAfWWtS3Nnj4MUryuvrVI6OeP3V99iNNsFoiPi5RRS/m1QyQfbBY158/Q1+S+J3uYjMzxGbGCM+M01wfJjcyjrrjx6DLQlFYmSmpokOZahsbNN59Yq6ZREYGWL8w5uM/epTtHSG8rc/8OSbHxzmytl5Jn75CcGFGdA0Z07askFTiF65QGR8jNDT5xQPDukU8vgtm0DAz8j8PO1mk/T4KFYswsbyMuZRAVcggB4IkokmyC6vkBofZ/rcGR48eEh+dw//5BjC7e6PW/SUvaSQ/XVqVle5S4tECI+OoBhgFfLYxQKKaToywbaNrQzAcnJgjlwoSMXuy3n08r/+5vZBMkK/V8fJuU+hOotS+tNMODowGB06lSqlgyzNSh2XplOtVHn1/U9cvXUdUW9Qz+UpGjZ2s4Vdr0OrhWc4w/S/+h2y3qB+mKWzd0D+zTLZlVWa+TydVhtsFbdlYbtU2u02dEza5YqztyOVxON2sbe2xuPcET6Pm6GLF8ClY6sKLVVlaGqC2JXLrH35FbbHy/CFi+gCnv50h72NdUb3donOfwSKIDE1RnhxjtKrNxw+XyK/vcvbpVeMX1xk6uMb6MEgWPDm4SNqhSK+dJrEzAzpC2cJJpPYzRZ7j5+zevc+jXqV0YVFxs6cITg8RGFji5XnL1DDYRLpJOM3r5G+egktk4ZGh/ruPpW9fVSvh8zZswTn5x0Zt45BaX2LWrVCdDiDP51CJOOM3LzO8P4h1bUNHn15m5A/yPiFc6w9fsLG0+fM/+Jj3Kbk7e0fOCMEom1gHGTZfPgYXdW4/NkvcEejFPJ5RlotVD0wsATn1OB4z4tJG4JB4tNTVPZztDoGwjRRpY0wHEEBoSqAhS1Fn4pli95GVUfI3rLtrpbk8aoOW0hU1F4IPh4uUtTTC2uO3aYj0epQszv1Bp16E01zYXoVhqanGVlcoN1sYTUbaIZJ+SiHXa+RX3rN2h/+xND7N/DOTCHCQQLhIExNEjm3yHA2R6OYp7h/SKfexmi1aQqL0QvnwTRolSrYLg+j168zPDaK8vvfs3+QZe3r2wSEQmpilKORDPtHOXyZNEQiVFsdbH+AyI1rxJJJ1rY2yS4vs/Snz7mUiBM4s4CtqWhDSZLxMKG5KdI7B2R3d/CmE6QuXwS/j8rqBt7JcYbTSUKxOKPnzuJJJig8ecHqT3exLYtgNEJkYoTRs4v4Q0G27z1k5dkL3IEAEzfeI7g4Q2h6Crwux7OVy9SzWdrtJt5wAMXvgXYLqs7+4Df/9CfevnnDld/9mnN//VtQwNw7ZP/He7z4+lvyxQJnP/2ImYkxrHsP2Xz6GI8/QCAUZOXtMi/2D3C1TfZfvYZanUqphOn1cubTj7A0DVtVUXrrwRgQEh2sThWc7emKisvjo5jLU8vl8Lh0WuUytaNDAqk4Zndre0+g3uzOyPQibE+4oF+QyB5mfUyt1mzb6m7JEf0dvXC8L7YXjm3b2W7uMSxoG+hC4A748UQjTH5wi8lffcLed9/RqjfwqE5Y9ygKimmz8+M99tc2GL9+jdH3byBCfqcvGA3jT8bxA8mO4Qg6GgYWNmooiNzZp7C3SyiVIDU3i1BVOgZEfUHqWzvc/6d/5qO//9fM3HyP/Tt3MXUNTAvLtBwCZSoBE2OM3XoPs1qltrXNo//6D1z8n/8nImfnMKREuDTc48MkM2mSk2M0tneorm3iy6QJjY9y5f/8P2C1Wrh0Hesgx84X3/Diux8wjQ4L168RnRwjNjmBWa/x6I9/Jr+5g8fvJxCPkj6zgDY/7Vzsjklnc5udH++xvrxMeGKU0fPnCLncHHzzHeX9fRr5IqXlVZRCkebmNpTKYJm8+fwrVr+/gzAtxs8sMHHtKiKdwu3z0qnU2Fpe4f2//ztalsnqvfvUd/fQLYkvHseTTiPiUSKZdDe3cwoFdXBHSRfx6FenXUk2VXEq147RQZoWyUSKjuqitLuHf2oKJRxwqGeW3d1NfLwR1bKPj+fsCpR9vuCJRTVWt5IF8GjOCilp91DugTVbikAXGphtWsU8dqeDomkIvw+SMfB7abZamFISSMQxmk2sRgNF1fCpboobOzxeXefgxQsCw8O4w0GSC/MEhzLgcYPXDbob8HQ3KFnUdvcwSmWiwQguVeP1XWeOIh6NoRststkca8tvmb58iTm3TrgHnh4cogmB5nZB2MfIh7cobuxQXV2ntr7Jzr0HRKbH0Dzu7tLoDhzm2bv3kOW7d2m3O0Rmppj/7JdEz8yjGh1n3POPX7D7/AW628PYxfMMXT5HIJWkunPA888/J7e6STyVID09TmZhgaM3y/jKZcLpBI1CgaWvvmV/6Q2xoTRTF86TmpujXSzx+P/4J2SzhT8cZmRkmMzoMIlAgMK9h1j1JtXNbVLDQwyfWSB6dp7g3CzU6iiAy+fB5fciknGGUgmErpN7u4JiSdo+DyPXrqAlEw4HE9mfW5Y9IfRu2LV6GtyDVHoUVL8Hd8BHCxur3aZWKGBv7ZBpNVFj4e7hHIH1QQNUVc3Z4t6HavjZPhEnBCsawrKwpcSUjrxGfxNm9+R6WsGqAGyT4vYOhWwWr6pjYiM8bpCSdquFdLnIzM9R2N/nqFzBk04Sn5hAy+fYfPGS9R/uOYbr0kmOjhJMJtHiYUbOn3F0WZJJRDAA7Q4Hb5ZpH+Ro1gzWf7jL/v4ukdlJRhbmsUslqg+fsL26QeLSRS7+7V+jBwK0nr2mcZRHCEm7XiMowD02xvgvP+FttUZjZ4/88grVzW2C8zPQNmm8XmX1m28ovFrGqtRwCUGu5LS9rmZSqIbB0tffsv/0OdFEnPGrl5j56H1UXWX77gOWf7hHu1ZjdGICTzREIp2iur3Nwzt3UKVkamEe27ao5/OkJsZY/PUvCI9P0Hi7wsN//Cc8CNJnFoiMjBJPpbDKZfbfrrB2/zGhSARPwE/60nmHR1hvcPT9jzQ2tqlsbhONx4hm0iiJGHomxcRwhvD8PKZpoIWDRGYnEV4PEru/pbPPSBlsMgjRdzjO+lxn97ArHMIfjVHWdCzTpNmoo5Yq0J0fsk4toOntaOkPKQ3um1PECdpfNwcU/WFjVVH7ZXRv6r1XuQgpsYXiLH+p1elU6qgeL26XB18oBDY0ylWHpRsOYRTy2OEA47/8mPT5s7SrVQJzM2RXVjHKFdrlMq1cnsbeIW3bYvfhYwLpFLH5GUauXCY8NYGuqKhCoVGtsbWzw8jFRSYvXcDn8rD+4x1sTSOQTiH8PvRwGJAYRhtd07CMJrVcjoRpIT0uktevQrvD03/+E0anTfUoS3BoiPqbVV59/gX7r94wHIvjC4dp5Euo7Ta13QOa1Rr+gB8tGWPkxjWGJkaZvnwZo9ni+R/+xMqTpwS8Ps5ef49kJs3u5gavnj1D9/mJRKJU9w/YfvyEaCLJ5OwM8bOLBNIZWhtbvPjLV1SPcszfuM7MjesoikqnUGD71Rt2X79BmgYV0yASChDLZDDzjpfeuv8Qj2WjGLazG67ddhJ7XUEko0SDfsesXI4QptXdz4ft4HyO8q16wnCUgZarqijHvS9VxVBx5FFcLpRWm069gewtquktCOpS8vtz0T1Bo65DO8ErHeyEqIpAVbST+2u7CaTo7YUYWCOGZaFYElVKLNPCHwjgDQXAtGiUKrRbbaSqIt1uPKkEwYUZxOQIHhtmZqaYrNZp7u3SyuYcXO0gi9pq0yyXqbxaYevlG472s3zyf/lfCadSaH4vXn+Q4asXGL9+hU6jztL3P7C9vEp6bpa5X36EL5Xk4MEj/NEQ/miY4ZlJ1p89o3Z42IU0QHpdJD++yVlhc7D0Gr8Fpbv3efLlN7hMi7MXL5BMJtBtyeu7DykcZvGPZBy1rkiIC3/3O9yGhW7b5F+t8OgPf6SWPSIzPMr44jwjkxOU9/bZXFnDFQkxcv4ckUSS4ptltu89wGx38KoadrnK5je32XmzTDVfYGRuhuTEhDM0v7vLyv2HVA6yuPx+gpEQmsdNOBii9naV3bVV8hvb+G1waxr1ep1cpYI1PNTXdrZsE0U7WVg40mpdxXtpdaWBT63j6IZPuysaanf3Aqp+H+5QCN3rctg5tolpGEjTdIy1N/9hd9kuiqMae7zr7edSHYNYs6aIHpG8W4orx81l2+rJtcpuKO6qzVsmoivPZZqWM4TSalLM5rDaBprLjScQxK7XnKeg1nA0XLweNJ+bYDpG0LIIXTpP8ygH5Sq512/YfbpEs1BwDN4wnArL6yExM8741ctkV9ZY//4navkCo/OzzH72C9yJKIf3HvLTX/7C+LlFrv79v2b88gV2l5ep7x864wCZpPNtvR6Grl0h7PFhV6os/XQHu1pn9OJ5RqanKW7vsvlqGUtRCI2OMHr+HP5QCIQgODoMFuR/uMuPv/9n2oUCE5cusHD1Cl5VJ7uxwdKPd+ioguSZBYY+/Qg9kcCdSlAtlTl8+oKV+w9pWiZNRSEzPUn04nkyI6O4hcKLP39Bo1RyhsonxkhNTRIKBMltblLOHrG3tolpmyTTQyTCEcpH+xQLORSh4HLpfaElYVrUdvYwKjW8gQDeTAoR8Dk4H/aJVtix8ukAOCyP5XgVRYDHRXgkQ8Gt06k1HG+mO2KhCIEqhbNkhy5+3I2m9KcsZZ+kOtjm632+JoTWXQ3V3c8hj9eDdpUA+x4Ry8Y2TSzTRAqBqjnrsqRlIVFoCYnu94KmUW808bm96M0Gb/74Z9xSEJ8axzcyjBqPOlzBTBJ3Ogkdg8DUOPHz59nZ2sQXi4Lbw8HaBo1iES+C4ouXrD18hMe2sRDEvAH0RovNv3zN3vMl9FyZwstl2h/kCQ4PE4pEqRwcUN3dJZpJOt+mXsfYPyC/vsnu22VQBHO3bjI8NUFxdZPlO46n8qUSTJ2ZY/L6NZpbOxzubjM0O43uD3J0mMM7MszUretMXLlIyO3l6X/+7+y/WELxe8lcvcTMZ5+ip5NIAe75aUY//ZBWtcbRq7egqQydXWDukw8IDg9Rf73Cmx9/orx/gCcSJj4xzuT1q0THx8k/WyKfL9Fut4mNDJEcHycWClHPHlJvVfEn4lSyR6i62p9EU4Rg/+kLXn1zm2gwxPTVKyTPn8E9lELVdYSqYJp2d9Bc9MkDx6OUYqDH64iCC7cLSyg0mi2kON4Lgy0xbROhaSjyeN1rf/vmAK/gNOG5v3J3cPJNDmw+V7vrVk3bRIqehK8jSmQYBkIV+IN+dJfusGTCYSbev45SqSKCAY6KRWLxOEJR2Xn4mPzSMr5ICF86yfjlS2QW5vEm4uB1oQZDaCNpoiMZIlfOORJltTrCtlENk60XS5iqSiAYwO/RsKo1sqtvOdzcoF6pgqoQSyVptlts3n3I+NQkqktDGm0apQpR00ZWquSfP2ftwSMKe/ukMhnO3LiONxJl+8FDNu4/RlgmkZEMIxfOER4bofDiJUs/3qFSLrM/PsrUe1cZmZ1i+NJ5gsNJhN9P58lL9ldWMTsGI7fe4/z/+G/QR1KY0saSEt2tE750kaFKDdPvx+N2M3n1EqGZKYpvVli+d5fizi7RdJLMwgLh4QyR0RG2njznzf1HjMzNsHDpPG6PFxcKm48fc7ixTjSdIhEIcdTu0Ol0sBpNp4pVBMFgkKCikXvxiuLyKqn5WRIz08QmxwhOjqPGw6B6kd35DNnH72SfPKp2JZFRVfRoFF8sTvUohxDdvTGm2Z0HUZz394aDB5YLnV5kc7xOd0Ck/ERM7oGR8qTGh92jaGldBXyvB38khK6rdDotzE4HAl4u/e3vEKaBzBYptluEPB60RJLhmVnam7tYuSLZjS2Kr1fYm5wknEnR9riYvH6F1NXL4Pdj6Zojaaa5CATCaKqGtG2S09OMTU9T3d2lup+lky9iIbBUlcSZeUYWF9l4/oyNB4+ob27iC/rwhoawLBNyBfbu3+ftDz+haxqXP/qA6Mw0biFY+eEntp+9IOj344mEGb9wnlAqzeaDh7z+/nvUdoeJoSGOVtZ5U6tx9X/9nwl1tQ4xbYxWG28wgO31kjp/Bj2dwLRtrK7gkwQIehn65APCE+PoEtweL+XXq6zcve9sG82kiJ07S+byRag12Hn0gpXHjwhGIgyfP0Pw3Bnqb1d58ac/s7O2SmAow9yliwR0N7lGg3KjRrvZwNVdmZY6fw672eLw4RMKq1scvnhNYXUNLeAnOj/LwmefEJyfBp8PKdRjrh3Hmo99BrMQBDJp0uOj1FZXEKaB2h3CQkgUoTo7YWQvxA/wAwfC/HF3jWNPeXpVlwBnxdSANkxPcMbGWUCjhkMMn11kbWOTZrmKVa3R6XRAFXjSCQSCtqYz/ckHxNNpiIQY+eAmgUiE8vo62bcrtHJFahubFF4u0ZY2+aVXLBwcMnLjBu6xYYf4Krp7cqQgmEww+8EtNL+Pg+U3dFodpGGieTxofh++6UnCv/2M8WSc3NF/Zf8ox9zMe0x/+D6WZZL9/g5vb/8AukLq3BmSF85hVqos3/6B/ZV1RmbnSC4s4PV6kfU6q9//yOqzFwS8AbwhHdMwCak6Zq3J5g8/Mh8N4xofw9Fib6G6PYTSQULJOOCkCNJyLnh/BavHTSCRoLOzz8Hj57x++BjV72Hus1/S0VVGFhYwcyWeffFHjEqZ+PAQk1cuEk4mOPjme958/yPVSonRS+cZvnWd6KVL0GzjW3rJ0WrJSaG6l0xNJxj57FNi87McPH1JZXcfl2FR3N/j6NkSmBYztk388gUs4SRZ0rIQ3ZFJy+7uYu4xWExnuY60LDqtFp1Gw+mU9Hu/TrGqSAc7trtSf6qq9jshQvQKWunIeAwC0erAJLvobelGdhfWiePqxpaOeOHoGLseH5WDQzzS2aaOqmDaplP9J+Nc+evfOLvbFEFofobQ2Agj9QYjaxsUX79l7+VLim9X8TcbdDa3efVPfyK/l+X8v/k7vJOjWJZNuVLC6BjIjklldxej2WRrdQ23z4u0XNiqig00m02k0SJ67RLzhSKPvr9NJxZGGx2mcOc+T/70OR6Xm9TFs4x98D7CrfPk//WfKb5eYTgzxOTsLK7RMXKvXrNy5x5Wp8Pw3DRj01OYpQq7b5YRrSa6ZbN77wHC42HhX/0tWjyKy+dFuDRcLhfSNB2BNkm/1aUCWCbsH7H9413W7jygcpTHFQxw/hfvk/nofdAUZLPD5u07HB0dMTExwtTVy/jiCXaeveDJd9/j0dzM3rzOxM1reCcmMfIFRLFMs1YnkkrhDvidla9dw8Dnxbswy8RQmk65iktC4cUrXv7pc7aevkSLhoktzDpCAvkCZrWKL55ACwexTROh693IaFPNF9l6u4LdagI27UYdo93C01tOpDgYomXZKANAs03XKHsb7hUB9jsIqYO7GwbbMYO7eHsXFaCUz1Mq5tEUFWmZtIslMGV326KNISSqx9UlJEqkUCDoR4QCRDMpopcvkl65yubt79l/+pT6/gFKrcHhi1ck5meZGhlC8bqIjwyRC/qpZnPsP3mOZRoIy2L8/ZsEYjFePXhIrVDClc+z8fQZ4x9cZ/gXHyBGkkRTCXC7KW7vUtjeZnThDOPvXcUzPYHcPcTTsfGaErXdYf3+I+TTlxzu7WM0mwzNTTFz8zqeaITig8comkIgFCK7s4dXWhw+ecHQ7Byxm9fwJeJoHg/1fJHtB0+YiEbxT09iK84iGjoG1vYua19/y8pP91Etm+GZKSavXSEyPU57bw9b0/G4vfjjUdJn50iODOP2+1h/9Jjd9XXSkxNMnD9HfH4WLJP8vQfsvlgioGp4LRt3LILL7wfTorS5hVGpEc9k0KJhlFAATzgIQDwUYLbVpPn511T3s7SqdbxeH4evl6msbzA1N4srGASXG3cihgiFnNntZtPZfNAxAYllmtiGeVzZclxN91cwHK9X6HdenCGrXn3RY8OoDnW6J52g63qXDSEda+16QwbaLPWyg/cFVR3bsMi+XSV56SJK0Idhmd0S20YKR+jcQnZXu3aXnXhd+C+c4exwhsylC+w+ekQjW6DSMam3mlimgepxExwbwfK6EfUW2Dateg3d60UfHSby4fukdJX242doXi+VchG71UYPBBm9csn50pUamDa6ptORJopLdzy6ZePSXfjdHioHWaqb2/iG0kRHh4kMD5GYmUEaJk//2z+QX13Dp+sYikq70cYfi2BJ2L73AE84jG94mMzsDJvffM/B7Z/Qo2FmUjHUQAiqVQpPnrL9012yK2sEgkEmLl0idfkinliM+toGT778CsulcuE3v2bkxjUSMxNUXr3h0Te3aVarpBemGbl2jUAqjXmUY+kffk9xZR2fx4MtFHLtBpmb1xC6BjZkX7xi9bvvmV5YYPTKJQLj44hYGHQdEQ2RunWd8PIq9VoNyzBBUfFLQfbtBs8fPsc0DFzhEJHZKYauXiYyPobaaqOAo6WoKmg+P7rHA0JF0GvjiX7+J7si5icMsVvsSMtyijNd7+aA9jFp8PRAUg98FgNgouJ2ER4dwReOYuYKGI0GdrPljGGKkxN0x8I0zjEsKTFtCyG7yGM4SOzme4Smp6gfZWm1OhDwgaqBUPAMpfCPj6JW6oxdOMv2ygrbr96wt7JC6v3rjH50Ey0URFMUokMp1Eqd4ovXWM0mliVxeT3EMmkiUxNYbpVauYyn1qB5eIjodFAVhSag+L1EJseZuPkewVSSwuu3vPrue3I7e4QiYVJTExT3DhFBk+DUOPGhJOvrG7z98msu/Ju/J70wz9bDx9i1MsXtbYxcHqVSp/j0OS//8iX1bBZvJML01auMvH8Ly7ZZ++prim/XaOzt0Wy2eCsUFlxuwmcXsDY2qZkdhs4sMPnhTdzRKJ2NHba++Y7SyiqtQplAOoPuUrA6hoP5ag4jRbdsmrsHvN09ori2RWp+jujiDPGFWQiF0cJBohPDKIdH6LoLmm1cLYNWvkR5bxfVlLQ7Gyw/esLQzi6f/J/+NXanTbvVwuf2EIhGcaXTKC73cRuvix1a3Q2MPRhP2nZ3kG1gq32XFX3sAU+t1Ozviu2NGnffb5omilBBV/HGIri8HoqNBlJTUVWlrxtsi+NN073q50TvUQjsfn1hY6sq6nCK8HCKcHfVq+yJGEaj+EaGyFeX8Z2ZZywaYXXpNZsvXzG9vUP48gXGr17CypewikXefPcDK/cfohsmtqYxfv4cZ9+/xdxvfkGxWHA+8yjP+u2fONjcwu9yow+lGJqZZOy9a7jDETbv3+fFN9/ic3tZeO8qI/PzBONRVr/7kYZtE3/vMqFQgMr9h5RW1vAn4sx8+AFTv/6UwMoKwXAQsXvA5ptV9h4/prKziycaY+T8eTKXL2ObNs9//3te3X/A6OgIUxcv0C6W2NvcZe2b21xKxIlNTTJnmqQXFtDdHna++pajZ69o5XKEEgkCwyP4ggHcpoXaaiBFd6OplITGRpi+cYPazj6VbI7iYRbx9AmL798iPT+PP5MknUzQKpewWy1krcnmq2UiIyMML87RLlXYebOC7LRIpodwx+NUd/ZRdQ2j2cKjqeh+nzOMblnOyrEuUtKrIZwnQrx7g5I8tTF9cDF0z2XK7lYYx6AGtuP0zFJT+9WTpiiotgNSH+sM9hYaWic04pTuUuTeJL0lHVzRFBJdURGdDq1yBaGquKMR0HXCqST7j5+Sy2ZJz08TmZpgZ2eH8tYO4elJ2geHGEcF3v50h8LqOmFboKGhKTq5lXWyZxYY/8UnpFpNNNMkd/cR63cfoqiCoTMLJGencfl8CAlvv/6W59/dxhPwkzmzyPSN6+iaxuq3t9lcX8M7OkJgfgbLMFD8Ptp7B2y+Xmbsg1uM/PpTEhfOYa6usXr7R8rr23QqFbzhENO3bjD+wS3sVovl775n7ckzMlMTnPnsV0RmpjHXNmn85Qvaewesf32bsY9vMfrxB1jlGrl7D9i5c59arkBkdIjI4gLxhTlc0RilB08QuRxSczoQeHSSly8QmZykvrVN/vVbSjt7VI+OWL3zgOzKBkNTo0S9HuxKDbtQolOpY9TrTFy/QuLyBeqHhyj3H1EslRi5egkRj+OKRdC9PmoHR2iNJr5uridtG3oDSN3OGLbd3Xr1cwVVEEjl1LbMQRxw0FB6C6p7W3ht2VvlDYpLR1EFiiZQFUmrUMCs1dDjYSdcK/J4p/DgeqZTOiGiizcqSESrhbV9wPMvv0a43Vz5H/8ONRBAdWnUSmW2XiyRXphl8V/9Ne7HT7CadUo/3ePp51/hEirNTpv03CzTc/O8/fEunaM8HaPJwcEhKbeGxxel8NNd7v7T72nUK2TOn2X0/RsE40k2bn/P5tKfqRbL+GMxzv7qU0bPnqV9lOPZP/+JzacvUKJhxi+dwzU6BKbB6Cfvo8djDM3N4vK4wAaP18Py8lt2ny8R1ty4XB5i8zNMXL1Cu1Dg7p8/p1qqMHH9KtMf3CB6vku63dzGQmJUq+zef4Db52bE/yGNvSOW7z+gVqoQm51h8qObhBdm0VNpQOLe2yc6MUZqagqh6c52I11DT8WJJOKE52cxi2Xy6+vkVtZp54rsPnlOVXNWUlTvP8JutmlXyviScUQmQSCdYHFygtzeLoFE3Bno11y43G48Xi+KS0e4nTEL0V1m1AvDiuiuU+2q5SuK0qf8CxyO4WnFNe30Tq+fi06L/jJl2WPEeL34ImHqLg1dCmpHR9SPckQmRvrLBRVV9Gn+J5+E40RVUZxxSqo16m/esv3TAzZ+uod3KEntk/cJh8NER4aJpVLkd3ZoVGukbt0gODFGc+k1j/7wZxrZHInRYdJzM8x9cAuX24/ryXNynT3MoBfV60KoDudva+kNhVqVsfNnuPjbXxMcHePg/iPe3HuIZVtMX71CYn6a1LkzNNa3ePIPv6e4u09wOEPo3ALJyxcQPi/gZuKjW4ykMmimzd7dh1Qtg7GpCVqtFv5AADcqmgLhQJDy6hqvXjyn3qgz/+FNZn/5MYovQHtzm/L2DrVSkaFLF3B3DApvVti5+xC/10dgdAx/JoMnlWLy5jVi58+Azwu2xNg9oFOpOhtB/T5n9LHVRhgGuD3gUhEhP3ooQGY4RfrsWezDPC/+P/8N8yiH1zRZ+eY7FAQtt4vim2X8U2MQCaNEAqRCc04rrt6ifnhIo1jCtCy8LjeWqqJ43CBkn+Jl93eGKH0Bc7W/OPKkLMcJAzwtp9XLBy3bOrbinuz+/7eu9+yOJL3y/H7xhEnvE4kEkPCmgPLetWc32RwORyut3Bt9lNklP4uOdnXWSDPi0HWzfZku7wvee5NAGqTPMHoREYkEqljn9CELBZ9P3Ofe+3eW/QVEJErn8DD5qTmsRhPNsBBNozU1t8qtG53q7obacEFhYj8t1RqVuUXmv/6ewsISEVkmFI9jOFe6L93J6MULPP3xBw6WVwiMj+HLdFN4O0WtXGbg3GliQwN0njuNLASrDx+ysbWON53i1O2rJCZGMPcLSNU6kXicq7/9Db1nzhAMhVm6c5+p737E6/UyfvsGmdvXkVWZ7WfPWfjhDvntXSL9vWRuXqfr5jW0nrTNJDFMVEuisJtl/uETisUiciJiR6heucymbrL7ZhKvkMlvbLC5uoon5OfcR7fpuXkDJMHyT3fZfDtFs9lg4tZNWwaws0dtdZOVx295W61x6X/994x/8hFWNIy3M4nppJorwMHCMi9+uoPm99EX8oEEu1OzZKdniSZiJEcG8HamweezJ+COOLIlkUx3sbO9S6NUwqxVMAwLvSoz8+MdJFUl0NuDiATxpzpQYjHMapnS1haHBwfIzSZNy0ANBVHDISwhoTebCKG0oFzJuUENy2gLszbegeZOCNNNx15LPoq9lwHzCCFxadW27ZVCNNOL7PFi1OyQwdL+PuGmbueduQ6qzrAh2jIjjr64BYUy9Zl5Fr7+lsO5JcxG3dZkTIzhi4btdwsG8XalkXWTjSfPiQwOED47jgiHCQ/103nhLB29vRzuHTD74102F5aI9HQx8tEtum5cRd/e5sV/+r8xKnUGr11h8IvPwONh/r//gad//gvpZILhq1fIfPwBlqIw99e/MvPDXSQsouOjZG7doOfWdZREzO519Ab60hrLP9xl8d5DFFUh2p1G60nh6e1BjSfQolF002T35Wuqq6uokRAjly6QOnOWys4ei48esz43h8fjJd3fh8/no7awyM6T5+S2d/BLMttTs8w8esL5/+N/R+npxLDAsLBvDMPEKBSolMv0nJkg3NsDhsHO1AyzX3+Dx4L4QIaxD24RHzuFCPps2WyhQK2Yp2YZxHp78NUT5PYPCGoehMfL3Nc/Usjn8aU7GP3yM/puXW+p4ALhIJV8HlNRCHd2Ivt9R4NH24DhZg3Lkjh287VkvScJqUcJ5aLN99eWJp/MeLBLogWKwAwGqCFQdItGoUBxa5uuWg3JE7DjHXBsuywb0jGdvaIkWciGCYVDCo9fsPTDXfam5mwIKRklMjJI56Vz+JJxu9qoClbIj+bxsDe/yNaL14RPjZA8M46pN1HrOks/P2bx+Qsa1Rqd/f02tnzhPPXlVZZ+uMPu42fUq3VUj5f46XFk02Qvv0+ot5vxC5eJxqJknz5na36BtZlp5FCAgSuX6L5+ieDwIFIoaAf01JtUp2eY++Z7dmcWULwanWOjJE6NEh/qx6xUyFcqRPq7GfrycyRhkZ+axag10QtFsq9eMz87x0GhwOkPbpMcGSLoD9BY3+LN11+TXVknEo4QynTTLBXfSSyXsJARUCqRW1klEo8yePkCSjiE1dSJdnUycO4sta0tDpZWeLC8Skd/P10DfXh9Ppq5Q1anZxDRMJlf/IJ6qUT91Wu6hwYQAR+Lj5/DfpbC6hpbryfpHhxEFRIBr49gOESlfIji82BqinOVmk5hs96bkt7uuutKfk9uXBQ3mNowDBtSa7fjbU8vd2E6y56Fvd1dJAf62dvN0jw4wFxZxSgUkSOBlnewhWNerev2AbMkZN2kubrO6k93WfnhHrXdfVR/kNBgH+HTY/R9dJPg4ACGZFdSy7SIjQySmRjn7bc/UFxexTjIIXenSV++yMpfvmPq4WNEUyd9api+8+eI9/aw9/wlKw8fk1/dIKh48PkUyovLbP50n67rVzh18zryB7cJWjLTf/4rs0+foQZ9dIwNk758kd5b1xGJuN0m6AbWwT6HM/NM/vEvHKxtku7vJTDYz8DtW2jRGMWVZZ7+dAdfXw+X/vHX+M+eZtirsSwUCtMLbExOoYWDeH1+zn1wm94Pb4Esk3vyjLWHj8jvZPF1pei7cYNoLMbs02eUqjWalSqKaWFT9iQwDMorq2zMzuHt7EBLJOwoC0Ulc+USvWOjNHZ2WX34mLl7D9l9/pb9N9OoqkI4FMKSJVLnzhC6cZX6i1cQj9D1wQ2krjTBoUH2Xr9ld2UZPBp6tUIxl6eUL2ABnkAQTziEJxRwZgLJzo2WRMu295ils/SuKfnxW9DpAdtLY/tErOs6jUYDn8+HgWnv6Cxn9RIJkhzq43BuBq/XR7NSobZ/QLC3G1ly0A/bSxVZyKiAqDdprq6z8NXXrN65j5kvo4XDRMZPMfirzwifHUeLhWligiVaGKIIBem7epmNN5OUNrfILyyQSHWAx4McCUA8QjyRYOyzjwj4/az+/IjJH+6ieLzEMj10pDup5nKsT82w8fAxzUadng9u4RkcYOfeA+YmJ0GV6bt6mf7PPyYyNgI+r/0bbOroa5us3b3H+uPnFDa3SXZ3oSXjdF04j5ZKkX/5hlfffEuhdEjvhbNowaBNzhgeIvPRbajWae7uoVdqJLoz9F44T3M/x+b9h+zOzFKvlAkPDZC5fZ309asgq8TrNdb+9j3by8sMjQwcwQHlKjtvJqmUSqTOn0UOh47cR6MhiIbwdqfpDQSwFA/69h5mpcLW+jpVJEKjA/TcuAxelXo+h27omBLIfi/Bi2fw9XXjm1+g0WigpFPIpTLlXI5y8RAdCTUUxheJIqmq/QoLm3AgOOEn7nAKBMcjW0/avijtlmwnPaJlWUbTtFYGmuHk9JqShM+jEuzpJpDsQDEM9HKZw9V1gqdGkTxqSy0vANm0sPJ5GqsbrP10n5W7PyNV64hoBP+pYQb/8QuS1y6Dqth9ha4joyMrdtNtyQr+/gxaMsbu20lmf7jLpd4+vAO9pG9ewYqGiYaj+L0eZv/1D6zcf4jUNEmdnqD/0w8Jj42Qn5xmfX0N/eCA+R/vULYszvV04emIERzuR1I1ej/7iMjZ01iyjGRZ6Ht71OaWWXvwiI2XrzHrDeKZbtJnxuk8NYZmSWz86SumHj1BDfo5ffsG/RcvIJkmzd0sSjBIcGKc1OYuS9/9QHZplXq5SigUonBwwNTzZwQiIby9vfR+8gGpSxdtdaAFqeEh0vMLeN1q4ySUV1fW2F1cpKOvl4FzZ22C6dYepirQIhFMRQEBvlNDjEQjtqgrm0VeXqVpGURHBggO9GM26pQPCjS299l89opMKIDUkbDjdWNRLNNAsiRqM4vUcgU7ry+RJNyZRg0GMSxXS2IdW624Rcy2ZcPJjrPeWfW915rDXRiabYTC1ieTbHGLS9+2ZIVAJoOIx6is2j/c+qvXhE+fIjA8gG6aNkKiG3CQZ/Fv37D+8BHmzgFWtYYUjZC+doXum1dIXDpvJyMZJma5jFkskV1bBUkiNTSIkkxCKkHP+TPszcySm19m59krMok4SiRC742r0DTZu/+AlRev0Zo6IhAiPtBP5Mw4JGNEfV6GV1dY+tu3SMUqufkFqpvbBLq7GfvNlwQ74sSGhkAWSKaFtbfP1g/3WP7pHrVcDs3jIXFmnJ5zZ4j1D1AvFHj19d/YnF1AV1XOfXiDwY8+AN1g78591mcXyIyO0jE+SmRoEN/UFGJtg72VVYr5PFokRLQrTWCwj56bN0mcm7BFRKYJh1XK61uYTZ1wNNJKgqdYYuv1G2qVKj0XzhPu7+NgZp6ZH34i7NjAqZkMBH0gC+SuFP5UEn+tTuLqRXRDR/J7kPx+OKzh9fmo7h0w9c0P+MNB4mdPY/i9iFAASVUxd7MsvnhJdmWNSDhEoKcHNR7BUm0CwjHotuWC6sp6rSPPDnEk+ThpfvqOO5Y9v5qOJsRonWpZlh3VnIShmxiyQOvrIT4ywtrqClJDp7SzS25plUB/H0KREZaJVK1SfPOa2b98TXNrF1XRkOIxum9e49T/+E+o3Slbz2BaWIVDdl69QdN1Nl69YnN5mf6JCUY++YTg6CA9V6+w/XqKg8Vl5h89ITo6ROTcBLrdS2DUGyhCplFvIHuaDhrkeJNEQvTcvMbmsxc0F1dpFItk19boHR6g79Z1O9rLApo6zdV1lr75gaU791EbTYLJOLHhQXrOnCbU2cne4jKzDx9R3D8gOdBH59kJeq9fRTJh6s9/ZevVG8xGg8rMPNuv3zB49QoDN69SrVfZfDNNXVXoGBui4/xZomOjBAf7sRTZflhLFfKPnvPqr3/jUG8yVm/Yr4phUZqZY3VymnAiSefZM4hkjMKLF6w9eoxmmhRm5ui+cJ70xfN4e9JIoRCmBPjtWAyl1d5bSKpCMJ3CEwmT21hj7qf7eKbnsToTnPrsQwLpTqxqndreHlathohH8afiRHp7kDwawjUhd82MTOso9NyxcXFjGbBw1HjC7hdPumO1DqFjwS9ZUktK135ADcvEtLB1vZIEQT8dp0aY/9s3NMs1wkKhUShilMvIsRCSblFaWubFH/+Gub2PKjTUzk7SN68y8sWnqNEQjeIhqt+PZBjkXr5i6c5dxkbHmOjtozKzwOy/fUV+dZOL/9u/Jzoxxpnf/gMv/tu/UMkXqK5vEBm0da/IMoFUB4FEnO3lVbxKmeXXr/GND5OIR0ACNRojEImR05cIal4kRbEnTFlgNZrIpTLVxRWWvv6OtafP8GkeAn0Zeq9eJNrbi16pMvXVNyxNTaL4/Zz99eckT5/Cl0zSzOaZ+su/sfzqFfFgCL8/RGlnn9WNTRSPxvg//QPjXSni8wuYlkTH6Cjh/l7wOL2UaWLuHZB9+ITZb77nYH2Djgvn0CJhW3uxvMbkV99SPywROHMGNRkDTSGY6iA9OkJlbZ388ir5lXXWX74iff4c/R/eRu3twpBAWPYep35YRPX5EbKMd6yfif/hS9ZfvIJ6neU3bxG7CcZvXwfDLh5yQ0cATSwkvx8tEraxfNNo7f+OiKbOolkykSWBoihHKxfTmZqV4+5rSjt7BdNsoRRgHYtX0nUd06VlSc6GTwLTo1JpNlCEhNfrtf/NKbkAtewB2eUVtKaBGQ/T9+lHDH75OapXY/qrr8iVS1z5/JeossLSz4/YffGaUEMnnskQCocpix2yryZZGegnOjJI5OJ5zu7lmPv5PrnpWaSAn+TFCxAKEBroI3l6jJ25WbsCbe2wNTtP7PwZhKJg5QuUiwXweukcH6VjaNCGk3QTcnm27v7M0k/3Ka+sEQ8G8SWTJMfHSE1M0CweMnXnHjvLK6ihAP1XLtF74zqYBrnnb1l6+ozdlWW6x0YZvXQRaWuXyZ/uIpUK7G9uUCofEjo1xuBgf2tqtQOHTBu9KBxSePWWlQePqO4f4E/E6L92BV9XmubKGpP/37+xtTDHxV/+iu5PPkBNJTEsi44z4/h8XkorqxQXlimsrFM9KLJy/zENC8Z++yVyNIzAorKzy+SDB/SfO0fH6Aj+TDf+ZJLw2BBGPk/g9Qy5RhVJVrB2s2w/fEx1fQthYd8ywQCSz0fT0Q0JITt35VEypmiZXbnkBCdPWZZaq5j3rGGkVp+nO3w+CXGkjnM/wLS5/7qhg2ngU1QCXWl6JsbITs7iEwKfbtgJPs5kpnp8yIpK2TAJJeN0XjmPmkmjb2yxcP8h+XyBC+PnIBSivL6JXzco5/OkL19kpK+XSrVGc2GZ/Ow81bUNfONjhE+Por15xfS9n4nt7nI1GiN4dhwiIXo//oD85gY7T19SLubRDw+RdAsqZRbv3CO3sY0Wj+Pv7cWT6oBqA311g80HD1m8cx+rWMSveTCQaJomVq3J8uOn7K1vkN/do2viFF1nJ+gYHaGZy7Pw0z3WXr3BFwyQGR+j/+Y1Qt097C2vsZ/PgdeDFAjY/Z0kYaiajRaZlp0zXKtRmp6lPLfE5uQ0tVIRbyZN8txpum5cRsJi48FD3nz7HWo0QrC/B7WrkyZgWCaKz0vozDihUyN07uYoTE6z8/gl26srlLd3qB+WCMYiUK2x8fw562+nGJg41VqT4dXw9XZDbzdjfX3ouoEG7H1/h9lvf8I4yGNgIHs9eBJxJL/X2fGKlr2bwA4zd5VytDutOb5DJ/OFj4Tp7V6A7dOKs0xuYXeywNRN5xu3cVxTyIhknJ6rl1ifnGF9cpqdYhHR2UHqoxsgK2jxGJ5IlGr+kI7RYfyxOFRrKKrGyMgY00+fUVxZIz0xjk/VKNYbCE0lNDqMv3+AM14vL/7Tf2FvYYGFO/c41ZlC7cvQe/kC2zNzHMzOs/bzQ0ZTCZRUArW3h8HPP8NCZn1ullK1glnMU9/aY/XJC1RZxZtKEunptqPEFpdY+v4Ou6/fogkJ30A//lCYw2yW/F6Wrc0t4v0ZPB0Jus6etjmDPT3UN7dYdJgtwXCIrokx0pcvEQgF2fjxLpN374Gqkr54nv5ffUEw04uBjWZg2i2naOpkHz/j+f/7r1S3dhCqRvfFc3RdvkT83GnUZAJrZZXN6Wk0n5/U6ChqPN5yMrYcjqVpv5CIrg5ikRCqz0/+z0VkWUHVbOJnYXGZtVdvyAwMEOvqgXoTvVJB9dk2yZYkIUWCaKZFfWqOlYdPkMtVPAEfqDKdp8ZIDA1iyrIDMNhwqyKOzo+7ppOE1CIkyJJNeDaN4yu+Y1ewK8Vst9AHu29o+X1IEkJV0XXdxvtkxwlTVYhOTBDp7mbn6QuUaoXlh49ITIwgp1N4YjGSA/0U9g/oGhlBVWRmvv6WpOZleGICqdpg7eVrfKaFJgSNZp1yPke5UMAf9BG7cZGhlVX2/+UPLP38iNT4KVIf3CJx/Sqnc3lWf35MdnIGNRhg8JefIieTxC5eZCKZJLa4gCEryJU6u0+fcZjNEu/r5cyXnxPp7qT45i1bz55zuLqC16MS7O6m88olov197M7O03zyjMLqKkY4zNhHt/GmUggh2L7/kJ3pWaxGg2RfL12nx+m5cBYhVLbuPuLNt99jWJC8cJb+Lz4lcf6cTZkCZGFXBAEYe/u8/du37M3O4w8ECPX20P/xhyQuXwJFxtzZY/P5S+qNJsOffMDgxx8Q7ummubOL0BS0cIimJGM5tHjDMpH9XvwjA4T7ukHT0Px+MEz21zdp6DrD588hmxb7j5+yPb9Iqr+P+NgwIh5F8nrBMKns7pJf2yCqasihIN6OOB2nRlHjUYxWC+bYcbjsTxfhoE3wLomWcaXLjDEdQjIO6KG06zbfl+/q+oa4WQ+KomBapsMblLCEhKc7zelPPsLa20c/PKQwO09+doFERxIRi5AcG+Xt69egCqx6ndWfHzK/ucX1f/gH+kdH+f5f/pXZWp3unjT5g152drKsPH9J4vQpRDxG16cfMb6zx8LTZ6z//JDk6AiiO0XvLz7C1A3m793n7VffIMkyw19+AdEQ/tFhhoYHoNYk9/g5Uw8eI/k99F44TWxkkMr8IpsPHlPb3iaiatQNi3A8RseZcejqomegj9j4GLnNTfzRCIF0F2ahyOL33zP76BGyotIzcYqRSxcJ9vdR29lh9qf7bL2dxkSi/9Y1ej66RfTshL3a0XWUZhP0hk2ylCQa2SyNRpNY/wAdQ/0kz54memoMVBkKh+w+e8n0M9ux/9TnnxIYHaayuMLzv36NbBmc+/hjAqPDICRQVSxXLF4qY0jgD9k2eFaxhITF8PlzRNNdFN9MsfDVt2SX11j1akRGBhn65AM6L51HqtbITc8hlSvg89rG591d+Hq6wKu14FnamfKW2TpoLb6AaWEJ692wS8u5rt1d8+9+97vfcyKA+KRrfrt/CA6u26qUFkiyjNewyM7No1QbSIaBoSrER0cQwYDN3tjdIeDzEovGWXv8lK2Xb5CBWCyOELC/t0f/6dOkR0bIbm5zWDykY6AfX1caORImFgqzMzdHYW0dRRWE0ynkZIJgNALlKgcrqxS2d/B6NMKpFHg0EDIYBlN3f2ZncZnRq5cYvHyR/Zl5Jr/6htLWNkajiWlJlIqHGKZBs16ntJ/FFwzg7U4T7u7BFwxSmp9n+s9fs/XqNeFwiKFLF+m5cB5vIMD2m7esP31OeTeLEvCTPD3GyJefExofA9PE2N2jtLBEfmaOg5kF1l+/YWd5BcXjIZJOkRwdJXPlEtGRQdRwCA5L7Dx5yszde0TTaUY++ZDQyLBtFHSQY/6ne2w+f4VUrmAdHlLN7qOpMrLXC02D7YdPWFmYp2dslFB3D7mFBTaWVxi5fAmqNV794Y8UFpcJqBq1/Tzry0vIXg+ZkUFqS2ssffcj9c1tDL0J4RBKpofUpfOIWNQeRFtaoyPZbrvVh5DEMV/xd43u24Jq/vmf//n37VXwZGLSSXNp18PSjWpypKMIy2J3epbi6ipSrUGhUMQXDBEe7EdLxulMJCiub6A1GzT2c+TX1mkclvAE/QxNjLOXzVI2dPovXkBTFNZm5kFVSA4PIvt9yF4vzUKBw41NNmfnqBYLJAb60Lq7CXck8Wsa1f0sc4+f2F574TBqNAKS/YMmezMMX7+MWSjx6D//F/ZXN/B32Ps0LRGlWm+wt77Jwco62dl5zL0DjK0ditOz7Dx6wtrPj8gtLuPVNPrOnKb32jWq+wdMf/sday9eYegm0ZFBhj/9iL4bV9CiMeqbW+RfvWXlhzu8/MOf2H35mr2lJdu0PJkgc+kiqYvniQ4N4EmnUPx+GuvrLP3wA5Pf/kCpXGbss0/ouHIJS7E3C5rPh1/zIJsG1WyOrddvWX78hMpuloimoRyWWH3xEi0QYPjmdRrlQxaePiWSSJAaHmHj0RPWpqYJp1P0Xr9CtKcLXZOJZLroOj1BYXaO9fuPkat1hFfF099L30cfEBgZwpLtK9Y1J5dOZIO4TBjbjctJz8Rp4YTNtJIcw4NjB9C9ek+yFU5GeLlEBCG7Ek5XlGyArOCpN8gtLlLfz2E2dAwhSIwOo8RjyE2D9VdvMep1ent7OSwUqeUKVCtVuoeH0EJB29ZMyHT297O1u8N+5ZBYJk2oqws0D+GOJKZuUD044GBjG7/qIdqbQU4miHam0Gs19lfWKWxs0CyXiSeTyNEIse40yZFhZMNg8o9/Zef1FMmebk7/9h/o/eVnJCbGiPR0E0wm0bw+PLpBfXeP7Mw8G2+myK2uoZgQicfwBvxEojHKu3vM/vyASi6HHAoRGRmk7/pVIsNDNHM5th8/Ze3RU9t/emGZg60t4uk0qdFR+q5dZuyj2/gzXXYmnKJAs4m5k2Xj2Ute37mHbpikz51h6INbKJHwkbG8LBPu7iI12I/m82HU6lT3c2S3trBKZQ7XNiiurdM/PEywM83Wy5cUD4uMfXDLtkl59YpYVxdjn39Gx+3rRLrTaNEI3eOn8HR0UJtbZP/tJMIwkaNhUpfOkbpxDRENt5yz3JvQVlhIx0gGttWL2bL3wL2UrSOnBByrl2q1al/BJxfO7X8/xph2ef9tDkr2MCQQsoxPVahsbbOzsIQK1Awdb2eKaF8fkiyTX15hd22N4QvniXR1kVvdoHyQR/N46B8bxSdkFmZnSfRn6L92mWAmjS8WJZBK2d90OEB8YJBoJEJjL8/qmykUINKVRkrGCadSxOMxrHKF7dkFynt7+ISENxpBCgVobu7w5pvvqe8d4I3HGfz0I9TRAQgG8PakiY2N0pFOoVWrlDe30AuHCEUhlummY6SfVH8Go9mktL/P5twi1UqZUF8vQ598SP+ta/jCYcqrq8zfuc/s9/doHORAEnQMDdAxforuq5fo/eAmHRfOoCaT9ihsGHB4SHlxha3XbznM7hPv6WHk1k2GPv4AbyqF7vDkZLcYKApyNEx4oI9kJoM/FCIRTxJWvWzPzZNdW6NWLCEVixxubpEZHCKcSnGwsUXD0Om7dpng+BiWz4MIhjA1BX8ijlyuUXj5mvzSMrVaDSsRo+vmdcITo7YtSwu0cFd0NswmWThpSEfXsizklr68PUWz/YxVq1Xk3//+979vT0x/X0bI+xjTrqmlhbBNv4RAeDxI1Tr5tXW8sozqC2B4NGK9GdSOBB4Eu9MzmKZF97nTGIdFdpdXqR+WsJCIx+NMz81Qt0xGf/0r4mdPo0mCym4WRVERmobk9eLv6iIgKyw9ecbW7CweWRDNdCN3JAhkuvHICgeLy2SnZyisrqGXy4QTHSh+H3K5Qu3wkHqjSTAawRsIoCiqjV3WauilMpXVDTbm5qhZJqmzpxn89AOSpyfQNI3i9i7lYgnLo+Ht6SbzwQ3SN69hWSaLP91l8+VbVN3EaDQg4KPr8kWGfv0F6WuXiZ0ZR+3ssB1lJYdps7HF/NffsvTgCaVikY7REbqvXCQ2MYoai7VcrASgV8pU8gUk3bBTh1QVJREnMjhgG1hWa+T39gn6fdTyBbKLixweHCAZBtm1dcqlEn2XLxEYcQYXyeZq+kMRxOEhuQdP2Hn6jPrBPrqmkDx7mt4Pb9sWv65QzRk0ms0mpuHYl5o2CiJJkj35ngi4fDe2tS2u9Xe/+93vTw4dUhsR4R0GQ+u+t1oDiel4yQlFQdM8NLIHGOUysUQCLRjCl4zj7exE0zQOpmZYn56hu6+fcLqT/M4OjYM8h8VDvIkYnmiEUr1K10A/arXOzJ++5vWfvsFq1Ej2ZUDTQFXwhENItQYHc4scbm+jeTyEOjuRgkF8HUkCfh+ljS1Ka5sU1zap5wqEgkFSI8OEkx1YpsHm7BzZ6VmsXAFzJ8ve0xfM/u07cutrGJpK8sxphj79kGBfL+X1TabvP6BcLuNPdxIbH6P3wxskTo/b0/F3PzJ55x6xWIxoJoOViDkV7zpabwYCXixNcSqCCZUq+vIaSz/c5fnX39DUdUZuXqfz0nn8mR6b9Om4TgnTQqpWKe0fsL+zi9lsYCFsx1ILqOvo+wdsrq7QNTZC/8WLGLUquew+wVgMWVXZ29mjI5UiNTrSwt4lCxsaazTJP33O1B/+SHVlg6Zp4M9kGPj0Q8Jnx+0J232tHQUw2H0dbZsSpydrOR+0DyAnqX6yLB+lZbbrd08mZZ68413vGKkVVtxWPSWB7PXilyRWJqc43N21Y7RUjx14Eg1h5grMPH5CZX+f/suXSCQSrExPUymXSZ2dYPQXn1A3mmzPLVB+O8v01z9Q3bQjFPyhINGeLiRVQ/L7iHd3QanM7soKuY1NFFUmlk5DOEigq4tgIEj1IEd1N0thY5P8xgY+v5/kyAgdvRkOt7fZnpwhv7BEdnaW/YUl9te38MQiDFy7wtBHH+JNxNl8/IzpH+6Q290j1Jdh9LOPSV68gCeZoLqwyMt/+zPzz14QS3fSff4swZERMjcvEz8zjhwJO2ZLEpIJUr1Gc3uX/Mu3TH33A8WtLRLdXfRdv0rfBzfRuhw3e9Ognt3nYHKKxuo6xa0dhOohPTCAPxBAtUA2TPSDA2bv3mfp5UsiHUm6z51H8nmplA9RIxH6LlwgMzFBo15jd2OLnYUFDucX2Z6copHP4/f6sHZ3WPr6GwrTs7a2JxSm+9oVuj68iYiF7f2dEzhjtRtXWVKLauW6CLm2zi409y7Z5ejMVKtVOy/YZbv8vaR06YTNljsFCUm07PlNw+4BhGJv341slp2pGQ63dynk80TTKfz9vYSiMeq7WVbeTBGJxUidGqNYyJPLZokMD9J1+wbRnjSN3SzrT56j5wt0jQwSiobZ29vB5/MRjMWRvBpSyE8k3YlUb5BbXiG7ukasM4W/qxPLo+LvShNNJJEtE8Uwya2usTY7j+b1EB8bsSO1dAOlVoOGjuosgwdvXKX74gUUj8r6g8csPHiIXm8Q6s3Q/8ltomfGoV5n/cc7vPiXP7A1O0dqsJ/Tv/4VHTeuEOjrQQ4F7R7PNKFeR9TqUDzkcGGJjWcvmb3/gK3lNXovnGXk88/ouHIREY2gO9obBdh+84ZH//W/23s/EwYvnkf2+zFLZYrrGxS2t6kfHrK1uIwW8DFw5ixN0+TVnTuEkx303b5FZHAQU5GxJEG9XmVnfp61Fy+Yf/iIvZUVIh4Vkd1j58Vr6vsHyD4fgaEBMh/dxj8yhKkqgNlyRJUkCaNpYBqGY3guIytyq01oOWqcaOdOtnjH8oLfF1h9MrzaNbFsva9Lc0LCtHRHvmliWSZyMIDf46G2nUUqlW3dsN4k2teL1tNFNB6lXiyy+naSeGeKwZs3QchsLS9j1Gskz04Q7eulML9I4eCAM7/6nFP/8Ctq1SoLj59RzeVJdKURPi9yJEKiuwvtsMTas5fkswcke3vwJuNYqoqns5NYJoMvEaNWKnG4l2VvYxOh64QDQYpra5R2syiBAOGxYQa++JSOc2c5nF/kzR/+xMH8oj15Dg8z8NlHtnqt3mDpb9/z9P/5F5qlCj1nzzL46Uekbl6xD55whotqFWs/x/6Lt2w9fU5hfonNmVlUzYMvEiZ5aoShzz8lODIEqmbHZUjCdpXCQugm9d099pZWEELQOzyAvrvLm7/8jakHP2OpgvjwEL3nz9Nz7iwiEsJSZJrVKrFUB4FUB/uLi2zu7JC5eJauc2cIpTrxal4s08Lv8dIRDJBfWqGyvonRaODtSpO5fZPEtcsQDtqyCCTHmNI5C7qOYejHnFllB3qzXHb2icPW/v/dKOBqtYr8H3/3u99zQqspuUnXJ/pBd8ttX9fWka+0g4zIsv0kIASqP4CoVCksLSNVKzQbDZAF0f4ePJluEtEoKy9ecnCwT9/NG8Qnxqhv7zD/6jWpVAeBVAqzeEg+XyCQTpE4PUZyoJ/6fo7VN29RKjXC/iCiWkOqNanOL1FcWaVeraJEIkSH+rFUBVOSUCJB/OkUvniEYCKOUFX2trfYmJxkbXIGo960HQwuniM0MoSZPWDmr1+x/XoSv9dH78XzjPzm1wSHB6BYovRqioW7P2OUKwxdvMjop5+QuHweSVOxcgWM/QPM3Sz7r96w/fQ5yw+fsPDsJcX9A5qKzPinH9F74yrJ8TE8qQRGqURuaxtZkdE8HpeNiT8ap6MzjS8SJTU8TCCZYHthmdmnz8gfFum/dJG+61dRohF7CJQFSihIPBxFqpTJzs0x/fYticEBEqdOIcJBQn29pEaGSHSmyXR14dcNsrMLSPUGkqLg7e0l8+FttL4MpixhSY4QyrlTBbY1s610dMIr223a2gzKT1L0TxY1uwL+h//we9dI6OSV2+7va5qmk5TpLBld0xmH+Co50Jze1DFNE0XT0BSFzclpCltbJMNhGvU6eFTCg/2owTD+ps7W7AKagPjF8wSFzOS9+5RX1whJgmR3D4FohJ3NdQ42N4h1pkiPjmLm82y8mWLv1RT7b6epzSyw/PQZzfIh+HwE+jMkx8cQHg82j0KAkPB1dRIfP0Xn8CAenxeP14fX78OUZMqNOus7OzRyebZfv2XrzRRyo47s9RMdGCCYiFNcWmH1+zvsv56iurtHojPFyJWrBPv7MfU6+akZ5n68y/6badaev2T+6VP0wxKax0sgESM9PsbwhzeJjp+CcBDh0bAKh2SnZnjz6AnhWIywM3FKjtu87A8Q7c3QMT6GN9WJ0WwSjsfpPXuG3suXbAloscDSg0fsr60TjkSwDkvkF5bYXFqke2SUzLWrSD4PhmEHDCqhAIHuLrRqna3nL6nu7OD3+WhoGqFTY3Rcu4yIhTEdU3OXJW+nKTgLZxftaCtU7UDG+8CMk2+v1WooksmxNOv2qab9A1zzG6nVXDpKKNlZUEu2+bUiHNNzIaEN9XPmf/otbxs1qnt7aLsKmz8/oKM3gzY0QmxwgOZfv2Hqb9+j+QN0nTvL6UuXmPvxR55lcwzfuMrQtSvopsG9v/yF3MoaV//dP3Hq4w8RTYOFOw/I1xpkgVqljBoNERsbpvPMOGog4KTzSFAqUV7dwNB1tFQSb28PmUwX1BpUNzYpLq+zt7RC9fCQcrmKQKJjZIjc1hZSwM/+8irr8/NU9vcprm8hLAt/LEo4lWRp6i2VyVcgBI1CkfxulnAkjCcaJjU2QvrUGKGeHiRNI5hOIfwBGoUiVqWCbOhMfvc9O3MLSIEgqlDaQFNhG4JqMlo82uI3Jc6eJnl63O6z/D4wTDbfTPLV//l/0T82St/AAOWlZVaev8QXtqd+OehHx7JtgyWb90m5Qn0vy6EDR8qJhE2Xu3gWORF3pt1WvAiSKR0lX5oO+uVcv4bp5A2ecNU4mYp0jF/gvI+CsCnUpmW19LyiDX47tsdpoSC0DIZsVoRtaC3Lwqb1uFwwn4fI5Qv0L67w/L/8V9RcASl3wHz0O8b+yY/l8yN7PezNzPHk3/7Ep4k4E598Qm13j9WXr3n9/U9owSCZq5e4VCrx4s5d7v3n/8r1f/pHxj7+CNXjZWt2HqPeQOg63s4EQ7/8jOT5s1iyQDIsKOTZuf+Q6R/uUWw0GPz0Q8a//NyOpfcLfMOD+Ab6SF69hNlsYjabUKpiVqtsLi2hSBKaJLM8NYnHMugIBqk2m8QzPYhomM3tLVSPRjAaIZzqIHnuDFooQHpkBDUeRQn6basMw8DY3Wf3xVsmnz7DEw3RPzpsC8GTCUYvXLQneGw/HpvyZrPQXXmrkCQkn9YC9F3tdaVWJ9HbT9+ZM2jRKKVmk42paVSvl8ytG3gHepE01RaIWWDtZMnee8TuwydUdnaxhKAR8NJ19RLhU2MOS7uNC2od+US6e8B2n2fLMGy9kDPIuhXRjeZq1x21Hz7bJd8lGbQp191PrOu6M9GItnudFiwHLmpyhA+DTVgVkgBTQgR8JM+fJ3jvZyqLC3gPy6zdf4jm9zH0yy+4+u9+y8LPD9nb2Wb++QvO/+IXnPnsMxRZYXVunjf3fybUn+HU57+gI57kzb37PP7Dnzh/6yaDt6/T88ENauUKTdPEG4sQ6O8DTQHDwNzZY/vufd7821c0D0so6U4E4shODMlmRCsywqMhH3tUYfj0qP2o1+oEx/oRhoEkqzRMi2AigvD5GDrIo3o8yAGf7ZknC3sI0VSsQonq1g6y5kUvV3h15x7Lr99gGQbdDpX/yhe/xK9oNMpl8kuLhAf6kCNhTLOVUeVUEwlJHOmtLevouuu/eJau4SEiqQ7w+lCjUQKhEPn9LKtT0/iH+lFSSRQhIdUaZJ+/Yubrb9A3t6BpIDoTBIYGiZ2ZQMQjTqaIQEht5NL36X7dQyQryMLeEb5vgD2pDW7/u/wf//k//N7d2chCbtl0HMP3JKtlWH50lx8RHFrwnWm2nkqXlCgkUHxezGqVwtY2VrmMrJtUSiX8qSQd16+RPneGaDJJdm2d3OoKoWiE3gvniXWmWJmZYX95GbneIJnJ0NnTw/7KKm+ePEE3DVIXL+AbHcLf04WWiNlPgmFi7u6y8f2PzH37A3qhgDeZJHP7OsOffoQcjdiWIZKEsEyEbiC5sQOmhVWt2l7LimwzajyqbYPb2YmaSuLt7ECEQkgeFTUSQfZ4kDSvEzitY+k6Vq7E7E93efvDj+wvrVI9LKH6vKQHBzn9wS1Gbl4j1NeHbJrsvpli5sFD3j59ijcSIZZOIykymJLj020hnEg1yxWOuRUFUPx+fLEIpiK3Ktbh7i6mBUo8QqSv14YjdQN298g9f0V5cRHR1DFVheDYML2ffYJ3sB9DdhyuTjyMrsOV1G7Z3LL0O756OXnYTv5xP65Wq6FYbYwG01kqmu+kpFvHDqXt7WezYhVZeQc5sdzp2H2G42H6f/UZeq3Owl+/Ri6XYW+PzXsPsRAkb1wl/fFtPNEQT/7lDyy+eMmNX39J99XLfBiLMvn1N/z83/6FvtERLnzyMVc/+ZhH9+4y+egRTY/G2S+/wJPuskkR1TrG5iard+8z+/2PeCSZxOgIwdMTjPzyU9SuDpqmnRMpGwbG3h7Zt5OYlTqyqqF4PdTLZRp6E9nnJxBN2E7jzTrNSgXDkginUqiBAHqhSHFrl9zeHr5QiFAsQqlSol6vUS6UKGSzqKqGEgnSeXacRH8feDw2RatUprm4zOy9B7z84Xui0SgdI8P4wiEk+ShW1bAMNFWxgyJd1lLbdsIy7R2dKVzAwEDt7mTgF5/gX1ohNTZCoCOJ1NAxt3fZe/SEw5VVfJqHvFxFSXeQvnqJ0MggprAd8oWbIS2Jd3I9JEtqLZot0zou6X3PxNtOeH4vI7r9lBumgeQwVdstdg3jSOPhXtdupKspWTayYx5NwziyUNMJJjEBubuT4d/+BppNJv/yV7yHJbJvXrOT3eOCRyX98S1iF85ytnjI9Pc/MfnoMUogQOr8Wc5ZIDUN1t5O06zWufyrL/jwt//I3MIsq+vrrPz8M0PjExi1OsX1TSrL60z//ABdb5I8d5qeG9dIXLyAmkpSdxg/iixBtcHmg6e8/cOfkJsN1HAEEQ1TODykUqkSisZI9fVRPiyS29qkUSqDkEikuwnF4hSzWXK7+0gWhOMRArEIZUMnku4g3tvL4JULhIIh5FgUgkGMwwJmLkejWGLq6TO8AvZzWSI9XZy5do3uK5dRu1JYwtZgN/SmveJSZWcXx7EX3Ka/C0c+6+zoTAtZSMTPnMLXk8YbiSGQaMwtsPngIZuPn+Jp6pSrNZSeNJkPb9F5/Qr4/XYBkrDd9tuMSk3TQCAjC/tAWqYJlnmMxPw+JtXJWC6rFYBjHj+AduKhzWpp/wFdK1XTNFuH0EJCVRTbKEdWbI84w3T6P6mNPWM5H3PUWcmZLob/3W+p5vNs3LsL5TJiZ4fS22nMgX5Epoeu27dI9PYy9ae/8vS777giC1Lj41yVBG89HpamZ7j/zbeMff4xw599RnpjnZX7D/j+L19j1BqYlTp+1YMAeq9cou/jW8QunINAkOaRVsYWehsWjZ19fPlDJENHCYVJDw2T8fto1BsEQ2E8qkr5sEAqEUev1mg2G6g+P5rmQRWCnv4BovG4vRtTFYRHITjQh9bTBbU6lYMD5EKRg5lZVmZnCYdDBL0+cvu7DJ86xcjtm2CYCAuE3986SEi2zkNyaO2WZLWyed2i0GruXeG6JDmYrYkhS/g6OpAaTWqz88z88S/sPXuJlc9hBoJYiTid1y7Tfes6ciKO4ax+3DQsE/d/OSIhuNe+k6zkXr8W1jH7jfZp93094TFRUqsctiI6bYitFdnlTDaiFUxsgmQiq07PZzj0G8xWWIrkrBNkWXZS2O0r2zQNlL4MY7/+FdmlBSqLi4SFytr9h1QbdYa+/ILAxDja0AADH9xm7w9/4Omf/sKpnR3SA0Nc/Md/IDo4yMbqKltb23RpGqF0N83dA4pv5/GqKpai0Uj5SF8+x9CXnxM6NYLp0WiadsCiaFHI7SQcRRHotTqmgM6xUXp/+QvUzqSNZJhg7O6QBCSv74iNa1pgGrZUUVKg0cTU65jVGodbm5QWVpBW1tlcXSFfLBDuSFGp15E0hUh3F+F0ioujAyQ6OhF+P43tbV7/dI+6BBd/9QW+ZAI7J1DFMI13Kon72hwjEJttppDISKYBpTLl+UW27j2gPDePVqvSsCwqEnSfniBz6xZKZ4qmw+uUsbAsx4rZPHLKcFdwtPd4LiXf8ZBsn+BOXsntO0KrxRM8cQDddETbRc15mtzEGyFs7bETuW46PsBulyckC8OpkpIQyJaF5H4R8wiYNiULUzLxjQwx+OknLNRqiEodUSqx+/Ax9VqNs7KKd2SQyPkzXMbi1Z/+wsO/fEVnR4qLn3zC8LUrZM5OYIWDeEyT2vwilc1tYn5b+ig6U6RuXKHvk48InhrBdJSCR46vApy8M4RA1jRMSaKJhRwKosQjWF7bD0c/KLD8dori9jbBYAiPz4ei2npeWVMJxuKUdvfYnJnBqtcQDZ3N+WWEbqD6PBiqQt+VC/ScGUeEAvgSCbRIBFSZUKVKcWOLZrnM9tIS89NTeGMxW/Tl7NYM3UQ4OGu7DkNy0CohuUIf8+iwOLeQImQoldh8+ITC7DxdoSjr2X2MoJ/kxXMMfvoBnkwaQ5LspEs7Q6bVSwmnDRAtBrT1Xr3QScfT9gflfWSEYwx7QKFl3yGOFo1OaqLk3P+mZTtFy6qMhOwcUGEzYoVTo5tNFElgOAk5kmna/yYd3XuSBLqho0UDDHz5BdF4nOXvfqCwsISn3mD/2SvmPB5Gf/trvEMDxC+d52YoyOIPd1l7+4aHX39NsqeHjp5ugpEw2Wc2zLW/vIbH40FLp8h89gmDX36O3NmB4WbjOvZhbmvgqriQJJRwEFNT0ZsNLEXGlFxGr71qqug62VweRVE5yB1QKdsxqJrfj7Kzy+7qCrKu4/f4ELJKMh7HzBdQLIEWjTE6PoHn9Gl7NVSpUN/cxmw2yW1usDA7SyzdSaI3w+eDg/j8fgKRaFvOrmSDXw5AYFqON4/j3eiaXFhOVZeFbLPkLBMrV6Q6PUtlbgFRLFE0oaZoJC+d4dRvfkng9BimKjv1wY0Uk1qvv0Qbnts2cJxEPE6iHO3BhCev4Pfasxmm2XZAnKWj8xTYodWizTPG6ROQndQk+yBi2PC5JNzMEWG7eTqMWcuw1xuyImNK2ClC6RTxD28jFJXJP/2Z2m6WkCSz9/QFRqPO4OefETk7gffUMBOpDtKT4yz+/JDc4goHS8tUD0s0qzU0CySfDz0eZfCjDxj8zZeIZIyG0UQ4JtonjTYlt7orMsF0J55ohPpBztbWChmEsLW20TBnfvkLxm7dQFNVGvUqzUYdRVWRVJVmrUlP8Sy+UAihaqCDtLbB2g8/Us5m0TSFzdl5kj4fuoDc2ho7i8s0GjVkn4fEQC/D16/bAvnCIaWtbQ7X1vAm4qjRKEKVsZxsArNde+HeKM5CWMgylm4DCFKtjpUrsPPkKet37nO4sIjVaGL5/STOTjD8yy8InJ7A8npthotthdtyMbBajHfeuUJbuYJOcXpfT+fOCidh3PdhwUf+gNKJvY8zlbj9m0urNgzDyaQ4Sla3vQCxjcCR7AWqZDexitsYSJaToi05tH7HWTPkJ3rrGuejEbafPufgzRTyzi67j55R3jsgfe0i/Z9+jJJMEL9xlejQELuT06y8eE2gXMHn9aF6PQQTcQgH6Lp6EbkjZq+InOvKFcUo7tNpWZiWhCRkkAXBgQEy4+O8/eku+6sbZA4PUf0+u81zej5hmVj1GhoCFdn2RNF8+HwhiMXayrtOydCp1WsYlkV2ewsjX6BYLlOxdBSPh1imB8M0CXYm6L10AcswKU3PcrC0wsrzl+jVCtGBPs58+SvUTLddbYSwq510/MWWjvKE0ISElT1g//U01dU1SotLlJZWaJSqSJEgnZcuMPKrzwmcOY3lUe0DLYPp5PvRzmSWaIVMuwdIUZSjwYIjXXD73u8kn6DdiredEaPr+lFSkqIozmrliC5jV0W7rztK03RG5fbm0vnmrDZqFkJqWYVYEgjn0Bk4Fq1OToTNrpVQI2GCVy8y3N2FEAoL3/2At1Gj+PoNe6srVA9y9H38EeHhQUR3J+lknOT5M5gNmx4me1SE3weKjT7YDwnHwxcdp3awfyZJ2NkWpgDZo6EG/chY1La2KC+vEU2l7EdHksjt7TF15x7kC9A0OCzmicaTKKqK3+vFskwMXUfVNPw+L+szCxhNnZ7xUdRaGTkQJDk4SAOIdqYIp9OYlTK6KpB8PjbfTJJdXsWHRaqrk9VHT5icmyfakWKwM2l72lgO9HWCGOz+koUlwWGFg6cvefmHPyLyRTr8AUTTwPT5yFy5yshvfoVvdAhL02jqTWRZtNjLmG5j4up7xZGAqK1dccMGT1a+k8vm9on5uMUz76+AkpCP+iJarmat5ldyr2PriJJjSsfLrXvabcRE2GsJp4+xWgtJHb1hoHk9NrtCke1oUEVBZNKkb10nv73DwZvXyIaO77DExs8PUWUVuakTGB6EcBAl3YHZ9hC0/yIsLHtgOqFf4Vhn5T4hJmgK3kQMSUB5a5vsqzf4Uym0ziR4vESicfozGUqWRK1wiOTz4xcShb0sewcHqJLA7/XZD1U8RjASpvf2TaIjA1jNBvg8yLEEqCp6rcrKzCyFvW2S/f10daRI9vcTjSXQAn40IVB1nb3vfmRvbYO+Sg05Erbx4LY9r2GaqMK2PZMMEyoVmvNL7L94iXawT6NYYiObpaF6iJ07TfcHN/GNDds0fwdskITNXqJdKG66/Zt5zM3UtW1pac5P7PxcN13XL/AdAvMJTkF7NWxdwSdtFSwHbnGrXzsXsN1HRjhzmSQUe2oSzo7K2UdJyI51v4QlC2T3EMiy/U07uRIIGf+ZcU4ZJos+H5vPnqE2m8gNg9rCAssHObz9GXpuXMPb2wMer9MXWRxznJMk5Pc2wo6nsXS0O7MAPCrBkSGCmR70XI6dN5Ps7uyRHBsm1tdHOJ0mMzyMNDwKehNDspDDIRrVGvmNLRTTJKhpUK5SOywjBX34+zLo9TrZxUXqQOeF8wS6u5CFhC4EnlgCXzQOQsabjEMoRL1UotnUSUxMMNBokjw1iiUrR72fQwAx3Z7dspB0E31zi8LrSfZfvmLvzVtUw8QK+NHiSTLnz9J59TLx0xOYjg0cktUKAW9VO1dyK9oUbO5e0ekzMe2l9zttQJubbnsf2Dpk1t9fzQBI1XrNkoWwBSbC3v/oug7CNp45cmo/Mitym2IhO72JdVR93CtYSKIVWtNaZjtuW7IQLcck92OFEMiSQKrVaW7uknv1lvWHj8kvLeJXFKq1mm2ofeUSA7dv4O3rg3DY9vZzp0TTXiW5PYwLGUnYai2z1SS77yfbV+1Bnq17D6hs7dDQdfZyBxiqgqQqREIRjHKFjkSScCKJHA0QOjWKiMdAt7W8u5PTlFc3KGX30ZJRwt1dHOzu8OL+fZRwmGv/y//MyPVrICTMWt3ZmwmswiH59Q32V9fZO8iS6O6iq78fSdMIJJNIfi+6E75ii36cNHvDwsoVoVhk9/lLFr77ESu7h1GtUjcNEqfP0HP7JqlbN5BiUZAFTczWUNlKM3UJDQ6Oj3u1u0wXF6Ztczf9ewNFC+kQAt05gC6sK71nDSPLMgcHB7Y5kfsFTMM2FpQdI51jZVMS9gFquSPYwhQ3/dqulKZjTH70wreaU+fwG7qBUIUz5xzfLxmWieTVUIf7SXV1EerrZebf/sj+60nkagNvoUTt7QwLBzl8gwN0X7iIt68bKeC36VeShGHqbdxG6eiKFpIDMWFjp4bVMswR4TDdH34ADRv6Mmp1jEadRr1GaXefvckp9t68ZSm7T0myGPziM8Z+/Qu0aJRsIcfi3CzVzW0k0yQS8tIRCtHt9yM1G/gTSdLJDoz9fSwEeq2K3mzSLFdYnZpia3EZj6oS6U7TkckQHOizjTMdbN6u2vYaRDihkEZ2l827D5ByRRpb28i5gu1a6/VgBv0krl2m86PbEI85giLD3g+2iAyms9GwAQfZ6cmFU2mPKE9H/i/vq2JHPVDbGs+0Wh/jRjnQ5or6Tk6IhY0BK7LScjSXhC02MnWDRqNhZwgLgbAk+wUTtm7BMAws0ZZk3Xrh7S9uYCEc0EEIYSu5VMcK1zqK8jypyGtiIPsUfGfHGdcUVkIRtp4/o5LP01xeReztUVrbYG9qlp5rV+i8eB61J40QErpuJzjaD4x9HdvDx9G1oCiKM+HbV029WKSwuIxRq6GGAoSSKTxdHWiaRrBYJp3pZev7O0wtrWLqDcx8DqtShWiUxMAAkd8EMfYPkJBQgiHUzhQcFpEVhUA0SrVc4c2Pd/GrHkrlEpVKmWgkghrwcebmDSK9GXzhIIrHY/MqXbQGkLFjLoRByyW/8OINi1/9jbjqxWo2qTfraB0JksMDBIf76bx6GSsabo3JklMchGliOYCX5LTBsnM4hDjKiTFPSCrbcdxWe+acPpc1bbXSsKRWS9RK4Wr3jREnHVIB3TBtBoawDezsp0I+Zs3RLsdzr2SbzmRThtzUHNMw7arY4mqJY/igO9C0Ex2EfBSK06g5nsiqitAUvBOnGI1FSZ4aZv3+A7ZevSZYr+Or1dmbnmatVKS+vUX3tcv4hobQ/D4My7YbbplASvIxHNWBRlrZZka9ztKb15RWN/D5/HhDAaKZLryRMNQMRLVGtVSkVq6Q6EmT7khhFA4p1ZpYlTL6QR5FN2hW6+gb2xjTM6xMTbK6sc6FWzeRA35W5hcYO3Oa2GAfSUUm3ZXG35FCeDWQFerZfaYfPiE80Ef3xCknV9deH5m5AtXdLF5JYO3ts33vIfWNbfKqiunREKkkicuXyNy0+2PJ78WSpaNbqOV8K5zcNvtQGJaJZIHeNJCE1Eo3cvs5y814kzjO4zPdg21LTTkxH7SqYiu6t201YxiuweRRYHXLLRObgCBa8MoRIeHkRttdijZ1veUV45Zx0zqiUpqWiWTaB9KypLYtjnUELzqsDveQuPiz4SQayz0pEomPCWa68HZ3sjs1zUEuTyTgRymV2Lx7l725OQauXyM6OoonnUaKhe1WwnlA3OosnCbbcnpQ2bLwh8JcuHwZxsYxDJPi3i7VSpW6s2AXTR3T48ETDWM2dWr7eaSdXQyPxsyjp1AoIRlNKqWKLSzy+7Cw6OjtJZrJEOzsIJROkxwcQk7GoNGgubXJ/twMlseDqnrYWlhgZ2WVWFcaybSJCJYwkEpV6ovL7E9OU97YorK9R/1gHxSJWkAjMTFBz7WrxE+PoyYTGJrqUKjsm8klDh9Fsh2/Ri3HRMjt+Y5x+VpeMI77aRv+bFkWVtsW5HjOdBv+68gLsCyELKObJqZhIKtKW0wDFk29iSLbKjJ3Im6fbk5y/txpxzANexgRAsuRbsruN+ootYQDblutz2PhCulNk5aiHsuyc0lE2y/MLf8+L56z44x0ddI5Pcfu6zc0t7fR9/NQPKB2MM/C9h7EE3ScmSB5ahQ5HMLf3Yna2eHc+vYhtDUM9hOMZVOLarUatWKRaCxGV2+vzTDx+8Hrs1/M3X18tSZTjx6y+Ow553rSxIeHoFTDOshjlCv4QgHUoB8lErHNxQMBlFQHCPDuH1ApFaByiHFYZPqnu+xtrDN07SpD5y+iCJnOWJyoaVFfWUMJhZC9GubmDrtPX1KaX6CwuYVpmCihIInBXmLjo3RcPEdoaBj8/rboLKf/lWj7nR9VMVkRx15jocgYun6MXtXap7YVDJyKZ3L8oB3RrIzWAOr6isuybZFnGaZtKSKk1usLIDWbTevkQtHder/PGaH1g7RTcJwtvdm29TYddrTcWtW4vUg70Zx3qDvutO32o25zazrXqZAkJMPC3NunPDfH7pPnZKdm0Pf3sRoNarpOXZHxJ+KISITu8+fI3LyGr68fPCpodoNvuHYitSa5ySke/z//Sn17m0QkimyCrGn4omE8wSCKqtIoHlJa3WJteoqagInPP2X0N1+ieL2IUo3qxhaS0cSUQdI8NCwLNA2hqTRqNTYWF+zs4kwPmiJTOiwSiMcZvHWbUF8v5uY2u/d+ZuXlC1AU+s6eJdU3wOHKCi++/ha9eIjm86Imk6QvniV95SK+TDdEQjbKZBxR4l1SiFvx3XbX7c0t7GrU8nOWOOFoxTFko33FcnLp/A7nT3KGS+cACiHsrYph2VFwstSi+uXzeTsn5OQup93H4310aveJcKdYs5URcYSz0uq3sBtVyc45sxx/Y7O1T3R3dw4E5K5SnGnMaFt6ms4SVggJpStFKBRADYdR43G2X7ygvLaOUaujNXRMfZdm9oCVvV3ySwv0nD6Lt7MDf3cXno4OlGgEVBWETKNSRwsG6RofJ7+5ycabGaxGHVQZSVNRAkEagCYrBAcy+DWV3f0DSt98j+rRUCo1tiYnMWtldASBZAemz4duGJgSxLo6iXQk6BwaJD3QbyMthoEnEADNi7m0Qm1tjcrSEuW5eWrVOubWHqWePnIHB+imSWBokGhfhtjIEMnTp1B6utpkkUfXZasAOK+P+w6Wa4/WKvpWa0FvmJatjTGtdwgG7VXufdhv+yJacjYqQpYwTI6TT53KZ53cAzYaDeskg9U9gGbbKW53RWjRf44QvOM0HbONFiTLmJZNK3IHGLvnMByTI4EQcovq5epKXCq3fWXIR6sg3c42UxXFhqCaOtZBjtL8ArmZObZeviW/toZi6fhkFUUWVOs1DEXFDASI9PURHRjA391JorcXLRRA6CZGtYrw+ynMzvH2z1/TyBdQPCqGLEgMDJA+NYahKnjjYTSfj2qlTrVWQ2o0Kc4tsPH8OWa5jBIKkT5zlu6zZ6gXD2lWKkT6egiNDtl0fE2DcoXa6hqb03NU9nap7mUprK1iFA/xCRmjaVI1TeqyjCfVwfCtG2QuX8Tb04kcCYPfaxNG23xZ7EEDm1gqHWm2hbudaFtHuZbL7Xs9h07yDqn0ZDFqseNPzAWmadqvsySQZbnlpOH+u67rLQY3gKaq5HI5JF3XrZMidBd7NCz7ALY/CS3lnNQWDyHagGeHUWM0m7ZLuqqgKM70JYkWJeroP9FK6zxJ8TlpfOj2j6ZFS6vgDhUuJFVdXiP76i2VzU1yC/NUd/YQ9QZ6s0kwFsNUVKq6jhoOIPx+AskEmVOnUGMxgr0ZZEmitLCEXq2ghSKgqajhIGpX2naVCnjA621N+DR0mrOLHDx/xcH6Gh39fSSvXoHuHsyVJQ4XlxCyoCnblHZLb7I9u0Blc5vCxiZmrYpZr1EulwnHY6ieAMLnRQoGMUMBOs+fYeDjD1E7EuiCIwtc5aiauA+8EBI15/VShNxiLrcLhgznkIgTNPrWekUSCN5PLn2fi1rrY92DeoI58z6GtGXZ1/HBwcHRAWz/41pt6YbubLft/Y/LYlBkpbVsNhyTmnZxk3Dywux/A0Vri4Kw2qdp0xlIhO2GckLc7LJ/jwmencPeyiZzm2BLsid7E6jUMPb22X72lKWHjzB2skjlCpoDQTXqNUzTNhkzZUEwHkcJBwnE4wSjUbyaB0VV0UIhNH+AhtGkWK4gNJv4oAYDqB4Pwsm3s4olmpvbbE5NE0slCfRmsIRMbmmFtTdv0JAxMBCyhKIoVEsVPEKgVyvozSaoCs1AgKFrV/AmOtA9Kh2DA4hQALWjAxEKUK/XEKrq2KZYSMiOjOJIEtFKs3Js3Vxi6rHY3ba+7p3D5CIif4dY8F6t+HtguZMHV2qbst0bUlGUowr4vk9GK7jQbPlDuwtrWTi9IqYNu7hQjTMNu6F1pmlhNJtIsnTMY/roqTCd4UTCsqR3jK3bD6Brh2S2heS51HQbs3Z/SPvrKJKMVchT3digvr5FfmmFwsY2lXwOxTSxGg2Ke3uY9Ro+zYOQZerNBpYkwLLJFkJT8Pj9SEKhqRu2H59XQ/X6nJxc+yGVkfDJElvTM3hUFcmjgQCjUkM0DWRJoWnqlKoVhNeDNxZDCwZoYmCpKqHOFImJcTI3bqAkE/bN4NOONDqmvUi34VJaGDuS5biTHt/XtTvaCuy1mOFotd8hkbZETbRaINM6+h3/vT/th7e9fXtnWG1PYG3r7VsVsGno9pqsLc0GR2QuO8lJFrQIiO1ZIhZOCJ1TvXDMadzPZ8szDXuxLQSyJNsDycnrvo1P9k41bi/hDnwkO8OPYZpYunFEFXJ1Cg6jG9PZd1YbGPlD9EIRvVBAajRp5nNsz8xSWFujsLWLT7GRoHq1hlEt2y4Cjs4W5yqRJNm+hiXhEHcNGnWdUDSKbtYpZ/fRG3W78vg8qB4NCxnFH8QTCdOQLPBohDK9dA4NYHoU1KCfYE8PnnQKKRB0HFEdCMuUjjyW2w6Y/aOdoLi35fK6h8+9ek339pLkY2SCdgmuOJL/Hm0q2oea92DA7bqU9/05KUxvmZjrNipVLBaPX8Gt0u0sKF27VbcPlMQRY7YFnWG1oBvTEXYrsuxwBe1D09CbqKpqH5wTpdldeOpONWup7cW77IqW2J2j3eUxZi5uNpl9VVuG6VgJSwgHGXGD9Wg0oFKlurFFdn4e87CC1GxSLRQo7+zSOCyhCIHRbNCo1RzEQLf9D71e24pCMtHrTRpNE+FRUVUF3cGiNY8HHQkp4CMxPEzH6ChKyI/i8+FNdaDEY/arLkTrv6MFsHUk/j5R1VyEQTeNY307bcYBVkse2/5wW60AcHcl4w4h7gFp34L8Pf7e312/tL1276uGrVgv6UjIlMvlkAzDlrW1gGTpiHnbXqXMllhFaml/2z9xKyfMNBGy3KJjWc7V7WqKW5v1YwxfC91pZN2JTlPU9wPgsmjhmO0JT62+xjTRTbv0SY4zg+R8L6ZlM3tlxBHQblpQrUK9AdUazWqFytYeeqWEpes0qlWMRhNM0+7XhCAYidJo6hhGA71Wp1qtEY7HCSXjSKpis29kW5Yg+Xz4utP2gZNsl3uczYCLzlgOWcPlW7oHsH211Xq71bbycotimxG4S+o4JmBqr1ayOLaCaU2w5tHNZLUdyL8nKjouZhOtQ+suqVuEBKfH15vNY8CEJElHQ8j7Tnz7KW4tg1tWHXaWXOvtTgk/gmkcnLAt5vVYb2earSpmR34d9XuG84vwyErrF9O+CHW36O6TZBg2YUJRlGPODE3DxjeF5H4tcG2dBA7NzHSqpWTZKx3TcvTChn0FGoZdRQzbA9EydSwThOZ1GMMmVlO3yQJeZyhRFdoYGaAILCE7WLnZsrmT2h4o+3ObLaqU6fTe7yjM3PbGfXCd/lxv2j2cqqqtVqVd1OHeZLY8wS4K4gTGb5pma5Fts9jfrYDv84U55obl3GSysCd+s4WmOAI3N4vQtI7oWK0KIx1R6N830bhcQdee65iDflsVMgzDJgK4Pxxt7AvLCdgzLXSr6egtnP5TMloEgXYkxQ3EaZG0raNm2fUndvUFrWFFsl2gdNNwrm3LeXHdvpWWv7GEidQGrhumhawpx1cPgGU4i9Zjvnj251BEu/hGanVTbkUwTN1uDk6A9ZZ1FPrn0tikdgz2RJq9ZLq3htl60HRniWwZZps88/i02rrGzTaPn5PXqnAO3olh5p2wopPpWW3FybDMFurVsuOQZYeWZzrrOf24LPOdXJA2h6PjZELJaf5pMyY6TstuP8wtupMkOfoDWv2j/XfRSlS0QWnFqa4Ohd8t521LU3FsH3W0CFXa7ERaRkuyfIRDt06vvf+SW9eZcx2JoyuulX/imvC4bxfimDmPS2N7d7XkQGLuB9s+U8fizVotjPOQcaIvPtbbHYPCpBaqYblvd9ELx7H+fUaQ7Yf42O+q7X3d/py2G+999ClaV/4JtyxnG+FmgyBxVKjafG1Ocgv+f5MduxvoUR9tAAAAAElFTkSuQmCC";
+  const COMPANY_STAMP_DATA_URL = companySeal;
 
   function pdfImageHtml(item, size = 130) {
     const images = Array.isArray(item?.images) ? item.images.filter(Boolean).slice(0, 3) : [];
@@ -4687,7 +4899,7 @@ function App() {
             <img decoding="async" loading="lazy" class="company-stamp seal-on-name" style="transform:translate(${sealX}px, ${sealY}px) rotate(${sealRotate}deg);" src="${COMPANY_STAMP_DATA_URL}" />
           </div>
           <div class="identity-block">
-            <div>適格請求書発行事業者　登録番号：T120001249367</div>
+            <div>法人番号：1120001249367</div>
             <div>古物商許可番号：第62203R074231号</div>
             <div>許可公安委員会：大阪府公安委員会</div>
             <div>TEL：06-7176-7189</div>
@@ -4713,6 +4925,8 @@ function App() {
 
 
   function openPdfWindow(title, bodyHtml) {
+    if (!["owner", "tax"].includes(role)) return alert("当前账号无单据导出权限");
+    if (!companySeal) return alert("公司印章尚未载入，请稍后重试或重新登录。");
     const win = window.open("", "_blank");
     if (!win) {
       alert("浏览器阻止了PDF窗口。请允许弹出窗口后再试。 ");
@@ -4985,12 +5199,8 @@ function App() {
   }
 
   function exportTaxPdf() {
-    const soldItems = (computedItems || []).filter((x) => isSoldStatus(x.status) && Number(x.soldPriceJpy || x.saleJpy || 0) > 0);
-    const auctionItems = (computedItems || []).map((x) => ({ item: x, auction: normalizeAuction(x?.auction) })).filter((x) => x.auction);
-    const auctionInputTax = auctionItems.reduce((sum, x) => sum + Number(x.auction.taxCredit || Number(x.auction.hammerTax || 0) + Number(x.auction.buyerFeeTax || 0)), 0);
-    const importConsumptionTax = (customsBatches || []).reduce((sum, b) => sum + Number(normalizeImportBatch(b).totalImportConsumptionTaxJpy || 0), 0);
-    const salesOutputTax = soldItems.reduce((sum, x) => sum + calcSalesBreakdown(x).salesOutputTax, 0);
-    const taxDifference = salesOutputTax - auctionInputTax - importConsumptionTax;
+    const summary = buildConsumptionTaxSummary(computedItems, customsBatches, taxPeriod);
+    const { auctionItems, auctionInputTax, importConsumptionTax, salesOutputTax, salesFeeInputTax, inputTaxTotal, taxDifference } = summary;
     const auctionRows = auctionItems.map(({ item, auction }) => {
       const sourceEvidence = [
         auction.invoiceNo ? "Invoice: " + auction.invoiceNo : "",
@@ -5000,28 +5210,29 @@ function App() {
       ].filter(Boolean).join(" / ");
       return `<tr><td>${pdfImageHtml(item, 40)}</td><td>${htmlEscape(item.id)}</td><td>${htmlEscape(item.brand)}</td><td>${htmlEscape(item.item)}</td><td>${htmlEscape(auction.auctionCode || "")}</td><td>${htmlEscape(sourceEvidence)}</td><td class="right">${jpy(auction.hammerTax)}</td><td class="right">${jpy(auction.buyerFeeTax)}</td><td class="right">${jpy(auction.taxCredit)}</td></tr>`;
     }).join("");
-    const importRows = (customsBatches || []).map((rawBatch) => { const b = normalizeImportBatch(rawBatch); return `<tr><td>${htmlEscape(b.id)}</td><td>${htmlEscape(b.importDate || "")}</td><td class="right">${jpy(b.totalImportConsumptionTaxJpy)}</td><td>${htmlEscape(b.memo || "")}</td></tr>`; }).join("");
-    const salesRows = soldItems.map((x) => {
-      const sales = calcSalesBreakdown(x);
+    const importRows = summary.importBatches.map((b) => `<tr><td>${htmlEscape(b.id)}</td><td>${htmlEscape(b.importDate || "")}</td><td class="right">${jpy(b.totalImportConsumptionTaxJpy)}</td><td>${htmlEscape(b.memo || "")}</td></tr>`).join("");
+    const salesRows = summary.salesEntries.map(({ item: x, sales, date }) => {
       const salesEvidence = [
         (x.buyer || x.buyerName || x.customer || x.customerName || x.soldBuyer) ? "买家: " + (x.buyer || x.buyerName || x.customer || x.customerName || x.soldBuyer) : "",
         sales.finalReceiptJpy ? "最终到账: " + jpy(sales.finalReceiptJpy) : "",
         x.soldMemo ? "备注: " + x.soldMemo : ""
       ].filter(Boolean).join(" / ");
-      return `<tr><td>${pdfImageHtml(x, 40)}</td><td>${htmlEscape(x.id)}</td><td>${htmlEscape(x.brand)}</td><td>${htmlEscape(x.item)}</td><td>${htmlEscape(x.soldDate || "")}</td><td>${htmlEscape(x.soldPlatform || x.platform || "")}</td><td>${htmlEscape(salesEvidence)}</td><td class="right">${jpy(sales.saleTaxIncluded)}</td><td class="right">${jpy(sales.salesOutputTax)}</td></tr>`;
+      return `<tr><td>${pdfImageHtml(x, 40)}</td><td>${htmlEscape(x.id)}</td><td>${htmlEscape(x.brand)}</td><td>${htmlEscape(x.item)}</td><td>${htmlEscape(date || "")}</td><td>${htmlEscape(x.soldPlatform || x.platform || "")}</td><td>${htmlEscape(salesEvidence)}</td><td class="right">${jpy(sales.saleTaxIncluded)}</td><td class="right">${jpy(sales.salesOutputTax)}</td></tr>`;
     }).join("");
     const body = `
       ${companyPdfHeader("消费税参考 PDF", "Consumption Tax Reference")}
+      <p>期间：${htmlEscape(taxPeriod.from || "不限")} 至 ${htmlEscape(taxPeriod.to || "不限")}。抵扣资格与公司税务制度待税理士确认。</p>
       <div class="section"><h2>汇总</h2><div class="summary-grid">
         <div class="field"><small>日本拍卖进项税</small><b>${jpy(auctionInputTax)}</b></div>
         <div class="field"><small>进口消费税</small><b>${jpy(importConsumptionTax)}</b></div>
         <div class="field"><small>销售消费税</small><b>${jpy(salesOutputTax)}</b></div>
+        <div class="field"><small>销售手续费税额参考</small><b>${jpy(salesFeeInputTax)}</b></div>
         <div class="field"><small>差额参考</small><b>${jpy(taxDifference)}</b></div>
       </div></div>
       <div class="section"><h2>1. 日本拍卖进项税</h2><table><thead><tr><th>图</th><th>商品编号</th><th>品牌</th><th>商品</th><th>落札コード</th><th>凭证来源</th><th>落札消费税</th><th>手续费消费税</th><th>可抵扣消费税</th></tr></thead><tbody>${auctionRows}</tbody></table></div>
       <div class="section"><h2>2. 进口消费税</h2><table><thead><tr><th>批次号</th><th>报关日</th><th>进口消费税</th><th>备注</th></tr></thead><tbody>${importRows}</tbody></table></div>
       <div class="section"><h2>3. 销售消费税</h2><table><thead><tr><th>图</th><th>商品编号</th><th>品牌</th><th>商品</th><th>销售日</th><th>销售平台</th><th>销售凭证</th><th>销售税込</th><th>销售消费税</th></tr></thead><tbody>${salesRows}</tbody></table></div>
-      <div class="section"><h2>4. 差额参考</h2><table><tbody><tr><th>销售消费税</th><td class="right">${jpy(salesOutputTax)}</td></tr><tr><th>进项税合计</th><td class="right">${jpy(auctionInputTax + importConsumptionTax)}</td></tr><tr><th>差额参考</th><td class="right">${jpy(taxDifference)}</td></tr></tbody></table></div>
+      <div class="section"><h2>4. 差额参考</h2><table><tbody><tr><th>销售消费税</th><td class="right">${jpy(salesOutputTax)}</td></tr><tr><th>销售手续费税额参考（资格待确认）</th><td class="right">${jpy(salesFeeInputTax)}</td></tr><tr><th>进项税合计</th><td class="right">${jpy(inputTaxTotal)}</td></tr><tr><th>差额参考</th><td class="right">${jpy(taxDifference)}</td></tr></tbody></table></div>
       <div class="footer">此页面为经营参考，不替代税理士正式申报。日本拍卖消费税不进入库存成本。</div>
     `;
     openPdfWindow("消费税参考_PDF", body);
@@ -5134,7 +5345,7 @@ function App() {
             <p>商品档案・日本拍卖・库存管理・EMS报关・销售利润・消费税参考</p>
           </div>
           <div className="action-row">
-            <button className="ghost" onClick={syncToCloud}>保存到云端</button>
+            <button className="ghost" onClick={syncToCloud} disabled={!canEditBusiness}>保存到云端</button>
             <button className="ghost" onClick={loadFromCloud}>从云端读取</button>
             <button className={"ghost lang-toggle-btn " + (japaneseMode ? "active" : "")} onClick={toggleJapaneseMode}>{japaneseMode ? "中文表示" : "日本語表示"}</button>
             <details className="erp-header-todos"><summary>待办事项</summary><div className="erp-todo-menu">
@@ -5188,18 +5399,18 @@ function App() {
             quickSignal={inventoryQuickSignal}
           />
         )}
-        {tab === "ledger" && (canAccessTab("ledger") ? <Ledger items={computedItems} editItem={canEditBusiness ? editItem : null} setItems={canEditBusiness ? setItems : (() => {})} isOwner={isOwner} downloadCSV={downloadCSV} exportItemPdf={canExportBusinessPdf ? exportItemPdf : null} /> : <RestrictedPanel message={restrictedTabMessage} />)}
-        {tab === "customsBatch" && (canAccessTab("customsBatch") ? <CustomsBatchPanel batches={customsBatches} setBatches={isOwner ? setCustomsBatches : (() => {})} items={computedItems} setItems={isOwner ? setItems : null} downloadCSV={downloadCSV} canEdit={isOwner} onGlobalSave={requestGlobalCloudSave} /> : <RestrictedPanel message={restrictedTabMessage} />)}
+        {tab === "ledger" && (canAccessTab("ledger") ? <Ledger items={computedItems} editItem={canEditBusiness ? editItem : null} setItems={isOwner ? persistImportItems : (() => false)} isOwner={isOwner} downloadCSV={downloadCSV} exportItemPdf={canExportBusinessPdf ? exportItemPdf : null} /> : <RestrictedPanel message={restrictedTabMessage} />)}
+        {tab === "customsBatch" && (canAccessTab("customsBatch") ? <CustomsBatchPanel batches={customsBatches} setBatches={isOwner ? setCustomsBatches : (() => {})} items={computedItems} setItems={isOwner ? persistImportItems : null} downloadCSV={downloadCSV} canEdit={isOwner} onGlobalSave={requestGlobalCloudSave} /> : <RestrictedPanel message={restrictedTabMessage} />)}
         {tab === "customs" && (canAccessTab("customs") ? <Customs items={computedItems} customsBatches={customsBatches} downloadCSV={downloadCSV} /> : <RestrictedPanel message={restrictedTabMessage} />)}
         {tab === "profit" && (canAccessTab("profit") ? <Profit items={computedItems} /> : <RestrictedPanel message={restrictedTabMessage} />)}
-        {tab === "tax" && (canAccessTab("tax") ? <TaxReport items={computedItems} totals={totals} customsBatches={customsBatches} downloadCSV={downloadCSV} /> : <RestrictedPanel message={restrictedTabMessage} />)}
+        {tab === "tax" && (canAccessTab("tax") ? <TaxReport items={computedItems} totals={totals} customsBatches={customsBatches} downloadCSV={downloadCSV} period={taxPeriod} setPeriod={setTaxPeriod} /> : <RestrictedPanel message={restrictedTabMessage} />)}
         {tab === "listing" && (canAccessTab("listing") ? <ListingManagement items={computedItems} updateListingItem={canEditBusiness ? updateListingItem : (() => {})} editItem={canEditBusiness ? editItem : null} setPreviewImage={setPreviewImage} setPreviewScale={setPreviewScale} /> : <RestrictedPanel message={restrictedTabMessage} />)}
         {tab === "sales" && (canAccessTab("sales") ? <SalesReport items={computedItems} updateListingItem={canEditBusiness ? updateListingItem : null} downloadCSV={downloadCSV} /> : <RestrictedPanel message={restrictedTabMessage} />)}
         {tab === "pdf" && (canAccessTab("pdf") && canExportBusinessPdf ? <PdfExportPanel items={computedItems} totals={totals} exportInventoryPdf={exportInventoryPdf} exportLedgerPdf={exportLedgerPdf} exportCustomsPdf={exportCustomsPdf} exportItemPdf={exportItemPdf} exportAuctionPdf={exportAuctionPdf} exportTaxPdf={exportTaxPdf} /> : <RestrictedPanel message={restrictedTabMessage} />)}
         {tab === "suppliers" && (canAccessTab("suppliers") ? <SupplierPanel suppliers={suppliers} setSuppliers={setSuppliers} downloadCSV={downloadCSV} /> : <RestrictedPanel message={restrictedTabMessage} />)}
         {tab === "dictionary" && (canAccessTab("dictionary") ? <DictionaryPanel dictionaries={dictionaries} setDictionaries={setDictionaries} /> : <RestrictedPanel message={restrictedTabMessage} />)}
         {tab === "deleteLogs" && (canAccessTab("deleteLogs") ? <DeleteLogPanel deleteLogs={deleteLogs} downloadCSV={downloadCSV} restoreDeletedItem={restoreDeletedItem} /> : <RestrictedPanel message={restrictedTabMessage} />)}
-        {tab === "backup" && (canAccessTab("backup") ? <BackupPanel items={items} exportBackup={exportBackup} importBackup={importBackup} downloadCSV={downloadCSV} /> : <RestrictedPanel message={restrictedTabMessage} />)}
+        {tab === "backup" && (canAccessTab("backup") ? <BackupPanel items={items} exportBackup={exportBackup} exportFileBackup={exportFileBackup} importBackup={importBackup} downloadCSV={downloadCSV} /> : <RestrictedPanel message={restrictedTabMessage} />)}
 
         {previewImage && (
           <div className="image-modal" onClick={() => setPreviewImage(null)}>
@@ -5220,22 +5431,24 @@ function App() {
 
 function Dashboard({ totals, items, setTab, openInventorySignal = null, exportBackup, customsBatches = [], onCashflowSave = () => {} }) {
   const withImages = items.filter((x) => x.images && x.images.length).length;
-  const activeItems = items.filter((x) => !isSoldStatus(x.status) && x.status !== "退货");
+  const activeItems = items.filter((x) => !isSoldStatus(x.status) && !["退货", "待退回"].includes(x.status));
   const activeStock = activeItems.length;
-  const soldItems = items.filter((x) => isSoldStatus(x.status));
+  const soldItems = items.filter(isActualSale);
   const month = currentMonth();
   const today = localDateString();
 
   const todayIn = items.filter((x) => (x.purchaseDate || "") === today);
-  const todaySold = items.filter((x) => isSoldStatus(x.status) && (x.soldDate || "") === today);
+  const todaySold = items.filter((x) => isActualSale(x) && (x.soldDate || "") === today);
   const todayPurchase = todayIn.reduce((a, x) => a + calcTax(x).costJpy, 0);
-  const todaySale = todaySold.reduce((a, x) => a + calcTax(x).saleJpy, 0);
-  const todayProfit = todaySold.length === 0 ? 0 : todaySold.reduce((a, x) => a + calcTax(x).profitExTax, 0);
+  const todayFinancials = calendarProductSales(items, { from: today, to: today }).totals;
+  const todaySale = todayFinancials.netSaleTaxIncludedJpy;
+  const todayProfit = todayFinancials.profitJpy;
 
   const monthIn = items.filter((x) => (x.purchaseDate || "").startsWith(month));
-  const monthSold = items.filter((x) => isSoldStatus(x.status) && (x.soldDate || "").startsWith(month));
-  const monthSale = monthSold.reduce((a, x) => a + calcTax(x).saleJpy, 0);
-  const monthProfit = monthSold.reduce((a, x) => a + calcTax(x).profitExTax, 0);
+  const monthSold = items.filter((x) => isActualSale(x) && (x.soldDate || "").startsWith(month));
+  const monthFinancials = calendarProductSales(items, salesMonthPeriod(month)).totals;
+  const monthSale = monthFinancials.netSaleTaxIncludedJpy;
+  const monthProfit = monthFinancials.profitJpy;
   const recent = items.slice(0, 5);
 
   const expectedNetProfit = totals.profit;
@@ -5738,7 +5951,7 @@ function Dashboard({ totals, items, setTab, openInventorySignal = null, exportBa
 
       <div className="v3-money-grid">
         <div className="v3-money-card"><p>本月入库</p><h2>{monthIn.length} 件</h2><small>{month}</small></div>
-        <div className="v3-money-card"><p>本月销售额</p><h2>{jpy(monthSale)}</h2><small>按销售日期统计</small></div>
+        <div className="v3-money-card"><p>本月销售额</p><h2>{jpy(monthSale)}</h2><small>按损益事件日期统计</small></div>
         <div className="v3-money-card"><p>本月净利润</p><h2>{jpy(monthProfit)}</h2><small>已扣真实成本</small></div>
         <div className="v3-money-card highlight"><p>库存预警</p><h2>{longTerm} 件</h2><small>365日以上库存</small></div>
       </div>
@@ -6213,6 +6426,8 @@ function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, 
             <SalesAmountFields record={{ ...getSalesRecordFromProduct(form), platform: form.soldPlatform || "", salePriceTaxIncludedJpy: form.soldPriceJpy || "" }} onChange={(record) => setForm((current) => ({ ...current, soldPriceJpy: record.salePriceTaxIncludedJpy, salesRecord: record }))} />
             <Input label="实收金额 JPY（未到账留空）" type="number" value={getSalesRecordFromProduct(form).finalDepositJpy || ""} onChange={(v) => setForm((current) => ({ ...current, salesRecord: { ...getSalesRecordFromProduct(current), finalDepositJpy: v } }))} />
             <Input label="到账日期" type="date" value={getSalesRecordFromProduct(form).depositDate || ""} onChange={(v) => setForm((current) => ({ ...current, salesRecord: { ...getSalesRecordFromProduct(current), depositDate: v } }))} />
+            {getSalesRecordFromProduct(form).refundJpy > 0 && <Input label="退款日期" type="date" value={getSalesRecordFromProduct(form).refundDate || ""} onChange={(v) => setForm((current) => ({ ...current, salesRecord: { ...getSalesRecordFromProduct(current), refundDate: v } }))} />}
+            <SalesReturnFields record={getSalesRecordFromProduct(form)} onChange={(record) => setForm((current) => ({ ...current, salesRecord: record }))} />
             <label className="full">
               销售备注
               <textarea value={form.soldMemo || ""} onChange={(e) => set("soldMemo", e.target.value)} placeholder="拍卖成交 / 线下销售 / 买家备注" />
@@ -6420,7 +6635,7 @@ function NbaaProductRecordDetail({ item, onClose, exportItemPdf, isOwner = true 
   const productTaxStatus = isChinaPurchaseRecord
     ? (Number(productImportBatch.importTaxCreditJpy || importConsumptionTax || 0) > 0 ? "进口消费税已记录" : "待补进口消费税参考")
     : (isJapanAuctionRecord ? (Number(auction?.taxCredit || 0) > 0 ? "拍卖进项税已记录" : "待补消费税控除") : (taxCredit ? "进项税参考已记录" : "无进项税参考"));
-  const productSalesStatus = saleJpy ? (finalReceipt ? "已销售 / 已回款" : "已销售 / 待确认到账") : (expectedSaleJpy ? "未销售 / 有预计售价" : "未销售 / 待填写预计售价");
+  const productSalesStatus = isCancelledSale(salesRecord) ? receiptState(salesRecord) : saleJpy ? "已销售 / " + receiptState(salesRecord) : (expectedSaleJpy ? "未销售 / 有预计售价" : "未销售 / 待填写预计售价");
   const productNextAction = auditMissingCount
     ? "补齐资料检查 " + auditMissingCount + " 项"
     : (isChinaPurchaseRecord && !(productImportBatch.id || item.importBatchId || item.customsBatchId)
@@ -6779,6 +6994,7 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
 
   function passesStockSignal(x) {
     if (stockSignalFilter === "全部") return true;
+    if (x.status === "待退回") return false;
     const sales = calcSalesBreakdown(x);
     if (stockSignalFilter === "待出品处理") return x.status === "已入库" || x.status === "待出品";
     if (stockSignalFilter === "未设预计售价") return !sales.sold && Number(sales.expectedSaleTaxIncluded || 0) <= 0;
@@ -6863,19 +7079,19 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
     a.count += 1;
     a.qty += Number(x.qty || 1);
     a.cost += Number(sales.inventoryCostJpy || 0);
-    a.sale += Number(sales.sold ? sales.saleTaxIncluded : sales.expectedSaleTaxIncluded || 0);
+    a.sale += x.status === "待退回" ? 0 : Number(sales.sold ? sales.saleTaxIncluded : sales.expectedSaleTaxIncluded || 0);
     if (sales.sold) a.profit += Number(sales.actualProfitJpy || 0);
-    else if (sales.expectedSaleTaxIncluded > 0) a.profit += Number(sales.expectedProfitJpy || 0);
+    else if (x.status !== "待退回" && sales.expectedSaleTaxIncluded > 0) a.profit += Number(sales.expectedProfitJpy || 0);
     const evidence = buildEvidenceCheck(x);
     if (evidence.status === "缺资料") a.evidenceMissing += 1;
     if (evidence.status === "需补充") a.evidencePartial += 1;
     if (evidence.status === "完整") a.evidenceComplete += 1;
-    if (!sales.sold && Number(sales.expectedSaleTaxIncluded || 0) <= 0) a.missingPrice += 1;
+    if (x.status !== "待退回" && !sales.sold && Number(sales.expectedSaleTaxIncluded || 0) <= 0) a.missingPrice += 1;
     if (!(Array.isArray(x.images) && x.images.length)) a.noImage += 1;
-    if (!sales.sold && stockDays(x) >= 30) a.over30 += 1;
+    if (x.status !== "待退回" && !sales.sold && stockDays(x) >= 30) a.over30 += 1;
     if (x.status === "待出品" || x.status === "已入库") a.toList += 1;
     if (x.status === "报关准备" || x.platform === "EMS" || x.customsBatchId) a.toCustoms += 1;
-    if (!sales.sold && stockDays(x) >= 365) a.longTerm += 1;
+    if (x.status !== "待退回" && !sales.sold && stockDays(x) >= 365) a.longTerm += 1;
     return a;
   }, { count: 0, qty: 0, cost: 0, sale: 0, profit: 0, toList: 0, toCustoms: 0, longTerm: 0, over30: 0, missingPrice: 0, noImage: 0, evidenceMissing: 0, evidencePartial: 0, evidenceComplete: 0 });
 
@@ -7104,15 +7320,16 @@ function Ledger({ items, setItems, isOwner, downloadCSV, exportItemPdf, editItem
     }, "gouka", "古物台账恢复有效") : x));
   }
 
-  function correctLedger(id) {
+  async function correctLedger(id) {
     if (!isOwner) return alert("员工账号不能更正台账");
     const note = window.prompt("请输入更正内容或原因（例：更正商品颜色 / 更正材质 / 更正供应商）：", "更正商品信息");
     if (!note) return;
-    setItems((prev) => prev.map((x) => x.id === id ? addHistory({
+    const saved = await setItems((prev) => prev.map((x) => x.id === id ? addHistory({
       ...x,
       ledgerStatus: "更正",
       ledgerVoidReason: ""
     }, "gouka", `古物台账更正：${note}`) : x));
+    if (!saved) return;
     alert("已记录更正履历。需要修改具体商品内容时，请到库存管理点「编辑」。");
   }
 
@@ -7684,7 +7901,7 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
     return normalizeImportBatch(source || normalizedBatches[0] || {});
   }
 
-  function moveProductsToBatch(batchId, productIds) {
+  async function moveProductsToBatch(batchId, productIds) {
     if (!canEdit || !setItems) return alert("当前账号不能关联商品");
     const target = (batches || []).map(normalizeImportBatch).find((x) => x.id === batchId);
     if (!target) return alert("请先保存并选择目标批次。");
@@ -7700,7 +7917,7 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
     const movingIds = new Set(selected.map((x) => x.id));
     const affectedBatchIds = new Set([...sourceIds, batchId]);
     // Membership changes invalidate allocations for both source and target batches.
-    setItems((prev) => (prev || []).map((x) => {
+    const saved = await setItems((prev) => (prev || []).map((x) => {
       const moving = movingIds.has(x.id);
       if (!moving && !affectedBatchIds.has(getItemImportBatchId(x))) return x;
       return {
@@ -7728,6 +7945,7 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
         completedAt: ""
       };
     }));
+    if (saved === false) return;
     setActiveBatchId(batchId);
     setSelectedLinkItemId("");
     alert(selected.length + " 件商品已移入 " + batchId + "。请点击开始分摊；原批次如仍有商品，也需重新分摊。");
@@ -7744,10 +7962,10 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
     moveProductsToBatch(batchId, filteredLinkItems.map((x) => x.id));
   }
 
-  function unlinkProductFromBatch(itemId) {
+  async function unlinkProductFromBatch(itemId) {
     if (!setItems) return alert("当前账号不能移出商品");
     if (!window.confirm("确认把这个商品移出当前 Import Batch 吗？")) return;
-    setItems((prev) => (prev || []).map((x) => x.id === itemId ? {
+    await setItems((prev) => (prev || []).map((x) => x.id === itemId ? {
       ...x,
       customsBatchId: "",
       importBatchId: "",
@@ -7764,14 +7982,15 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
     } : x));
   }
 
-  function allocateActiveBatch(batch) {
+  async function allocateActiveBatch(batch) {
     if (!setItems) return alert("当前账号不能执行成本分摊");
     const b = normalizeImportBatch(batch);
     const linked = getImportBatchLinkedProducts(b, items);
     if (!linked.length) return alert("请先关联商品，再开始分摊。");
+    if (linked.every((item) => getDeclaredJpyForAllocation(item) <= 0) && !window.confirm("本批次所有商品均未填写申报货值，是否按商品件数平均分摊？")) return;
     const allocations = calcImportBatchAllocation(b, linked);
     const map = Object.fromEntries(allocations.map((x) => [x.item.id, x]));
-    setItems((prev) => (prev || []).map((x) => {
+    const saved = await setItems((prev) => (prev || []).map((x) => {
       const a = map[x.id];
       if (!a) return x;
       return {
@@ -7791,6 +8010,7 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
         batchAllocatedAt: new Date().toISOString()
       };
     }));
+    if (saved === false) return;
     setActiveBatchId(b.id);
     const allocatedAt = new Date().toISOString();
     setBatches((prev) => {
@@ -7932,7 +8152,7 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
       Math.round(Number(batch.agencyFeeJpy || batch.customsFeeJpy || 0)),
       Math.round(Number(batch.internationalShippingJpy || batch.shippingJpy || 0)),
       Math.round(st.allocatedCost),
-      (batch.attachments || []).length ? <div className="attachment-mini-list">{batch.attachments.map((att, i) => (att.dataUrl || att.url) ? <a key={i} href={att.dataUrl || att.url} download={att.name || undefined} target="_blank" rel="noreferrer">{att.documentType || "附件"}：{att.name || "附件" + (i + 1)}</a> : <span key={i}>{attachmentLabel(att)}</span>)}</div> : "—"
+      (batch.attachments || []).length ? <div className="attachment-mini-list">{batch.attachments.map((att, i) => (att.dataUrl || att.url || att.path) ? <ImportAttachmentLink key={i} attachment={att} /> : <span key={i}>{attachmentLabel(att)}</span>)}</div> : "—"
     ];
   });
 
@@ -8152,7 +8372,7 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
                   <small>{form.customsDeclarationNo || "无报关编号"} / {form.importDate || "无日期"} / {attachmentSize(att)} / {att.storageMode === "supabase-storage" ? "云端保存" : (att.storageMode === "metadata-only" ? "仅登记" : "可查看")}</small>
                 </div>
                 <div className="table-actions">
-                  {(att.dataUrl || att.url) ? <a className="ghost button-link" href={att.dataUrl || att.url} download={att.name || undefined} target="_blank" rel="noreferrer">查看</a> : <span className="muted small-text">未上传云端</span>}
+                  {(att.dataUrl || att.url || att.path) ? <ImportAttachmentLink attachment={att} /> : <span className="muted small-text">未上传云端</span>}
                   <button type="button" className="ghost" onClick={() => removeBatchAttachment(index)}>删除</button>
                 </div>
               </div>
@@ -8221,7 +8441,9 @@ function Customs({ items, customsBatches, downloadCSV }) {
 
 function Profit({ items }) {
   const [profitQuery, setProfitQuery] = useState("");
+  const [profitMonth, setProfitMonth] = useState(currentMonth());
   const profitItems = items.filter((x) => [x.id, x.brand, x.item].join(" ").toLowerCase().includes(profitQuery.trim().toLowerCase()));
+  const monthFinancials = calendarProductSales(profitItems, salesMonthPeriod(profitMonth));
   const headers = ["图片", "商品编号", "品牌", "商品名", "库存成本", "销售收入（未税）", "毛利润", "预计利润", "实际利润", "利润率", "销项消费税", "进项消费税", "应缴消费税"];
   const rows = profitItems.map((x) => {
     const sales = calcSalesBreakdown(x);
@@ -8251,18 +8473,25 @@ function Profit({ items }) {
         <Calculator size={20} /> 利润分析
       </h2>
       <label className="erp-inline-label">搜索商品<input type="search" value={profitQuery} onChange={(e) => setProfitQuery(e.target.value)} placeholder="编号 / 品牌 / 商品名" /></label>
-      <p className="note">利润按销售收入（未税） - 库存成本计算。消费税单独统计，不混入利润。</p>
+      <label className="erp-inline-label">损益月份<input type="month" value={profitMonth} onChange={(e) => setProfitMonth(e.target.value)} /></label>
+      <div className="grid4">
+        <Card icon={<Calculator />} title="期间销售收入（未税）" value={jpy(monthFinancials.totals.revenueExTaxJpy)} />
+        <Card icon={<Calculator />} title="期间利润" value={jpy(monthFinancials.totals.profitJpy)} />
+      </div>
+      {monthFinancials.issues.length > 0 && <p role="status">日期或商品去向待核：{monthFinancials.issues.length} 项</p>}
+      <p className="note">上方为期间损益；下表为销售累计损益。消费税单独统计。</p>
       <Table headers={headers} rows={rows} />
     </div>
   );
 }
 
-function TaxReport({ items, totals, customsBatches, downloadCSV }) {
+function TaxReport({ items, totals, customsBatches, downloadCSV, period = {}, setPeriod = () => {} }) {
   const [auditFilter, setAuditFilter] = useState("全部");
   const [auditQuery, setAuditQuery] = useState("");
   const [auditDetailItem, setAuditDetailItem] = useState(null);
-  const soldItems = items.filter((x) => isSoldStatus(x.status) && Number(x.soldPriceJpy || x.saleJpy || 0) > 0);
-  const auctionItems = items.map((x) => ({ item: x, auction: normalizeAuction(x?.auction) })).filter((x) => x.auction);
+  const taxSummary = buildConsumptionTaxSummary(items, customsBatches, period);
+  const { auctionItems, salesEntries, auctionInputTax, importConsumptionTax, salesOutputTax, salesFeeInputTax, inputTaxTotal, taxDifference } = taxSummary;
+  const soldItems = items.filter(isActualSale);
 
   const auctionRows = auctionItems.map(({ item, auction }) => {
     const hammerTax = Number(auction.hammerTax || 0);
@@ -8303,15 +8532,14 @@ function TaxReport({ items, totals, customsBatches, downloadCSV }) {
     ];
   });
 
-  const importRows = (customsBatches || []).map((b) => {
+  const importRows = taxSummary.importBatches.map((b) => {
     const duty = Number(b.dutyJpy || 0);
     const batch = normalizeImportBatch(b);
     const importTax = Number(batch.totalImportConsumptionTaxJpy || 0);
     return [batch.id, batch.importDate || "", jpy(duty), jpy(importTax), b.memo || ""];
   });
 
-  const salesRows = soldItems.map((x) => {
-    const sales = calcSalesBreakdown(x);
+  const salesRows = salesEntries.map(({ item: x, sales, date }) => {
     const salesEvidence = [
       (x.buyer || x.buyerName || x.customer || x.customerName || x.soldBuyer) ? `买家: ${x.buyer || x.buyerName || x.customer || x.customerName || x.soldBuyer}` : "",
       sales.finalReceiptJpy ? `最终到账: ${jpy(sales.finalReceiptJpy)}` : "",
@@ -8322,7 +8550,7 @@ function TaxReport({ items, totals, customsBatches, downloadCSV }) {
       x.id,
       x.brand || "",
       productNameCell(x.item),
-      x.soldDate || "",
+      date || "",
       x.soldPlatform || x.platform || "",
       salesEvidence,
       jpy(sales.saleTaxIncluded),
@@ -8333,11 +8561,6 @@ function TaxReport({ items, totals, customsBatches, downloadCSV }) {
 
   const auctionHammerTax = auctionItems.reduce((sum, x) => sum + Number(x.auction.hammerTax || 0), 0);
   const auctionFeeTax = auctionItems.reduce((sum, x) => sum + Number(x.auction.buyerFeeTax || 0), 0);
-  const auctionInputTax = auctionItems.reduce((sum, x) => sum + Number(x.auction.taxCredit || Number(x.auction.hammerTax || 0) + Number(x.auction.buyerFeeTax || 0)), 0);
-  const importConsumptionTax = (customsBatches || []).reduce((sum, b) => sum + Number(normalizeImportBatch(b).totalImportConsumptionTaxJpy || 0), 0);
-  const salesOutputTax = soldItems.reduce((sum, x) => sum + Number(x.soldPriceJpy || x.saleJpy || 0) * TAX_RATE / (1 + TAX_RATE), 0);
-  const inputTaxTotal = auctionInputTax + importConsumptionTax;
-  const taxDifference = salesOutputTax - inputTaxTotal;
   const taxDifferenceDisplay = consumptionTaxBalanceDisplay(taxDifference);
 
   const taxAuditRows = [
@@ -8362,10 +8585,12 @@ function TaxReport({ items, totals, customsBatches, downloadCSV }) {
     }),
     ...soldItems.flatMap((item) => {
       const rows = [];
-      const saleAmount = Number(item.soldPriceJpy || item.saleJpy || 0);
+      const record = getSalesRecordFromProduct(item);
+      const saleAmount = record.salePriceTaxIncludedJpy;
       if (saleAmount > 0 && !item.soldDate) rows.push(["HIGH", item.id, "销售", "有销售额但缺销售日期", "补录销售日期，消费税期间判断需要日期"]);
       if (saleAmount > 0 && !(item.soldPlatform || item.platform)) rows.push(["MEDIUM", item.id, "销售", "有销售额但缺销售平台", "补录销售平台，方便核对平台结算"]);
       if (isSoldStatus(item.status) && saleAmount <= 0) rows.push(["HIGH", item.id, "销售", "已售状态但缺含税售价", "补录售价（含税），否则无法计算销项税"]);
+      if (record.refundJpy > 0 && !record.refundDate) rows.push(["HIGH", item.id, "退款", "缺少退款日期", "补录退款日期；指定期间时不把无日期退款自动计入原销售月份"]);
       return rows;
     }),
     ...(customsBatches || []).flatMap((rawBatch) => {
@@ -8465,24 +8690,31 @@ function TaxReport({ items, totals, customsBatches, downloadCSV }) {
       ].filter(Boolean).join(" / ");
       return ["日本拍卖进项税", item.id, item.brand || "", item.item || "", auction.auctionDate || item.purchaseDate || "", auction.platform || auction.auctionHouse || "", evidenceStatus, evidence, Math.round(hammerTax), Math.round(buyerFeeTax), "", "", "", "", Math.round(taxCredit)];
     }),
-    ...(customsBatches || []).map((raw) => { const b = normalizeImportBatch(raw); return ["进口消费税", b.id, "", "", b.importDate || "", "Import Batch", b.totalImportConsumptionTaxJpy ? "报关税单参考" : "未录入税额", [b.emsNo ? "EMS:" + b.emsNo : "", b.customsDeclarationNo ? "报关编号:" + b.customsDeclarationNo : "", raw.memo || ""].filter(Boolean).join(" / "), "", "", Math.round(Number(b.totalImportConsumptionTaxJpy || 0)), "", "", "", Math.round(Number(b.totalImportConsumptionTaxJpy || 0))]; }),
-    ...soldItems.map((x) => {
-      const sales = calcSalesBreakdown(x);
-      return ["销售消费税", x.id, x.brand || "", x.item || "", x.soldDate || "", x.soldPlatform || x.platform || "", x.soldDate ? "销售日期OK" : "缺销售日期", [(x.buyer || x.buyerName || x.customer || x.customerName || x.soldBuyer) ? "买家:" + (x.buyer || x.buyerName || x.customer || x.customerName || x.soldBuyer) : "", sales.finalReceiptJpy ? "最终到账:" + Math.round(sales.finalReceiptJpy) : "", x.soldMemo || ""].filter(Boolean).join(" / "), "", "", "", Math.round(sales.saleTaxIncluded), Math.round(sales.salesRevenueExTax), Math.round(sales.salesOutputTax), Math.round(sales.salesOutputTax)];
+    ...taxSummary.importBatches.map((b) => ["进口消费税", b.id, "", "", b.importDate || "", "Import Batch", b.totalImportConsumptionTaxJpy ? "报关税单参考" : "未录入税额", [b.emsNo ? "EMS:" + b.emsNo : "", b.customsDeclarationNo ? "报关编号:" + b.customsDeclarationNo : "", b.memo || ""].filter(Boolean).join(" / "), "", "", Math.round(Number(b.totalImportConsumptionTaxJpy || 0)), "", "", "", Math.round(Number(b.totalImportConsumptionTaxJpy || 0))]),
+    ...salesEntries.map(({ item: x, sales, date }) => {
+      return ["销售消费税", x.id, x.brand || "", x.item || "", date || "", x.soldPlatform || x.platform || "", date ? "交易日期OK" : "缺交易日期", [(x.buyer || x.buyerName || x.customer || x.customerName || x.soldBuyer) ? "买家:" + (x.buyer || x.buyerName || x.customer || x.customerName || x.soldBuyer) : "", sales.finalReceiptJpy ? "最终到账:" + Math.round(sales.finalReceiptJpy) : "", x.soldMemo || ""].filter(Boolean).join(" / "), "", "", "", Math.round(sales.saleTaxIncluded), Math.round(sales.salesRevenueExTax), Math.round(sales.salesOutputTax), Math.round(sales.salesOutputTax)];
     }),
-    ["消费税差额参考", "", "", "", "", "销项税 - 进项税", "经营参考", "销售消费税 - 日本拍卖进项税 - 进口消费税", "", "", Math.round(importConsumptionTax), "", "", Math.round(salesOutputTax), Math.round(taxDifference)],
+    ...salesEntries.filter(({ sales }) => sales.platformFeeTax).map(({ item, sales, date }) => ["销售手续费进项税参考", item.id, item.brand || "", item.item || "", date || "", item.soldPlatform || "", "抵扣资格待凭证确认", "10%手续费税额参考", "", Math.round(sales.platformFeeTax), "", "", "", "", Math.round(sales.platformFeeTax)]),
+    ["消费税差额参考", "", "", "", "", "销项税 - 进项税", "经营参考", "销售税 - 拍卖采购税 - 进口税 - 销售手续费税；资格待确认", "", "", Math.round(importConsumptionTax), "", "", Math.round(salesOutputTax), Math.round(taxDifference)],
     ...taxAuditCsvRows
   ];
 
   return (
     <div className="panel">
       <Toolbar title="消费税参考" onDownload={() => downloadCSV(csv, "gouka_consumption_tax_reference.csv")} />
-      <p className="note">本页面仅供经营参考，正式申报请以税理士计算结果为准。日本拍卖消费税不进入库存成本，作为进项税参考；销售消费税按含税销售额 10/110 倒算。</p>
+      <div className="filter-row">
+        <label>起始日期<input type="date" aria-label="税务起始日期" value={period.from || ""} max={period.to || undefined} onChange={(e) => setPeriod({ ...period, from: e.target.value })} /></label>
+        <label>结束日期<input type="date" aria-label="税务结束日期" value={period.to || ""} min={period.from || undefined} onChange={(e) => setPeriod({ ...period, to: e.target.value })} /></label>
+        <button className="ghost" onClick={() => setPeriod({ from: "", to: "" })}>全部期间</button>
+        <strong>{period.from || period.to ? `${period.from || "不限"} 至 ${period.to || "不限"}` : "累计参考（全部期间）"}</strong>
+      </div>
+      <p className="note">本页面仅供经营参考，不是应纳税申报结果。公司课税方式、国内个人收购特例、出口及各项凭证抵扣资格需税理士确认。未填写日期的交易在指定期间时不计入；未指定期间时显示累计值。</p>
 
       <div className="grid4" style={{ marginBottom: "18px" }}>
         <Card icon={<Calculator />} title="日本拍卖进项税" value={jpy(auctionInputTax)} />
         <Card icon={<Calculator />} title="进口消费税" value={jpy(importConsumptionTax)} />
         <Card icon={<Calculator />} title="销售消费税" value={jpy(salesOutputTax)} />
+        <Card icon={<Calculator />} title="销售手续费税额参考" value={jpy(salesFeeInputTax)} />
         <Card icon={<Calculator />} title={taxDifferenceDisplay.title} value={taxDifferenceDisplay.value} />
       </div>
 
@@ -8526,6 +8758,7 @@ function TaxReport({ items, totals, customsBatches, downloadCSV }) {
         ["  - 落札消费税", jpy(auctionHammerTax)],
         ["  - 手续费消费税", jpy(auctionFeeTax)],
         ["进口消费税", jpy(importConsumptionTax)],
+        ["销售手续费进项税参考（资格待确认）", jpy(salesFeeInputTax)],
         ["进项税合计", jpy(inputTaxTotal)],
         [taxDifferenceDisplay.title + "（销项税 - 进项税）", taxDifferenceDisplay.value]
       ]} />
@@ -8624,11 +8857,12 @@ function ListingManagement({ items, updateListingItem, editItem, setPreviewImage
 
   async function savePlatform(item) {
     const platform = platformDraft.platform === "其他" ? platformDraft.customPlatform : platformDraft.platform;
-    await updateListingItem(item.id, {
+    const saved = await updateListingItem(item.id, {
       platform: platform || item.platform || "",
       saleJpy: Number(platformDraft.saleJpy || item.saleJpy || 0),
       soldPriceJpy: Number(platformDraft.soldPriceJpy || item.soldPriceJpy || 0)
     }, "出品平台/价格更新");
+    if (saved === false) return;
     setEditingPlatformId(null);
   }
 
@@ -8854,6 +9088,10 @@ function SalesReport({ items, updateListingItem, downloadCSV }) {
       platformFeeJpy: Math.round(record.platformFeeJpy || 0) || "",
       shippingFeeJpy: Math.round(record.shippingFeeJpy || 0) || "",
       refundJpy: Math.round(record.refundJpy || 0) || "",
+      refundDate: record.refundDate || "",
+      cancellationDate: record.cancellationDate || "",
+      stockDisposition: record.stockDisposition || "",
+      returnDate: record.returnDate || "",
       adjustmentJpy: Math.round(record.adjustmentJpy || 0) || "",
       finalDepositJpy: Math.round(record.finalDepositJpy || 0) || "",
       depositDate: record.depositDate || "",
@@ -8885,7 +9123,7 @@ function SalesReport({ items, updateListingItem, downloadCSV }) {
   }
 
   function salesIsDeposited(item, record) {
-    return salesActualDepositJpy(item, record) > 0 && salesActualDepositJpy(item, record) >= salesExpectedDepositJpy(record);
+    return receiptState(record) === "已回款" || receiptState(record) === "无需回款";
   }
 
   function salesExpectedDepositJpy(record) {
@@ -8899,6 +9137,7 @@ function SalesReport({ items, updateListingItem, downloadCSV }) {
     if (!record.buyerName) missing.push("买家");
     if (!record.salePriceTaxIncludedJpy) missing.push("售价");
     if (!salesIsDeposited(item, record)) missing.push("回款");
+    if (salesEvents(record, { taxRate: TAX_RATE }).issues.length) missing.push("事件日期 / 商品去向");
     return { ok: missing.length === 0, missing, label: missing.length === 0 ? "完整" : "需补充" };
   }
 
@@ -8906,7 +9145,8 @@ function SalesReport({ items, updateListingItem, downloadCSV }) {
     const q = salesQuery.toLowerCase();
     const text = [record.salesNo, record.listingNumber, item.id, item.brand, item.item, record.platform, record.buyerName, record.memo, item.soldMemo].join(" ").toLowerCase();
     const matchText = !q || text.includes(q);
-    const matchMonth = !salesMonth || String(record.saleDate || "").startsWith(salesMonth);
+    const matchMonth = !salesMonth || salesEvents(record, { taxRate: TAX_RATE }).events.some((event) => event.date && event.date.startsWith(salesMonth))
+      || (isCancelledSale(record) && !record.cancellationDate && String(record.saleDate || "").startsWith(salesMonth));
     const deposited = salesIsDeposited(item, record);
     const quality = salesRecordQuality(item, record);
     const matchDeposit = salesPaymentFilter === "全部" || (salesPaymentFilter === "已回款" ? deposited : !deposited);
@@ -8922,15 +9162,25 @@ function SalesReport({ items, updateListingItem, downloadCSV }) {
     if (!product?.id) return alert("请选择商品。");
     if (Number(salesDraft.salePriceTaxIncludedJpy || 0) <= 0) return alert("请输入售价（含税）。");
     if ([salesDraft.platformFeeJpy, salesDraft.shippingFeeJpy, salesDraft.refundJpy, salesDraft.finalDepositJpy].some((v) => !Number.isFinite(Number(v)) || Number(v) < 0)) return alert("销售费用和实收金额不能为负数。");
+    if (Number(salesDraft.refundJpy || 0) > Number(salesDraft.salePriceTaxIncludedJpy || 0)) return alert("退款不能大于成交金额；其他补偿请单独核对。");
+    if (Number(salesDraft.refundJpy || 0) > 0 && !salesDraft.refundDate) return alert("请填写退款日期。");
+    const dateError = salesDraftDateError(salesDraft, getSalesRecordFromProduct(product));
+    if (dateError) return alert(dateError);
     const patch = buildSalesRecordPatch(product, salesDraft);
-    await updateListingItem(product.id, patch, "Sales Record更新");
+    try {
+      const saved = await updateListingItem(product.id, patch, "Sales Record更新");
+      if (saved === false) throw new Error("未确认云端保存成功");
+    } catch (error) {
+      alert("云端保存未完成，销售草稿仍保留。请检查同步状态后重试。" + (error?.message ? "\n" + error.message : ""));
+      return;
+    }
     setEditingSalesId(null);
     setSalesDraft(null);
     alert("销售记录已保存。");
   }
 
   const headers = ["销售编号", "商品图片", "商品编号", "品牌", "商品名", "销售日期", "平台", "售价（含税）", "手续费（含税）", "应结算", "实收", "销售收入（未税）", "销项消费税", "库存成本", "实际利润", "回款状态", "资料状态", "销售状态", "操作"];
-  const csvHeaders = ["销售编号", "出品番号", "商品编号", "品牌", "商品名", "销售日期", "平台", "买家", "联系方式", "售价（含税）", "销售收入（未税）", "销项消费税", "平台手续费", "手续费消费税", "发货费", "退款", "调整金额", "应结算", "实收", "到账日期", "支付方式", "库存成本", "实际利润", "利润率", "回款状态", "资料状态", "缺失项目", "销售状态", "备注"];
+  const csvHeaders = ["销售编号", "出品番号", "商品编号", "品牌", "商品名", "销售日期", "平台", "买家", "联系方式", "售价（含税）", "销售收入（未税）", "销项消费税", "平台手续费", "手续费消费税", "发货费", "退款", "调整金额", "应结算", "实收", "到账日期", "支付方式", "库存成本", "实际利润", "利润率", "回款状态", "资料状态", "缺失项目", "销售状态", "备注", "退款日期"];
 
   const rows = filteredSalesRows.map(({ item, record }) => {
     const deposited = salesIsDeposited(item, record);
@@ -8953,7 +9203,7 @@ function SalesReport({ items, updateListingItem, downloadCSV }) {
       jpy(record.outputConsumptionTaxJpy),
       jpy(record.inventoryCostJpy),
       moneyCell(record.actualProfitJpy),
-      <span className={deposited ? "status ok" : "status warn"}>{deposited ? "已回款" : actualDeposit > 0 ? "部分回款" : "未回款"}</span>,
+      <span className={deposited ? "status ok" : "status warn"}>{receiptState(record)}</span>,
       <span className={quality.ok ? "status ok" : "status warn"} title={quality.missing.join(" / ")}>{quality.label}</span>,
       <span className="status">{record.salesStatus}</span>,
       <div className="table-actions">
@@ -8992,22 +9242,25 @@ function SalesReport({ items, updateListingItem, downloadCSV }) {
       Math.round(record.inventoryCostJpy || 0),
       Math.round(record.actualProfitJpy || 0),
       pct(record.margin || 0),
-      deposited ? "已回款" : actualDeposit > 0 ? "部分回款" : "未回款",
+      receiptState(record),
       quality.label,
       quality.missing.join(" / "),
       record.salesStatus || "",
-      stripSalesRecordMemo(record.memo || "")
+      stripSalesRecordMemo(record.memo || ""),
+      record.refundDate || ""
     ];
   });
 
-  const totalSale = filteredSalesRows.reduce((a, x) => a + Number(x.record.salePriceTaxIncludedJpy || 0), 0);
-  const totalRevenue = filteredSalesRows.reduce((a, x) => a + Number(x.record.saleRevenueExTaxJpy || 0), 0);
-  const totalOutputTax = filteredSalesRows.reduce((a, x) => a + Number(x.record.outputConsumptionTaxJpy || 0), 0);
-  const expectedDepositTotal = filteredSalesRows.reduce((a, x) => a + salesExpectedDepositJpy(x.record), 0);
-  const totalDeposit = filteredSalesRows.reduce((a, x) => a + salesActualDepositJpy(x.item, x.record), 0);
-  const pendingDeposit = filteredSalesRows.reduce((a, x) => a + Math.max(0, salesExpectedDepositJpy(x.record) - salesActualDepositJpy(x.item, x.record)), 0);
-  const totalProfit = filteredSalesRows.reduce((a, x) => a + Number(x.record.actualProfitJpy || 0), 0);
-  const missingDeposit = filteredSalesRows.filter((x) => !salesIsDeposited(x.item, x.record)).length;
+  const activeSalesRows = filteredSalesRows.filter(({ record }) => !isCancelledSale(record));
+  const periodFinancials = calendarSalesTotals(filteredSalesRows.map((row) => row.record), salesMonthPeriod(salesMonth), { taxRate: TAX_RATE });
+  const totalSale = periodFinancials.totals.netSaleTaxIncludedJpy;
+  const totalRevenue = periodFinancials.totals.revenueExTaxJpy;
+  const totalOutputTax = periodFinancials.totals.outputConsumptionTaxJpy;
+  const expectedDepositTotal = activeSalesRows.reduce((a, x) => a + salesExpectedDepositJpy(x.record), 0);
+  const totalDeposit = activeSalesRows.reduce((a, x) => a + salesActualDepositJpy(x.item, x.record), 0);
+  const pendingDeposit = activeSalesRows.reduce((a, x) => a + Math.max(0, salesExpectedDepositJpy(x.record) - salesActualDepositJpy(x.item, x.record)), 0);
+  const totalProfit = periodFinancials.totals.profitJpy;
+  const missingDeposit = activeSalesRows.filter((x) => !salesIsDeposited(x.item, x.record)).length;
   const completeSalesRecords = filteredSalesRows.filter((x) => salesRecordQuality(x.item, x.record).ok).length;
   const incompleteSalesRecords = filteredSalesRows.length - completeSalesRecords;
   const salesPlatformSummary = Object.values(filteredSalesRows.reduce((acc, row) => {
@@ -9015,12 +9268,15 @@ function SalesReport({ items, updateListingItem, downloadCSV }) {
     if (!acc[platform]) acc[platform] = { platform, count: 0, sale: 0, revenue: 0, outputTax: 0, profit: 0, deposit: 0, pending: 0 };
     const bucket = acc[platform];
     bucket.count += 1;
-    bucket.sale += Number(row.record.salePriceTaxIncludedJpy || 0);
-    bucket.revenue += Number(row.record.saleRevenueExTaxJpy || 0);
-    bucket.outputTax += Number(row.record.outputConsumptionTaxJpy || 0);
-    bucket.profit += Number(row.record.actualProfitJpy || 0);
-    bucket.deposit += salesActualDepositJpy(row.item, row.record);
-    bucket.pending += Math.max(0, salesExpectedDepositJpy(row.record) - salesActualDepositJpy(row.item, row.record));
+    const movements = calendarSalesTotals([row.record], salesMonthPeriod(salesMonth), { taxRate: TAX_RATE }).totals;
+    bucket.sale += movements.netSaleTaxIncludedJpy;
+    bucket.revenue += movements.revenueExTaxJpy;
+    bucket.outputTax += movements.outputConsumptionTaxJpy;
+    bucket.profit += movements.profitJpy;
+    if (!isCancelledSale(row.record)) {
+      bucket.deposit += salesActualDepositJpy(row.item, row.record);
+      bucket.pending += Math.max(0, salesExpectedDepositJpy(row.record) - salesActualDepositJpy(row.item, row.record));
+    }
     return acc;
   }, {})).sort((a, b) => b.revenue - a.revenue);
   const platformSummaryRows = salesPlatformSummary.map((x) => [
@@ -9040,7 +9296,7 @@ function SalesReport({ items, updateListingItem, downloadCSV }) {
 
       <div className="filter-row">
         <input placeholder="搜索销售编号 / 商品 / 平台 / 买家" value={salesQuery} onChange={(e) => setSalesQuery(e.target.value)} />
-        <input aria-label="销售月份" type="month" value={salesMonth} onChange={(e) => setSalesMonth(e.target.value)} />
+        <input aria-label="损益事件月份" type="month" value={salesMonth} onChange={(e) => setSalesMonth(e.target.value)} />
         <select aria-label="回款状态" value={salesPaymentFilter} onChange={(e) => setSalesPaymentFilter(e.target.value)}>
           <option value="全部">全部回款状态</option>
           <option value="未回款">未回款</option>
@@ -9076,11 +9332,13 @@ function SalesReport({ items, updateListingItem, downloadCSV }) {
             <SalesAmountFields record={salesDraft} onChange={setSalesDraft} />
             <label>发货费<input type="number" value={salesDraft.shippingFeeJpy} onChange={(e) => setSalesDraft({ ...salesDraft, shippingFeeJpy: e.target.value })} /></label>
             <label>退款<input type="number" value={salesDraft.refundJpy} onChange={(e) => setSalesDraft({ ...salesDraft, refundJpy: e.target.value })} /></label>
+            {Number(salesDraft.refundJpy || 0) > 0 && <label>退款日期<input type="date" value={salesDraft.refundDate || ""} onChange={(e) => setSalesDraft({ ...salesDraft, refundDate: e.target.value })} /></label>}
             <label>调整金额<input type="number" value={salesDraft.adjustmentJpy} onChange={(e) => setSalesDraft({ ...salesDraft, adjustmentJpy: e.target.value })} /></label>
             <label>实收金额 JPY（未到账留空）<input type="number" min="0" value={salesDraft.finalDepositJpy} onChange={(e) => setSalesDraft({ ...salesDraft, finalDepositJpy: e.target.value })} /></label>
             <label>到账日期<input type="date" value={salesDraft.depositDate} onChange={(e) => setSalesDraft({ ...salesDraft, depositDate: e.target.value })} /></label>
             <label>支付方式<input value={salesDraft.paymentMethod} onChange={(e) => setSalesDraft({ ...salesDraft, paymentMethod: e.target.value })} /></label>
             <label>销售状态<select value={salesDraft.salesStatus} onChange={(e) => setSalesDraft({ ...salesDraft, salesStatus: e.target.value })}>{salesStatuses.map((x) => <option key={x} value={x}>{x}</option>)}</select></label>
+            <SalesReturnFields record={salesDraft} onChange={setSalesDraft} />
             <label className="span-2">备注<textarea value={salesDraft.memo} onChange={(e) => setSalesDraft({ ...salesDraft, memo: e.target.value })} /></label>
             <div className="sales-derived span-3">
               <div><span>销售收入（未税）</span><b>{jpy(draftPreview?.saleRevenueExTaxJpy || 0)}</b></div>
@@ -9102,9 +9360,11 @@ function SalesReport({ items, updateListingItem, downloadCSV }) {
         <Card icon={<Calculator />} title="销售记录" value={filteredSalesRows.length + " 件"} />
         <Card icon={<Calculator />} title="可登记商品" value={saleCandidateItems.length + " 件"} />
         <Card icon={<Calculator />} title="销售收入（未税）" value={jpy(totalRevenue)} />
-        <Card icon={<Calculator />} title="实际利润" value={jpy(totalProfit)} />
+        <Card icon={<Calculator />} title="期间利润" value={jpy(totalProfit)} />
       </div>
+      {periodFinancials.issues.length > 0 && <p role="status">事件日期或商品去向待核：{periodFinancials.issues.length} 项</p>}
 
+      <p className="note">汇总按事件月份；销售明细和回款为累计金额。</p>
       <Table headers={headers} rows={rows} />
       <details className="erp-fold"><summary>回款、税额与平台汇总</summary>
       <div className="sales-check-strip">
@@ -9258,7 +9518,7 @@ function PdfExportPanel({ items, totals, exportInventoryPdf, exportLedgerPdf, ex
   );
 }
 
-function BackupPanel({ items, exportBackup, importBackup, downloadCSV }) {
+function BackupPanel({ items, exportBackup, exportFileBackup, importBackup, downloadCSV }) {
   return (
     <div className="panel">
       <h2><Database size={20} /> 数据备份 / 恢复</h2>
@@ -9272,7 +9532,8 @@ function BackupPanel({ items, exportBackup, importBackup, downloadCSV }) {
       </div>
 
       <div className="action-row" style={{marginTop:"20px"}}>
-        <button className="primary" onClick={exportBackup}><Download size={16} /> 导出备份JSON</button>
+        <button className="primary" onClick={exportBackup}><Download size={16} /> 备份资料和图片链接</button>
+        <button className="ghost" onClick={exportFileBackup}><Download size={16} /> 备份完整照片和附件</button>
         <button className="ghost" onClick={() => downloadCSV(buildTaxAuditRows(items), "gouka_national_tax_audit.csv")}><Download size={16} /> 导出国税审计CSV</button>
         <label className="ghost" style={{display:"inline-flex", alignItems:"center", gap:"8px", cursor:"pointer"}}>
           <Upload size={16} /> 导入备份JSON
@@ -9363,19 +9624,21 @@ function parseAiText(raw, dictionaries, suppliers) {
 function buildAiBusinessStats(items, suppliers) {
   const today = localDateString();
   const month = currentMonth();
-  const active = items.filter((x) => !isSoldStatus(x.status) && x.status !== "退货");
-  const sold = items.filter((x) => isSoldStatus(x.status));
+  const active = items.filter((x) => !isSoldStatus(x.status) && !["退货", "待退回"].includes(x.status));
+  const sold = items.filter(isActualSale);
   const todayIn = items.filter((x) => (x.purchaseDate || "") === today);
-  const todaySold = items.filter((x) => isSoldStatus(x.status) && (x.soldDate || "") === today);
+  const todaySold = items.filter((x) => isActualSale(x) && (x.soldDate || "") === today);
   const monthIn = items.filter((x) => (x.purchaseDate || "").startsWith(month));
-  const monthSold = items.filter((x) => isSoldStatus(x.status) && (x.soldDate || "").startsWith(month));
+  const monthSold = items.filter((x) => isActualSale(x) && (x.soldDate || "").startsWith(month));
   const totalCost = items.reduce((a, x) => a + calcTax(x).costJpy, 0);
   const totalSale = items.reduce((a, x) => a + calcTax(x).saleJpy, 0);
   const totalProfit = items.reduce((a, x) => a + calcTax(x).profitExTax, 0);
-  const todaySale = todaySold.reduce((a, x) => a + calcTax(x).saleJpy, 0);
-  const todayProfit = todaySold.length === 0 ? 0 : todaySold.reduce((a, x) => a + calcTax(x).profitExTax, 0);
-  const monthSale = monthSold.reduce((a, x) => a + calcTax(x).saleJpy, 0);
-  const monthProfit = monthSold.length === 0 ? 0 : monthSold.reduce((a, x) => a + calcTax(x).profitExTax, 0);
+  const todayFinancials = calendarProductSales(items, { from: today, to: today }).totals;
+  const monthFinancials = calendarProductSales(items, salesMonthPeriod(month)).totals;
+  const todaySale = todayFinancials.netSaleTaxIncludedJpy;
+  const todayProfit = todayFinancials.profitJpy;
+  const monthSale = monthFinancials.netSaleTaxIncludedJpy;
+  const monthProfit = monthFinancials.profitJpy;
   const now = new Date();
   function ageDays(x) {
     if (!x.purchaseDate) return 0;
@@ -9460,7 +9723,7 @@ function AiChatAssistant({ items, suppliers, dictionaries, setTab }) {
       <h2>🤖 豪嘉AI助理 V7.0</h2>
       <p className="note">本地AI经营助理：读取ERP本地数据，不上传外部服务器。可回答库存、利润、待办、品牌、供应商、超龄库存等问题。</p>
       <div className="grid4" style={{marginBottom:"16px"}}>
-        <Card icon={<Package />} title="当前库存" value={`${items.filter(x => !isSoldStatus(x.status) && x.status !== "退货").length} 件`} />
+        <Card icon={<Package />} title="当前库存" value={`${items.filter(x => !isSoldStatus(x.status) && !["退货", "待退回"].includes(x.status)).length} 件`} />
         <Card icon={<Calculator />} title="记录总数" value={`${items.length} 件`} />
         <Card icon={<Building2 />} title="供应商" value={`${suppliers.length} 个`} />
         <Card icon={<Database />} title="模式" value="本地AI" />
@@ -10371,9 +10634,10 @@ class ErrorBoundary extends React.Component {
 
 createRoot(document.getElementById("root")).render(
   <ErrorBoundary>
-    <App />
+    <SecureErpAccess client={supabase}>
+      {(session, { signOut }) => <App key={session.userId + ":" + session.role} verifiedSession={session} onVerifiedLogout={signOut} />}
+    </SecureErpAccess>
   </ErrorBoundary>
 );
-
 
 
