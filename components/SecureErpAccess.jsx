@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { LogIn, LogOut, RefreshCw, ShieldCheck, Users, FileSearch } from "lucide-react";
 import { createErpAuth } from "../lib/erpAuth.js";
 
-const panel = { maxWidth: 360, margin: "64px auto", padding: 24, color: "#202629",
+const panel = { maxWidth: 360, margin: "64px auto", padding: "24px 16px", color: "#202629",
   background: "#fff", border: "1px solid #d7dede", borderRadius: 6,
   fontFamily: "system-ui, sans-serif", boxSizing: "border-box", width: "calc(100% - 32px)" };
 const button = { display: "inline-flex", alignItems: "center", justifyContent: "center",
@@ -140,7 +140,7 @@ export default function SecureErpAccess({ client, children }) {
               setState(previous => ({ ...previous, error: "" }));
             }}
             style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6,
-              minWidth: 0, height: 116, padding: "10px 4px", borderRadius: 4, boxSizing: "border-box",
+              minWidth: 0, height: 116, padding: "10px 2px", borderRadius: 4, boxSizing: "border-box",
               border: "2px solid " + (entry === key ? "#176657" : "#c4cfcc"),
               background: entry === key ? "#edf6f2" : "#fff", color: "#202629", cursor: busy ? "wait" : "pointer", font: "inherit" }}>
             <Icon size={20} aria-hidden="true" />
