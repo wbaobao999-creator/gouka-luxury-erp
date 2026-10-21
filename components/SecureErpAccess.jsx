@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { LogIn, LogOut, RefreshCw } from "lucide-react";
+import { LogIn, LogOut, RefreshCw, ShieldCheck, Users, FileSearch } from "lucide-react";
 import { createErpAuth } from "../lib/erpAuth.js";
 
 const panel = { maxWidth: 360, margin: "64px auto", padding: 24, color: "#202629",
@@ -11,10 +11,17 @@ const button = { display: "inline-flex", alignItems: "center", justifyContent: "
 const input = { display: "block", width: "100%", minHeight: 42, boxSizing: "border-box",
   marginTop: 6, padding: "8px 10px", border: "1px solid #9aa9a5", borderRadius: 4,
   background: "white", color: "#202629", font: "inherit" };
+const entries = [
+  { key: "owner", label: "管理者入口", note: "全权限", Icon: ShieldCheck },
+  { key: "staff", label: "员工入口", note: "日常操作", Icon: Users },
+  { key: "tax", label: "税理士窗口", note: "只读审查", Icon: FileSearch }
+];
 
 // Opt-in only: callers must finish the documented server prerequisites before mounting.
 export default function SecureErpAccess({ client, children }) {
   const controls = useRef(null);
+  const loginForm = useRef(null);
+  const [entry, setEntry] = useState("owner");
   const [state, setState] = useState({ client: null, phase: "checking", session: null, error: "" });
 
   useEffect(() => {
@@ -114,7 +121,7 @@ export default function SecureErpAccess({ client, children }) {
     <h1 style={{ fontSize: 24, margin: "0 0 24px", letterSpacing: 0 }}>GOUKA ERP</h1>
     {current.phase === "checking" || current.phase === "signing-out" ?
       <p role="status">{current.phase === "checking" ? "正在验证访问权限..." : "正在退出登录..."}</p> :
-      <form onSubmit={(event) => {
+      <form ref={loginForm} aria-label={entries.find(option => option.key === entry).label} onSubmit={(event) => {
         event.preventDefault();
         if (busy || !controls.current) return;
         const form = event.currentTarget;
@@ -124,6 +131,23 @@ export default function SecureErpAccess({ client, children }) {
         form.elements.namedItem("password").value = "";
         controls.current.login(email, password);
       }}>
+        <div role="group" aria-label="登录入口" style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8, marginBottom: 24 }}>
+          {entries.map(({ key, label, note, Icon }) => <button key={key} type="button"
+            aria-label={label} aria-pressed={entry === key} disabled={busy}
+            onClick={() => {
+              setEntry(key);
+              loginForm.current?.reset();
+              setState(previous => ({ ...previous, error: "" }));
+            }}
+            style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6,
+              minWidth: 0, height: 116, padding: "10px 4px", borderRadius: 4, boxSizing: "border-box",
+              border: "2px solid " + (entry === key ? "#176657" : "#c4cfcc"),
+              background: entry === key ? "#edf6f2" : "#fff", color: "#202629", cursor: busy ? "wait" : "pointer", font: "inherit" }}>
+            <Icon size={20} aria-hidden="true" />
+            <b style={{ fontSize: 14, lineHeight: 1.4, maxWidth: "100%", overflowWrap: "anywhere", textAlign: "center" }}>{label}</b>
+            <span style={{ fontSize: 12, color: "#52635e", maxWidth: "100%", overflowWrap: "anywhere", textAlign: "center" }}>{note}</span>
+          </button>)}
+        </div>
         <label style={{ display: "block", marginBottom: 18 }}>邮箱
           <input name="email" type="email" autoComplete="username" required disabled={busy} style={input} />
         </label>
@@ -142,3 +166,4 @@ export default function SecureErpAccess({ client, children }) {
   </section>}
   </>;
 }
+
