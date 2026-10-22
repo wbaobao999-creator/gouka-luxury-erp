@@ -3200,6 +3200,12 @@ function calendarProductSales(items, period = {}) {
   return calendarSalesTotals(salesEventRecords(items), period, { taxRate: TAX_RATE });
 }
 
+function productProfitReference(item) {
+  if (salesEventRecords([item]).length) return calendarProductSales([item]).totals.profitJpy;
+  const sales = calcSalesBreakdown(item);
+  return isCurrentInventory(item) && sales.expectedSaleTaxIncluded > 0 ? sales.expectedProfitJpy : null;
+}
+
 function salesDraftDateError(draft, previous = {}) {
   // Keep undated legacy cancellations editable, but never invent their date.
   if (draft.salesStatus === "已取消" && !draft.cancellationDate && previous.salesStatus !== "已取消") return "请填写取消日期。";
@@ -5018,6 +5024,8 @@ function App({ verifiedSession, onVerifiedLogout }) {
   function exportItemPdf(item) {
     if (!item) return;
     const t = calcTax(item);
+    const profitReference = productProfitReference(item);
+    const revenueReference = salesEventRecords([item]).length ? calendarProductSales([item]).totals.revenueExTaxJpy : calcSalesBreakdown(item).expectedRevenueExTax;
     const body = `
       ${companyPdfHeader("商品档案 PDF", "Product Record")}
 
@@ -5056,8 +5064,8 @@ function App({ verifiedSession, onVerifiedLogout }) {
           <div class="field"><small>预计/实际售价 JPY</small><b>${jpy(t.saleJpy)}</b></div>
           <div class="field"><small>销售消费税</small><b>${jpy(t.outputTax)}</b></div>
           <div class="field"><small>税抜售价</small><b>${jpy(t.saleExTax)}</b></div>
-          <div class="field"><small>不含税利润参考</small><b>${jpy(t.profitExTax)}</b></div>
-          <div class="field"><small>利润率</small><b>${(t.saleExTax ? (t.profitExTax / t.saleExTax * 100) : 0).toFixed(1)}%</b></div>
+          <div class="field"><small>不含税利润参考</small><b>${profitReference === null ? "未定" : jpy(profitReference)}</b></div>
+          <div class="field"><small>利润率</small><b>${profitReference === null ? "未定" : (revenueReference > 0 ? (profitReference / revenueReference * 100).toFixed(1) + "%" : "—")}</b></div>
         </div>
       </div>
 
@@ -5645,28 +5653,19 @@ function Dashboard({ totals, items, setTab, openInventorySignal = null, exportBa
     })
     .slice(0, 6);
 
-  const brandMap = items.reduce((a, x) => {
+  const brandMap = activeItems.reduce((a, x) => {
     const k = x.brand || "未填写";
     if (!a[k]) a[k] = { count: 0, value: 0, profit: 0 };
     a[k].count += Number(x.qty || 1);
     a[k].value += calcTax(x).costJpy;
-    a[k].profit += calcTax(x).profitExTax;
     return a;
   }, {});
   const brandRows = Object.entries(brandMap).sort((a,b)=>b[1].value-a[1].value).slice(0,6);
-  const totalBrandValue = brandRows.reduce((a, [,v]) => a + v.value, 0) || 1;
+  const totalBrandValue = inventory.cost || 1;
   const maxBrandValue = Math.max(1, ...brandRows.map(([,v])=>v.value));
-  const brandProfitRows = Object.entries(brandMap).sort((a,b)=>b[1].profit-a[1].profit).slice(0,5);
-
-  const supplierMap = items.reduce((a, x) => {
-    const k = x.source || "未填写";
-    if (!a[k]) a[k] = { count: 0, cost: 0, profit: 0 };
-    a[k].count += Number(x.qty || 1);
-    a[k].cost += calcTax(x).costJpy;
-    a[k].profit += calcTax(x).profitExTax;
-    return a;
-  }, {});
-  const supplierRows = Object.entries(supplierMap).sort((a,b)=>b[1].profit-a[1].profit).slice(0,5);
+  const realizedStats = buildAiBusinessStats(items, []);
+  const brandProfitRows = realizedStats.brandProfit;
+  const supplierRows = realizedStats.supplierProfit;
 
   const defaultCashflow = { rentIncome: 1320000, loanPayment: 450000, companyReserve: 30000000, memo: "房租现金流作为长期定投与公司安全垫参考" };
   const [cashflow, setCashflow] = useState(() => {
@@ -9036,7 +9035,7 @@ function ListingManagement({ items, updateListingItem, editItem, setPreviewImage
                       <div><b>成交价：</b>{jpy(item.soldPriceJpy || 0)}</div>
                       <div><b>销售日：</b>{item.soldDate || "—"}</div>
                       <div><b>发货：</b>{String(item.soldMemo || "").includes("発送済") ? "発送済" : "未确认"}</div>
-                      <div><b>参考利润：</b>{jpy(t.profitExTax)}</div>
+                      <div><b>参考利润：</b>{productProfitReference(item) === null ? "未定" : jpy(productProfitReference(item))}</div>
                     </div>
 
                     {editingPlatformId === item.id ? (
@@ -9648,15 +9647,17 @@ function parseAiText(raw, dictionaries, suppliers) {
 function buildAiBusinessStats(items, suppliers) {
   const today = localDateString();
   const month = currentMonth();
-  const active = items.filter((x) => !isSoldStatus(x.status) && !["退货", "待退回"].includes(x.status));
+  const inventory = summarizeCurrentInventory(items);
+  const active = inventory.items;
   const sold = items.filter(isActualSale);
+  const salesHistory = items.filter(x => salesEventRecords([x]).length > 0);
   const todayIn = items.filter((x) => (x.purchaseDate || "") === today);
   const todaySold = items.filter((x) => isActualSale(x) && (x.soldDate || "") === today);
   const monthIn = items.filter((x) => (x.purchaseDate || "").startsWith(month));
   const monthSold = items.filter((x) => isActualSale(x) && (x.soldDate || "").startsWith(month));
-  const totalCost = items.reduce((a, x) => a + calcTax(x).costJpy, 0);
-  const totalSale = items.reduce((a, x) => a + calcTax(x).saleJpy, 0);
-  const totalProfit = items.reduce((a, x) => a + calcTax(x).profitExTax, 0);
+  const totalCost = inventory.cost;
+  const totalSale = inventory.expectedSale;
+  const totalProfit = inventory.expectedProfit;
   const todayFinancials = calendarProductSales(items, { from: today, to: today }).totals;
   const monthFinancials = calendarProductSales(items, salesMonthPeriod(month)).totals;
   const todaySale = todayFinancials.netSaleTaxIncludedJpy;
@@ -9672,27 +9673,27 @@ function buildAiBusinessStats(items, suppliers) {
   }
   const over30 = active.filter((x) => ageDays(x) >= 30);
   const over60 = active.filter((x) => ageDays(x) >= 60);
-  const longTerm = active.filter((x) => ageDays(x) >= 365);
-  const brandMap = items.reduce((a, x) => {
+  const longTerm = active.filter((x) => ageDays(x) >= 90);
+  const brandMap = salesHistory.reduce((a, x) => {
     const k = x.brand || "未填写";
     if (!a[k]) a[k] = { count: 0, cost: 0, sale: 0, profit: 0 };
     a[k].count += Number(x.qty || 1);
     a[k].cost += calcTax(x).costJpy;
-    a[k].sale += calcTax(x).saleJpy;
-    a[k].profit += calcTax(x).profitExTax;
+    a[k].sale += calendarProductSales([x]).totals.netSaleTaxIncludedJpy;
+    a[k].profit += calendarProductSales([x]).totals.profitJpy;
     return a;
   }, {});
-  const supplierMap = items.reduce((a, x) => {
+  const supplierMap = salesHistory.reduce((a, x) => {
     const k = x.source || "未填写";
     if (!a[k]) a[k] = { count: 0, cost: 0, profit: 0 };
     a[k].count += Number(x.qty || 1);
     a[k].cost += calcTax(x).costJpy;
-    a[k].profit += calcTax(x).profitExTax;
+    a[k].profit += calendarProductSales([x]).totals.profitJpy;
     return a;
   }, {});
   return {
     today, month, active, sold, todayIn, todaySold, monthIn, monthSold,
-    totalCost, totalSale, totalProfit, todaySale, todayProfit, monthSale, monthProfit,
+    totalCost, totalSale, totalProfit, pricedCount: inventory.pricedCount, missingPrice: inventory.missingPrice, todaySale, todayProfit, monthSale, monthProfit,
     over30, over60, longTerm,
     brandProfit: Object.entries(brandMap).sort((a,b)=>b[1].profit-a[1].profit).slice(0,5),
     supplierProfit: Object.entries(supplierMap).sort((a,b)=>b[1].profit-a[1].profit).slice(0,5),
@@ -9708,12 +9709,12 @@ function answerAiQuestion(question, items, suppliers, dictionaries) {
   if (!question.trim()) return "你可以问：今天赚了多少钱、库存总成本、哪些货超过90天、哪个品牌最赚钱、哪个供应商最赚钱。";
   if (q.includes("今天") || q.includes("今日")) return [`今日经营：`,`今日新增入库：${s.todayIn.length} 件`,`今日销售额：${jpy(s.todaySale)}`,`今日净利润参考：${jpy(s.todayProfit)}`,`今日售出：${s.todaySold.length} 件`].join("\n");
   if (q.includes("本月") || q.includes("这个月")) return [`本月经营（${s.month}）：`,`本月入库：${s.monthIn.length} 件`,`本月销售额：${jpy(s.monthSale)}`,`本月净利润参考：${jpy(s.monthProfit)}`,`本月售出：${s.monthSold.length} 件`].join("\n");
-  if (q.includes("库存") || q.includes("成本") || q.includes("总成本")) return [`库存概况：`,`当前库存：${s.active.length} 件`,`已售商品：${s.sold.length} 件`,`库存总成本参考：${jpy(s.totalCost)}`,`预计销售总额：${jpy(s.totalSale)}`,`库存预估差额参考：${jpy(s.totalProfit)}`].join("\n");
+  if ((q.includes("库存") || q.includes("成本") || q.includes("总成本")) && !/90|60|30|压货|超龄/.test(q)) return [`库存概况：`,`当前库存：${s.active.length} 件`,`已售商品：${s.sold.length} 件`,`库存总成本参考：${jpy(s.totalCost)}`,`已定价库存预计销售额：${s.pricedCount ? jpy(s.totalSale) : "未定"}`,`已定价库存预估差额：${s.pricedCount ? jpy(s.totalProfit) : "未定"}`,`未设预计售价：${s.missingPrice} 件`].join("\n");
   if (q.includes("90") || q.includes("60") || q.includes("30") || q.includes("压货") || q.includes("超龄")) {
     const list = s.longTerm.slice(0, 8).map((x) => `- ${x.id} ${x.brand} ${x.item} / ${x.purchaseDate}`).join("\n");
     return [`库存预警：`,`超过30天：${s.over30.length} 件`,`超过60天：${s.over60.length} 件`,`超过90天：${s.longTerm.length} 件`, s.longTerm.length ? `\n90天以上前几件：\n${list}` : `目前没有90天以上库存。`].join("\n");
   }
-  if (q.includes("品牌") || q.includes("哪个牌") || q.includes("最赚钱")) return `品牌利润排行：\n${s.brandProfit.map(([b,d],i)=>`${i+1}. ${b}：利润 ${jpy(d.profit)} / ${d.count} 件`).join("\n") || "暂无数据"}`;
+  if (q.includes("品牌") || q.includes("哪个牌") || (q.includes("最赚钱") && !q.includes("供应商") && !q.includes("来源"))) return `品牌已实现利润排行：\n${s.brandProfit.map(([b,d],i)=>`${i+1}. ${b}：利润 ${jpy(d.profit)} / ${d.count} 件`).join("\n") || "暂无销售数据"}`;
   if (q.includes("供应商") || q.includes("来源") || q.includes("哪里进货")) return `供应商利润排行：\n${s.supplierProfit.map(([n,d],i)=>`${i+1}. ${n}：利润 ${jpy(d.profit)} / ${d.count} 件`).join("\n") || "暂无数据"}`;
   if (q.includes("待办") || q.includes("该做什么") || q.includes("下一步")) return [`今日待办建议：`,`待报关：${s.todoCustoms.length} 件`,`待出品：${s.todoListing.length} 件`,`待发货确认：${s.todoShipping.length} 件`,`库存90天以上：${s.longTerm.length} 件`, s.todoListing.length ? `建议优先处理：把已入库商品尽快出品。` : `当前出品压力不大。`].join("\n");
   if (q.includes("标题") || q.includes("mercari") || q.includes("yahoo") || q.includes("乐天")) {
@@ -9723,10 +9724,8 @@ function answerAiQuestion(question, items, suppliers, dictionaries) {
   const brandHit = (dictionaries.brands || []).find((b) => q.includes(String(b).toLowerCase()));
   if (brandHit) {
     const arr = items.filter((x) => x.brand === brandHit);
-    const cost = arr.reduce((a,x)=>a+calcTax(x).costJpy,0);
-    const sale = arr.reduce((a,x)=>a+calcTax(x).saleJpy,0);
-    const profit = arr.reduce((a,x)=>a+calcTax(x).profitExTax,0);
-    return [`${brandHit} 概况：`,`记录数量：${arr.length} 件`,`成本参考：${jpy(cost)}`,`预计销售：${jpy(sale)}`,`预计利润：${jpy(profit)}`].join("\n");
+    const stock = summarizeCurrentInventory(arr);
+    return [`${brandHit} 概况：`,`记录数量：${arr.length} 件`,`当前库存：${stock.count} 件`,`库存成本参考：${jpy(stock.cost)}`,`已定价库存预计销售：${stock.pricedCount ? jpy(stock.expectedSale) : "未定"}`,`已定价库存预估差额：${stock.pricedCount ? jpy(stock.expectedProfit) : "未定"}`].join("\n");
   }
   return [`我现在能回答ERP经营数据问题。你可以这样问：`,`今天赚了多少钱？`,`本月销售额多少？`,`哪些货超过90天？`,`哪个品牌最赚钱？`,`哪个供应商利润最高？`,`现在库存总成本多少？`].join("\n");
 }
