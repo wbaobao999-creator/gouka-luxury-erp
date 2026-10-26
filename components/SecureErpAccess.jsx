@@ -25,11 +25,14 @@ export default function SecureErpAccess({ client, children }) {
   const [state, setState] = useState({ client: null, phase: "checking", session: null, error: "" });
 
   useEffect(() => {
-    let active = true, revision = 0, timer, subscription;
+    let active = true, revision = 0, timer, subscription, verifiedUserId = null;
     let queue = Promise.resolve();
     const auth = createErpAuth(client);
     const publish = (ticket, next) => {
-      if (active && ticket === revision) setState({ client, session: null, error: "", ...next });
+      if (active && ticket === revision) {
+        verifiedUserId = next.session?.userId || null;
+        setState({ client, session: null, error: "", ...next });
+      }
     };
     const invalidate = (phase) => {
       clearTimeout(timer);
@@ -73,11 +76,14 @@ export default function SecureErpAccess({ client, children }) {
     };
     controls.current = actions;
     try {
-      const result = client.auth.onAuthStateChange((event) => {
+      const result = client.auth.onAuthStateChange((event, session) => {
         if (!active) return;
         if (event === "SIGNED_OUT") {
           invalidate("signed-out");
         } else if (["INITIAL_SESSION", "SIGNED_IN", "TOKEN_REFRESHED", "USER_UPDATED"].includes(event)) {
+          if (event === "SIGNED_IN" && verifiedUserId && session?.user?.id && session.user.id !== verifiedUserId) {
+            invalidate("signed-out");
+          }
           scheduleVerification();
         }
       });
@@ -106,8 +112,7 @@ export default function SecureErpAccess({ client, children }) {
   const busy = ["checking", "signing-in", "signing-out"].includes(current.phase);
   const retainContent = current.session && ["ready", "checking"].includes(current.phase);
   return <>
-    {retainContent && <div key={`${current.session.userId}:${current.session.role}`}
-      hidden={current.phase !== "ready"} inert={current.phase !== "ready" ? true : undefined}>
+    {retainContent && <div key={`${current.session.userId}:${current.session.role}`}>
       <header style={{ display: "flex", alignItems: "center", justifyContent: "flex-end",
         flexWrap: "wrap", gap: 12, padding: 12, borderBottom: "1px solid #d7dede" }}>
         <span style={{ overflowWrap: "anywhere" }}>{current.session.username}</span>
@@ -117,7 +122,7 @@ export default function SecureErpAccess({ client, children }) {
       </header>
       {typeof children === "function" ? children(current.session, { signOut: () => controls.current?.logout() }) : null}
     </div>}
-    {current.phase !== "ready" && <section aria-label="ERP 登录" aria-busy={busy} style={panel}>
+    {!retainContent && current.phase !== "ready" && <section aria-label="ERP 登录" aria-busy={busy} style={panel}>
     <h1 style={{ fontSize: 24, margin: "0 0 24px", letterSpacing: 0 }}>GOUKA ERP</h1>
     {current.phase === "checking" || current.phase === "signing-out" ?
       <p role="status">{current.phase === "checking" ? "正在验证访问权限..." : "正在退出登录..."}</p> :
@@ -166,4 +171,3 @@ export default function SecureErpAccess({ client, children }) {
   </section>}
   </>;
 }
-
