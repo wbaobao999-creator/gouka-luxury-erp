@@ -4754,6 +4754,7 @@ function App({ verifiedSession, onVerifiedLogout }) {
     });
     setEditingId(item.id);
     setTab("add");
+    scrollMainTop();
   }
 
   async function deleteItem(id) {
@@ -6304,14 +6305,6 @@ function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, 
     e.preventDefault();
     handleImages(e.dataTransfer.files);
   }
-
-  React.useEffect(() => {
-    requestAnimationFrame(() => {
-      const mainEl = document.querySelector("main");
-      if (mainEl && typeof mainEl.scrollTo === "function") mainEl.scrollTo({ top: 0, left: 0, behavior: "auto" });
-      window.scrollTo({ top: 0, left: 0, behavior: "auto" });
-    });
-  }, [editingId]);
 
   return (
     <div className="panel">
