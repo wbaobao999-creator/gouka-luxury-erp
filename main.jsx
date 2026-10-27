@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from "react";
+import { globalSnapshotSignature } from "./lib/globalSnapshotSignature.js";
 import { readItemAudit, writeItemAudit } from "./lib/itemMetadata.js";
 import { buildPortableBackup, validatePortableBackup } from "./lib/portableBackup.js";
 import { allocateWholeYen, isCancelledSale, salesAmounts, receiptState, inAccountingPeriod } from "./lib/financialMath.js";
@@ -3524,6 +3525,10 @@ function buildGlobalStateCloudRow({ dictionaries, suppliers, deleteLogs, customs
   const payload = { version: 1, savedAt: new Date().toISOString(), dictionaries: normalizeGoukaDictionaries(dictionaries), suppliers: Array.isArray(suppliers) ? suppliers : [], deleteLogs: Array.isArray(deleteLogs) ? deleteLogs : [], customsBatches: Array.isArray(customsBatches) ? customsBatches : [], cashflow: cashflow || readCashflowFromLocal() };
   return { product_no: GLOBAL_STATE_PRODUCT_NO, product_name: "GOUKA ERP Global Sync Data", category: "system", brand: "GOUKA ERP", status: "system", qty: 0, purchase_date: null, sale_date: null, purchase_jpy: 0, sale_jpy: 0, memo: GLOBAL_STATE_MEMO_PREFIX + JSON.stringify(payload), images: [] };
 }
+function globalStateSignature(state) {
+  const row = buildGlobalStateCloudRow(state);
+  return globalSnapshotSignature(JSON.parse(row.memo.slice(GLOBAL_STATE_MEMO_PREFIX.length)));
+}
 function applyGlobalStateToLocalStorage(globalState) {
   if (!globalState || typeof globalState !== "object") return null;
   if (globalState.dictionaries) safeLocalSet(DICTIONARY_KEY, normalizeGoukaDictionaries(globalState.dictionaries), "云端字典资料");
@@ -3933,6 +3938,7 @@ function App({ verifiedSession, onVerifiedLogout }) {
   const pendingImportIdsRef = React.useRef(null);
   const pendingGlobalRef = React.useRef(localStorage.getItem("gouka_global_pending_v1") === "yes");
   const globalRevisionRef = React.useRef(0);
+  const lastCloudGlobalSignatureRef = React.useRef(null);
   const globalStateRef = React.useRef(null);
   globalStateRef.current = { dictionaries, suppliers, deleteLogs, customsBatches, cashflow: readCashflowFromLocal() };
   if (!pendingImportIdsRef.current) {
@@ -3999,6 +4005,7 @@ function App({ verifiedSession, onVerifiedLogout }) {
 
       const globalState = extractGlobalStateFromCloudItems(cloudItems);
       if (globalState) {
+        lastCloudGlobalSignatureRef.current = globalStateSignature(globalState);
         applyGlobalStateToLocalStorage(globalState);
         if (globalState.dictionaries) setDictionaries(normalizeGoukaDictionaries(globalState.dictionaries));
         if (Array.isArray(globalState.suppliers)) setSuppliers(globalState.suppliers);
@@ -4057,6 +4064,7 @@ function App({ verifiedSession, onVerifiedLogout }) {
         }
         const globalState = extractGlobalStateFromCloudItems(cloudItems);
         if (globalState) {
+          lastCloudGlobalSignatureRef.current = globalStateSignature(globalState);
           applyGlobalStateToLocalStorage(globalState);
           if (globalState.dictionaries) setDictionaries(normalizeGoukaDictionaries(globalState.dictionaries));
           if (Array.isArray(globalState.suppliers)) setSuppliers(globalState.suppliers);
@@ -4122,6 +4130,7 @@ function App({ verifiedSession, onVerifiedLogout }) {
 
   React.useEffect(() => {
     if (isPreviewReadOnly || session.role !== "owner" || !isLoggedIn || !cloudGlobalHydratedRef.current) return;
+    if (!pendingGlobalRef.current && globalStateSignature(globalStateRef.current) === lastCloudGlobalSignatureRef.current) return;
     pendingGlobalRef.current = true;
     localStorage.setItem("gouka_global_pending_v1", "yes");
     batchRevisionRef.current += 1;
@@ -4138,7 +4147,9 @@ function App({ verifiedSession, onVerifiedLogout }) {
 
   async function persistGlobalSnapshot(payload = globalStateRef.current) {
     const revision = globalRevisionRef.current;
+    const signature = globalStateSignature(payload);
     await upsertCloudItem(buildGlobalStateCloudRow(payload));
+    lastCloudGlobalSignatureRef.current = signature;
     if (revision !== globalRevisionRef.current) return false;
     pendingGlobalRef.current = false;
     localStorage.removeItem("gouka_global_pending_v1");
@@ -4540,6 +4551,7 @@ function App({ verifiedSession, onVerifiedLogout }) {
       });
       if (!window.confirm(`从云端读取 ${nextItems.length} 件商品，并覆盖当前浏览器库存吗？`)) return;
       if (globalState) {
+        lastCloudGlobalSignatureRef.current = globalStateSignature(globalState);
         applyGlobalStateToLocalStorage(globalState);
         if (globalState.dictionaries) setDictionaries(normalizeGoukaDictionaries(globalState.dictionaries));
         if (Array.isArray(globalState.suppliers)) setSuppliers(globalState.suppliers);

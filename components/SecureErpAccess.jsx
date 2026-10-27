@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { LogIn, LogOut, RefreshCw, ShieldCheck, Users, FileSearch } from "lucide-react";
-import { createErpAuth } from "../lib/erpAuth.js";
+import { createErpAuth, LOGIN_SERVER_ERROR } from "../lib/erpAuth.js";
 import { AUTH_OPERATION_TIMEOUT_MS, resetErpLoginConnection } from "../lib/authConnection.js";
 
 const panel = { maxWidth: 360, margin: "64px auto", padding: "24px 16px", color: "#202629",
@@ -28,11 +28,16 @@ export default function SecureErpAccess({ client, children }) {
   useEffect(() => {
     let active = true, revision = 0, timer, deadline, subscription, verifiedUserId = null, blocked = false;
     let queue = Promise.resolve();
-    const auth = createErpAuth(client);
+    let localCleanupDepth = 0;
+    const auth = createErpAuth(client, {
+      onCleanupChange: starting => { localCleanupDepth += starting ? 1 : -1; }
+    });
     const publish = (ticket, next) => {
       if (active && ticket === revision) {
-        clearTimeout(deadline);
-        deadline = null;
+        if (!["checking", "signing-in", "signing-out"].includes(next.phase)) {
+          clearTimeout(deadline);
+          deadline = null;
+        }
         verifiedUserId = next.session?.userId || null;
         setState({ client, session: null, error: "", ...next });
       }
@@ -65,7 +70,7 @@ export default function SecureErpAccess({ client, children }) {
           publish(ticket, { phase: session ? "ready" : "signed-out", session });
         } catch (error) {
           const message = error?.message;
-          const readable = ["邮箱或密码不正确，或登录服务暂时不可用。", "此账号尚未获准使用 ERP，请联系管理员。"].includes(message);
+          const readable = [LOGIN_SERVER_ERROR, "邮箱或密码不正确，或登录服务暂时不可用。", "此账号尚未获准使用 ERP，请联系管理员。"].includes(message);
           publish(ticket, { phase: "signed-out", error: readable ? message : "无法验证访问权限，请重新登录或重置登录连接。" });
         }
       });
@@ -92,6 +97,8 @@ export default function SecureErpAccess({ client, children }) {
       const result = client.auth.onAuthStateChange((event, session) => {
         if (!active || blocked) return;
         if (event === "SIGNED_OUT") {
+          // Our cleanup belongs to the queued operation; preserve its error result.
+          if (localCleanupDepth > 0) return;
           invalidate("signed-out");
         } else if (["INITIAL_SESSION", "SIGNED_IN", "TOKEN_REFRESHED", "USER_UPDATED"].includes(event)) {
           if (event === "SIGNED_IN" && verifiedUserId && session?.user?.id && session.user.id !== verifiedUserId) {
