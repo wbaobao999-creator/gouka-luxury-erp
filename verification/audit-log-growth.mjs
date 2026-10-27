@@ -1,0 +1,65 @@
+import fs from 'node:fs/promises';
+import assert from 'node:assert/strict';
+import { PGlite } from '../../../work/erp-security-harness/node_modules/@electric-sql/pglite/dist/index.js';
+
+const db = new PGlite();
+const sql = await fs.readFile(new URL('../supabase/audit-log-growth-fix.sql', import.meta.url), 'utf8');
+let checks = 0;
+try {
+  await db.exec(`create role anon; create role authenticated; create schema erp_access; create schema auth;
+    create function auth.uid() returns uuid language sql as $$ select '00000000-0000-4000-8000-000000000001'::uuid $$;
+    create table public.items(product_no text primary key, memo text, price numeric, updated_at timestamptz default now());
+    create table public.erp_audit_log(id bigint generated always as identity primary key,actor_id uuid,operation text,product_no text,before_data jsonb,after_data jsonb);
+    insert into public.erp_audit_log(operation,product_no,before_data) values('LEGACY','KEEP','{"history":"unchanged"}');`);
+  await db.exec(sql);
+  await db.exec('create trigger audit_test after insert or update or delete on public.items for each row execute function erp_access.record_item_change()');
+  const count = async () => Number((await db.query('select count(*) n from public.erp_audit_log')).rows[0].n);
+  const latest = async () => (await db.query('select * from public.erp_audit_log order by id desc limit 1')).rows[0];
+  const prefix = '__GOUKA_ERP_GLOBAL_STATE_JSON__';
+  const state = { version: 1, savedAt: 'old', customsBatches: [{ tax: 9000, file: 'data:application/pdf;base64,'+'A'.repeat(530000) }], cashflow: { amount: 90000 } };
+  await db.query('insert into public.items(product_no,memo,price) values($1,$2,0)', ['__GOUKA_ERP_GLOBAL_STATE__',prefix+JSON.stringify(state)]);
+  assert(JSON.stringify((await latest()).after_data).length < 5000); checks++;
+  const before = await count();
+  for (let i=0;i<100;i++) {
+    const unchanged = await db.query('update public.items set memo=$1,updated_at=clock_timestamp() where product_no=$2 returning product_no', [prefix+JSON.stringify({...state,savedAt:String(i)}),'__GOUKA_ERP_GLOBAL_STATE__']);
+    assert.equal(unchanged.rows.length,0,'Duplicate writes must be suppressed, not just omitted from audit');
+  }
+  assert.equal(await count(),before,'Old clients timestamp-only saves must generate zero audit rows'); checks++;
+  const changed = structuredClone(state);changed.cashflow.amount = 99000;changed.customsBatches[0].tax = 9900;
+  await db.query('update public.items set memo=$1 where product_no=$2',[prefix+JSON.stringify(changed),'__GOUKA_ERP_GLOBAL_STATE__']);
+  let row = await latest();
+  assert.equal(row.actor_id,'00000000-0000-4000-8000-000000000001');
+  assert.equal(row.after_data.format,'delta_v2');
+  assert.equal(row.after_data.changes.length,2);
+  assert(row.after_data.changes.some(x=>x.value===99000));
+  assert(row.before_data.changes.some(x=>x.value===90000));
+  assert(JSON.stringify(row).length < 2000);checks+=6;
+  changed.customsBatches[0].file = 'data:application/pdf;base64,'+'B'.repeat(530000);
+  await db.query('update public.items set memo=$1 where product_no=$2',[prefix+JSON.stringify(changed),'__GOUKA_ERP_GLOBAL_STATE__']);
+  row=await latest();
+  assert.equal(row.after_data.changes[0].value._audit_summary,true);
+  assert.notEqual(row.before_data.changes[0].value.md5,row.after_data.changes[0].value.md5);
+  assert(JSON.stringify(row).length < 2000);checks+=3;
+  await db.exec("insert into public.items(product_no,memo,price) values('TEST','note',90000)");
+  const productCount=await count();
+  await db.exec("update public.items set updated_at=clock_timestamp() where product_no='TEST'");
+  assert.equal(await count(),productCount);checks++;
+  await db.exec("update public.items set price=99000 where product_no='TEST'");
+  row=await latest();assert.deepEqual(row.before_data.changes,[{path:['price'],exists:true,value:90000}]);
+  assert.deepEqual(row.after_data.changes,[{path:['price'],exists:true,value:99000}]);checks+=2;
+  await db.exec("delete from public.items where product_no='TEST'");
+  assert.equal((await latest()).operation,'DELETE');assert.equal((await latest()).after_data,null);checks+=2;
+  const delta = async(a,b)=> (await db.query('select * from erp_access.audit_changes($1::jsonb,$2::jsonb)',[JSON.stringify(a),JSON.stringify(b)])).rows;
+  const nullChange=await delta({a:null},{});
+  assert.equal(nullChange[0].audit_changes.before_exists,true);
+  assert.equal(nullChange[0].audit_changes.after_exists,false);checks+=2;
+  const reorder=await delta([1,2],[2,1]);assert.equal(reorder.length,2);checks++;
+  const huge={};for(let i=0;i<1500;i++)huge['field'+i]=i;
+  await db.query('update public.items set memo=$1 where product_no=$2',[prefix+JSON.stringify({...changed,huge}), '__GOUKA_ERP_GLOBAL_STATE__']);
+  assert(JSON.stringify(await latest()).length<65536);checks++;
+  assert.deepEqual((await db.query("select before_data from public.erp_audit_log where operation='LEGACY'")).rows[0].before_data,{history:'unchanged'});checks++;
+  assert((await db.query("select memo from public.items where product_no='__GOUKA_ERP_GLOBAL_STATE__'")).rows[0].memo.includes('B'.repeat(530000)));checks++;
+  const privileges=await db.query("select has_function_privilege('anon','erp_access.audit_changes(jsonb,jsonb,text[])','execute') allowed");
+  assert.equal(privileges.rows[0].allowed,false);checks++;
+  console.log(`PASS ${checks} PostgreSQL audit checks: 100 timestamp-only saves generate zero logs, financial deltas retained, binary payloads summarized, history and business files untouched.`);
+} finally { await db.close(); }

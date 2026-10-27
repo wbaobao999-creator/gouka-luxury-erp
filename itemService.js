@@ -46,7 +46,7 @@ async function writeCloudItem(item) {
     .from("items")
     .upsert([row], { onConflict: "product_no" })
     .select()
-    .single();
+    .maybeSingle();
 
   const { data, error } = await request(payload);
 
@@ -58,7 +58,12 @@ async function writeCloudItem(item) {
     throw error;
   }
 
-  return data;
+  if (data) return data;
+  // A server-side no-op guard returns no updated row; read the existing record.
+  const existing = await supabase.from("items").select().eq("product_no", item.product_no).single();
+  if (existing.error) throw existing.error;
+  if (!existing.data) throw new Error("Cloud item was not saved; please retry.");
+  return existing.data;
 }
 
 export async function addItem(item) {
@@ -195,7 +200,9 @@ export async function uploadImportBatchAttachments(batchId, files = [], document
 
     if (error) throw error;
 
-
+    const { data } = supabase.storage
+      .from(IMPORT_BATCH_BUCKET)
+      .getPublicUrl(storagePath);
 
     result.push({
       name: file.name || originalName,
@@ -207,7 +214,7 @@ export async function uploadImportBatchAttachments(batchId, files = [], document
       storageMode: "supabase-storage",
       bucket: IMPORT_BATCH_BUCKET,
       path: storagePath,
-      url: ""
+      url: data?.publicUrl || ""
     });
   }
 

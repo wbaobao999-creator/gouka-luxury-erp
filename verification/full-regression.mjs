@@ -4,6 +4,8 @@ import { spawnSync } from 'node:child_process';
 const checks = [
  ['auth-connection.mjs'],
  ['global-snapshot.mjs'],
+ ['audit-log-growth.mjs'],
+ ['item-service-noop.mjs'],
  ['secure-preview.mjs','--release','--server-error-check'],
  ['secure-preview.mjs','--release','--sync-check'],
  ['erp-auth.mjs'], ['secure-erp-access.mjs'], ['database-access.mjs'],
