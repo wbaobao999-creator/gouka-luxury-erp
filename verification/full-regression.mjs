@@ -6,6 +6,7 @@ const checks = [
  ['global-snapshot.mjs'],
  ['audit-log-growth.mjs'],
  ['item-service-noop.mjs'],
+ ['audit-archive-selftest.mjs'],
  ['secure-preview.mjs','--release','--server-error-check'],
  ['secure-preview.mjs','--release','--sync-check'],
  ['erp-auth.mjs'], ['secure-erp-access.mjs'], ['database-access.mjs'],

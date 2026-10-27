@@ -21,7 +21,7 @@ assert.equal((service.match(/throw new Error\("这是只读验收环境/g)||[]).
 const server=spawn(process.execPath,[target+'node_modules/vite/bin/vite.js','--host','127.0.0.1','--port','4197','--strictPort'],{cwd:target,stdio:'ignore'});
 const id='11111111-2222-4333-8444-555555555555';
 const baseUser={id,aud:'authenticated',role:'authenticated',email:'fixture@example.invalid',email_confirmed_at:'2026-01-01T00:00:00Z',app_metadata:{erp_role:'owner',provider:'email',providers:['email']},user_metadata:{},identities:[],created_at:'2026-01-01T00:00:00Z'};
-const accessToken=[{alg:'HS256',typ:'JWT'},{sub:id,role:'authenticated',aud:'authenticated',exp:Math.floor(Date.now()/1000)+3600},'fixture-signature'].map((part,i)=>i===2?part:Buffer.from(JSON.stringify(part)).toString('base64url')).join('.');
+const accessToken=[{alg:'HS256',typ:'JWT'},{sub:id,role:'authenticated',aud:'authenticated',exp:Math.floor(Date.now()/1000)+(syncCheck?7*86400:3600)},'fixture-signature'].map((part,i)=>i===2?part:Buffer.from(JSON.stringify(part)).toString('base64url')).join('.');
 let browser;
 try {
  for(let i=0;i<60;i++){try{if((await fetch('http://127.0.0.1:4197/')).ok)break;}catch{}await new Promise(r=>setTimeout(r,100));}
@@ -47,7 +47,7 @@ try {
    if(url.pathname==='/auth/v1/token') {
     if(serverErrorCheck)return route.fulfill({status:500,contentType:'application/json',body:JSON.stringify({code:'unexpected_failure',msg:'Fixture server failure'})});
     if(recoveryCheck&&!recovered)return;
-    return json({access_token:accessToken,refresh_token:'fixture-refresh',expires_in:3600,token_type:'bearer',user});
+    return json({access_token:accessToken,refresh_token:'fixture-refresh',expires_in:syncCheck?7*86400:3600,token_type:'bearer',user});
    }
    if(url.pathname==='/auth/v1/user') { userReads++; return json(user); }
    if(url.pathname==='/auth/v1/logout')return route.fulfill({status:204});
@@ -96,17 +96,30 @@ try {
   const expectedProducts=auditSnapshot?auditSnapshot.items.filter(x=>x.product_no!=='__GOUKA_ERP_GLOBAL_STATE__').length:1;
   await page.waitForFunction(count=>document.body.innerText.includes('已读取云端 '+count+' 件'),expectedProducts);
   if(syncCheck) {
+   const initialReads=itemReads;
    for(let cycle=0;cycle<4;cycle++) {
     await page.clock.runFor(31000);
+    await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
+    await page.clock.runFor(20);
     await page.waitForTimeout(50);
    }
-   assert(itemReads>=3,'Must exercise repeated cloud polling');
+   assert.equal(itemReads,initialReads,'Short intervals and focus events must not poll cloud data');
+   await page.clock.fastForward(12*60*60*1000);
+   await page.waitForFunction(()=>document.body.innerText.includes('自动读取云端'));
+   assert.equal(itemReads,initialReads+2,'One background read (data page plus end cursor) is due after twelve hours');
+   const scheduledReads=itemReads;
+   await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
+   await page.clock.runFor(100);
+   assert.equal(itemReads,scheduledReads,'Returning to the page must not immediately read again');
    assert.deepEqual(mutations,[],'Reading global state must never echo a write');
+   await page.getByRole('button',{name:'从云端读取',exact:true}).click();
+   await page.waitForFunction(()=>document.body.innerText.includes('已读取云端 1 件'));
+   assert.equal(itemReads,scheduledReads+2,'Manual cloud read remains available');
    await page.getByRole('button',{name:'保存到云端',exact:true}).click();
    await page.waitForFunction(()=>document.body.innerText.includes('已同步 1 件'));
    assert(mutations.some(m=>m.body?.some(row=>row.product_no==='__GOUKA_ERP_GLOBAL_STATE__')),'Explicit save must still persist global state');
    assert.deepEqual(errors,[]);
-   console.log('PASS global sync '+width+'px: repeated cloud reads produce zero writes; explicit save preserved; all APIs mocked');
+   console.log('PASS twelve-hour sync '+width+'px: no short/focus polling, one read after twelve hours, zero echo writes, manual read/save preserved; all APIs mocked');
    await context.close();continue;
   }
   if(recoveryCheck) {

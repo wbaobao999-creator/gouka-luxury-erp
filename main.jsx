@@ -3932,7 +3932,7 @@ function App({ verifiedSession, onVerifiedLogout }) {
   const fileBackupRunningRef = React.useRef(false);
   const cloudGlobalHydratedRef = React.useRef(false);
   const autoCloudReadRunningRef = React.useRef(false);
-  const lastAutoCloudReadRef = React.useRef(0);
+  const lastAutoCloudReadRef = React.useRef(Date.now());
   const batchWriteRunningRef = React.useRef(false);
   const batchRevisionRef = React.useRef(0);
   const pendingImportIdsRef = React.useRef(null);
@@ -4111,7 +4111,7 @@ function App({ verifiedSession, onVerifiedLogout }) {
     const runIfNeeded = (reason = "自动读取") => {
       if (document.hidden) return;
       if (tab === "add" || editingId) return;
-      if (Date.now() - lastAutoCloudReadRef.current < 10000) return;
+      if (Date.now() - lastAutoCloudReadRef.current < 12 * 60 * 60 * 1000) return;
       applyCloudSnapshotSilently(reason);
     };
 
@@ -4119,7 +4119,8 @@ function App({ verifiedSession, onVerifiedLogout }) {
     const onVisibility = () => { if (!document.hidden) runIfNeeded("页面恢复，读取"); };
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onVisibility);
-    const timer = window.setInterval(() => runIfNeeded("自动检查，读取"), 30000);
+    runIfNeeded();
+    const timer = window.setInterval(() => runIfNeeded("自动检查，读取"), 12 * 60 * 60 * 1000);
 
     return () => {
       window.removeEventListener("focus", onFocus);
@@ -4559,6 +4560,7 @@ function App({ verifiedSession, onVerifiedLogout }) {
         if (Array.isArray(globalState.customsBatches)) setCustomsBatches(globalState.customsBatches);
       }
       cloudGlobalHydratedRef.current = true;
+      lastAutoCloudReadRef.current = Date.now();
       setItems(nextItems);
       setSyncStatusText(globalState ? "已读取云端 " + nextItems.length + " 件 · 全局资料已同步" : "已读取云端 " + nextItems.length + " 件");
       alert(`已从云端读取 ${nextItems.length} 件商品。`);
