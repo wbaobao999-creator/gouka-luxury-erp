@@ -2917,17 +2917,18 @@ function productIdPrefixFromItem(item = {}) {
 }
 
 function makeNextId(items, draft = {}) {
-  const d = draft.purchaseDate ? new Date(draft.purchaseDate) : new Date();
-  const validDate = Number.isNaN(d.getTime()) ? new Date() : d;
-  const ym = String(validDate.getFullYear()) + String(validDate.getMonth() + 1).padStart(2, "0");
+  const date = /^(\d{4})-(0[1-9]|1[0-2])-\d{2}$/.exec(String(draft.purchaseDate || ""));
+  const ym = date ? date[1] + date[2] : localDateString().slice(0, 7).replace("-", "");
   const groupPrefix = productIdPrefixFromItem(draft);
   const prefix = groupPrefix + "-" + ym + "-";
   const nums = (items || [])
     .map((x) => String(x.id || ""))
     .filter((id) => id.startsWith(prefix))
-    .map((id) => Number(id.replace(prefix, "")))
-    .filter((n) => !Number.isNaN(n));
-  const next = (nums.length ? Math.max(...nums) : 0) + 1;
+    .map((id) => id.slice(prefix.length))
+    .filter((suffix) => /^\d+$/.test(suffix))
+    .map(Number)
+    .filter(Number.isSafeInteger);
+  const next = nums.reduce((max, n) => Math.max(max, n), 0) + 1;
   return prefix + String(next).padStart(4, "0");
 }
 
@@ -5159,8 +5160,8 @@ function App({ verifiedSession, onVerifiedLogout }) {
     openPdfWindow(`${label}_${localDateString()}`, body);
   }
 
-  function exportLedgerPdf() {
-    const arr = computedItems || [];
+  function exportLedgerPdf(selection) {
+    const arr = Array.isArray(selection) ? selection : computedItems || [];
     const rows = arr.map((x, i) => `<tr>
       <td>${pdfImageHtml(x, 40)}</td>
       <td>${i + 1}</td>
@@ -5443,7 +5444,7 @@ function App({ verifiedSession, onVerifiedLogout }) {
             quickSignal={inventoryQuickSignal}
           />
         )}
-        {tab === "ledger" && (canAccessTab("ledger") ? <Ledger items={computedItems} editItem={canEditBusiness ? editItem : null} setItems={isOwner ? persistImportItems : (() => false)} isOwner={isOwner} downloadCSV={downloadCSV} exportItemPdf={canExportBusinessPdf ? exportItemPdf : null} /> : <RestrictedPanel message={restrictedTabMessage} />)}
+        {tab === "ledger" && (canAccessTab("ledger") ? <Ledger items={computedItems} editItem={canEditBusiness ? editItem : null} setItems={isOwner ? persistImportItems : (() => false)} isOwner={isOwner} downloadCSV={downloadCSV} exportItemPdf={canExportBusinessPdf ? exportItemPdf : null} exportLedgerPdf={canExportBusinessPdf ? exportLedgerPdf : null} /> : <RestrictedPanel message={restrictedTabMessage} />)}
         {tab === "customsBatch" && (canAccessTab("customsBatch") ? <CustomsBatchPanel batches={customsBatches} setBatches={isOwner ? setCustomsBatches : (() => {})} items={computedItems} setItems={isOwner ? persistImportItems : null} downloadCSV={downloadCSV} canEdit={isOwner} onGlobalSave={requestGlobalCloudSave} /> : <RestrictedPanel message={restrictedTabMessage} />)}
         {tab === "customs" && (canAccessTab("customs") ? <Customs items={computedItems} customsBatches={customsBatches} downloadCSV={downloadCSV} /> : <RestrictedPanel message={restrictedTabMessage} />)}
         {tab === "profit" && (canAccessTab("profit") ? <Profit items={computedItems} /> : <RestrictedPanel message={restrictedTabMessage} />)}
@@ -6975,7 +6976,39 @@ function InventoryMobileCards({ items, sourceGroupOf, sourceGroupBadge, stockDay
     </div>
   );
 }
+function purchaseYear(item) {
+  return /^(\d{4})-(0[1-9]|1[0-2])-\d{2}$/.exec(String(item.purchaseDate || ""))?.[1] || "";
+}
+
+function sortProductList(items, order) {
+  return order === "number"
+    ? [...items].sort((a, b) => String(a.id).localeCompare(String(b.id), "en", { numeric: true }))
+    : sortGoukaItems(items);
+}
+
+function PurchaseYearControls({ items, year, setYear, order, setOrder }) {
+  const years = [...new Set(items.map(purchaseYear).filter(Boolean))].sort().reverse();
+  const registered = year ? items.filter(x => purchaseYear(x) === year && !x.deletedAt && x.ledgerStatus !== "作废") : [];
+  const quantity = registered.reduce((sum, x) => {
+    const qty = Number(x.qty ?? 1);
+    return sum + (Number.isSafeInteger(qty) && qty > 0 ? qty : 0);
+  }, 0);
+  return <div className="filter-row">
+    <label>入库年度<select aria-label="入库年度" value={year} onChange={e => setYear(e.target.value)}>
+      <option value="">全部年度</option>
+      {years.map(value => <option key={value} value={value}>{value}</option>)}
+    </select></label>
+    <label>排序<select aria-label="排序" value={order} onChange={e => setOrder(e.target.value)}>
+      <option value="date">入库日期（最新优先）</option>
+      <option value="number">按商品编号</option>
+    </select></label>
+    {year && <span className="note">{year} 年有效入库：{registered.length} 笔 / {quantity} 件（含已售）</span>}
+  </div>;
+}
+
 function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, downloadCSV, editItem, deleteItem, isOwner, canEdit = true, canExportPdf = true, canViewFinance = true, setPreviewImage, setPreviewScale, exportItemPdf, quickSignal }) {
+  const [purchaseYearFilter, setPurchaseYearFilter] = useState("");
+  const [productOrder, setProductOrder] = useState("date");
   const [detailItem, setDetailItem] = useState(null);
   const [inventoryView, setInventoryView] = useState("daily");
   const [page, setPage] = useState(1);
@@ -6983,7 +7016,7 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
   const [stockSignalFilter, setStockSignalFilter] = useState("全部");
   const [sourceGroupFilter, setSourceGroupFilter] = useState("全部来源");
   const pageSize = 30;
-  const allInventoryItems = sortGoukaItems(items || []);
+  const allInventoryItems = sortProductList(items || [], productOrder);
   const evidenceOptions = ["全部", "缺资料", "需补充", "完整"];
   const stockSignalOptions = ["全部", "待出品处理", "未设预计售价", "无图片", "库存30日以上", "库存365日以上"];
   React.useEffect(() => {
@@ -7032,6 +7065,7 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
     return true;
   }
   const inventoryItems = allInventoryItems.filter((x) =>
+    (!purchaseYearFilter || purchaseYear(x) === purchaseYearFilter) &&
     (!query || Object.values(x).join(" ").toLowerCase().includes(query.toLowerCase())) &&
     (statusFilter === "全部" || x.status === statusFilter) &&
     passesSourceGroup(x) && (evidenceFilter === "全部" || buildEvidenceCheck(x).status === evidenceFilter) && passesStockSignal(x)
@@ -7042,7 +7076,7 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
 
   React.useEffect(() => {
     setPage(1);
-  }, [query, statusFilter, evidenceFilter, stockSignalFilter, sourceGroupFilter, items.length]);
+  }, [query, statusFilter, evidenceFilter, stockSignalFilter, sourceGroupFilter, purchaseYearFilter, productOrder, items.length]);
 
   function stockDays(item) {
     if (!item?.purchaseDate) return 0;
@@ -7211,6 +7245,7 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
           </button>
         ))}
       </div>
+      <PurchaseYearControls items={allInventoryItems} year={purchaseYearFilter} setYear={setPurchaseYearFilter} order={productOrder} setOrder={setProductOrder} />
       <details className="erp-fold"><summary>更多筛选</summary>
       <div className="filter-row" style={{ marginBottom: "14px" }}>
         <label>
@@ -7228,10 +7263,10 @@ function Inventory({ items, query, setQuery, statusFilter, setStatusFilter, down
         <span className="note">当前显示 {inventoryItems.length} 件 / 全部 {allInventoryItems.length} 件</span>
       </div>
       </details>
-      {(query || statusFilter !== "全部" || stockSignalFilter !== "全部" || evidenceFilter !== "全部" || sourceGroupFilter !== "全部来源") && (
+      {(purchaseYearFilter || query || statusFilter !== "全部" || stockSignalFilter !== "全部" || evidenceFilter !== "全部" || sourceGroupFilter !== "全部来源") && (
         <div className="gouka-active-filter">
           <span>当前筛选：来源 {sourceGroupFilter} · 资料 {evidenceFilter} · 库存信号 {stockSignalFilter} · 显示 {inventoryItems.length} 件</span>
-          <button className="ghost" onClick={() => { setSourceGroupFilter("全部来源"); setEvidenceFilter("全部"); setStockSignalFilter("全部"); setQuery(""); setStatusFilter("全部"); }}>清除全部筛选</button>
+          <button className="ghost" onClick={() => { setPurchaseYearFilter(""); setSourceGroupFilter("全部来源"); setEvidenceFilter("全部"); setStockSignalFilter("全部"); setQuery(""); setStatusFilter("全部"); }}>清除全部筛选</button>
         </div>
       )}
       <details className="erp-fold"><summary>库存统计与快捷筛选</summary>
@@ -7299,7 +7334,9 @@ function JapaneseAuctionPanel(props) {
   return <JapaneseAuctionPage {...props} shared={auctionPageShared} />;
 }
 
-function Ledger({ items, setItems, isOwner, downloadCSV, exportItemPdf, editItem = null }) {
+function Ledger({ items, setItems, isOwner, downloadCSV, exportItemPdf, exportLedgerPdf, editItem = null }) {
+  const [purchaseYearFilter, setPurchaseYearFilter] = useState("");
+  const [productOrder, setProductOrder] = useState("date");
   const [ledgerQuery, setLedgerQuery] = useState("");
   const [ledgerDate, setLedgerDate] = useState("");
   const [ledgerMonth, setLedgerMonth] = useState("");
@@ -7370,7 +7407,7 @@ function Ledger({ items, setItems, isOwner, downloadCSV, exportItemPdf, editItem
     setOpenLedgerIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
   }
 
-  const filteredItems = sortGoukaItems(items).filter((x) => {
+  const filteredItems = sortProductList(items, productOrder).filter((x) => {
     const q = ledgerQuery.toLowerCase();
     const auction = ledgerAuction(x);
     const text = [
@@ -7379,7 +7416,7 @@ function Ledger({ items, setItems, isOwner, downloadCSV, exportItemPdf, editItem
     ].join(" ").toLowerCase();
     const matchText = !q || text.includes(q);
     const matchDate = !ledgerDate || x.purchaseDate === ledgerDate;
-    return matchText && matchDate && (!ledgerMonth || String(x.purchaseDate || "").startsWith(ledgerMonth));
+    return matchText && matchDate && (!purchaseYearFilter || purchaseYear(x) === purchaseYearFilter) && (!ledgerMonth || String(x.purchaseDate || "").startsWith(ledgerMonth));
   });
   const ledgerPageSize = 30;
   const [ledgerPage, setLedgerPage] = useState(1);
@@ -7389,7 +7426,7 @@ function Ledger({ items, setItems, isOwner, downloadCSV, exportItemPdf, editItem
 
   React.useEffect(() => {
     setLedgerPage(1);
-  }, [ledgerQuery, ledgerDate, ledgerMonth]);
+  }, [ledgerQuery, ledgerDate, ledgerMonth, purchaseYearFilter, productOrder]);
 
   React.useEffect(() => {
     if (ledgerPage > ledgerTotalPages) setLedgerPage(ledgerTotalPages);
@@ -7475,18 +7512,20 @@ function Ledger({ items, setItems, isOwner, downloadCSV, exportItemPdf, editItem
           </div>
           <label className="erp-inline-label">月份<input type="month" value={ledgerMonth} onChange={(e) => setLedgerMonth(e.target.value)} /></label>
           <input type="date" aria-label="台账交易日期" value={ledgerDate} onChange={(e) => setLedgerDate(e.target.value)} />
-          <button onClick={() => { setLedgerQuery(""); setLedgerDate(""); setLedgerMonth(""); }}>清除筛选</button>
+          <button onClick={() => { setLedgerQuery(""); setLedgerDate(""); setLedgerMonth(""); setPurchaseYearFilter(""); }}>清除筛选</button>
           <div className="erp-view-switch" role="group" aria-label="台账视图">
             {[["list", "登记列表"], ["original", "原始横表"], ["cards", "详细卡片"]].map(([value, label]) => <button key={value} aria-pressed={ledgerView === value} className={ledgerView === value ? "active" : "ghost"} onClick={() => setLedgerView(value)}>{label}</button>)}
           </div>
           {ledgerView === "cards" && <><button className="ghost" onClick={() => setOpenLedgerIds(ledgerPageItems.map((x) => x.id))}>展开本页</button><button className="ghost" onClick={() => setOpenLedgerIds([])}>全部收起</button></>}
+          {exportLedgerPdf && <button onClick={() => exportLedgerPdf(filteredItems)}>筛选结果 PDF</button>}
           <button onClick={() => downloadCSV(csvRows, "gouka_kobutsu_ledger.csv")}>
             <Download size={16} /> CSV导出
           </button>
         </div>
       </div>
+      <PurchaseYearControls items={items} year={purchaseYearFilter} setYear={setPurchaseYearFilter} order={productOrder} setOrder={setProductOrder} />
       <p className="note">
-        当前显示第 {filteredItems.length ? ledgerStart + 1 : 0} - {Math.min(ledgerStart + ledgerPageSize, filteredItems.length)} 件 / 筛选 {filteredItems.length} 件 / 全部 {items.length} 件。
+        当前显示第 {filteredItems.length ? ledgerStart + 1 : 0} - {Math.min(ledgerStart + ledgerPageSize, filteredItems.length)} 笔 / 筛选 {filteredItems.length} 笔 / 全部 {items.length} 笔。
       </p>
       {ledgerView !== "cards" && <Table headers={ledgerView === "original" ? headers : ["图片", "商品编号", "取引日", "品牌", "商品名", "实际支付金额", "相手方", "台账状态", "操作"]} rows={ledgerView === "original" ? rows : rows.map((row) => [row[0], row[1], row[2], row[5], row[6], row[10], row[14], row[19], row[21]])} />}
       {ledgerView === "cards" && <>

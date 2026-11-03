@@ -10,21 +10,30 @@ const scrollCheck=process.argv.includes('--scroll-check');
 const recoveryCheck=process.argv.includes('--recovery-check');
 const serverErrorCheck=process.argv.includes('--server-error-check');
 const syncCheck=process.argv.includes('--sync-check');
+const yearCheck=process.argv.includes('--year-check');
+const production=process.argv.includes('--production');
+assert(!production||(release&&yearCheck),'Production runs only the mocked annual/export check');
+const appUrl=production?'https://gouka-luxury-erp.vercel.app/':'http://127.0.0.1:4197/';
 const snapshotIndex=process.argv.indexOf('--snapshot');
-const auditSnapshot=snapshotIndex>=0?JSON.parse(fs.readFileSync(process.argv[snapshotIndex+1],'utf8')):null;
+const auditSnapshot=yearCheck?{items:[
+ {product_no:'JP-AUC-202601-0002',purchase_date:'2026-01-10',qty:2},
+ {product_no:'JP-NBAA-202610-0006',purchase_date:'2026-10-23',qty:3},
+ {product_no:'JP-AUC-202512-0001',purchase_date:'2025-12-30',qty:1}
+].map(row=>({brand:'Fixture',item:'Year check',status:'已入库',...row}))}
+ :snapshotIndex>=0?JSON.parse(fs.readFileSync(process.argv[snapshotIndex+1],'utf8')):null;
 const target=fileURLToPath(new URL(release?'../../../work/erp-secure-release-20261021/':'../../../work/erp-secure-preview-20261021/',import.meta.url));
 const heading=release?'豪嘉ERP｜中古奢侈品管理系统':'豪嘉ERP｜只读验收';
 const source=fs.readFileSync(target+'main.jsx','utf8');
 assert(!source.includes('const USERS =')&&!source.includes('function LoginPage('));
 const service=fs.readFileSync(target+'itemService.js','utf8');
 assert.equal((service.match(/throw new Error\("这是只读验收环境/g)||[]).length,release?0:6);
-const server=spawn(process.execPath,[target+'node_modules/vite/bin/vite.js','--host','127.0.0.1','--port','4197','--strictPort'],{cwd:target,stdio:'ignore'});
+const server=production?null:spawn(process.execPath,[target+'node_modules/vite/bin/vite.js','--host','127.0.0.1','--port','4197','--strictPort'],{cwd:target,stdio:'ignore'});
 const id='11111111-2222-4333-8444-555555555555';
 const baseUser={id,aud:'authenticated',role:'authenticated',email:'fixture@example.invalid',email_confirmed_at:'2026-01-01T00:00:00Z',app_metadata:{erp_role:'owner',provider:'email',providers:['email']},user_metadata:{},identities:[],created_at:'2026-01-01T00:00:00Z'};
 const accessToken=[{alg:'HS256',typ:'JWT'},{sub:id,role:'authenticated',aud:'authenticated',exp:Math.floor(Date.now()/1000)+(syncCheck?7*86400:3600)},'fixture-signature'].map((part,i)=>i===2?part:Buffer.from(JSON.stringify(part)).toString('base64url')).join('.');
 let browser;
 try {
- for(let i=0;i<60;i++){try{if((await fetch('http://127.0.0.1:4197/')).ok)break;}catch{}await new Promise(r=>setTimeout(r,100));}
+ if(server)for(let i=0;i<60;i++){try{if((await fetch(appUrl)).ok)break;}catch{}await new Promise(r=>setTimeout(r,100));}
  browser=await chromium.launch({headless:true,channel:'msedge'});
  for(const width of [1440,390]) for(const role of auditSnapshot||scrollCheck||recoveryCheck||serverErrorCheck||syncCheck?['owner']:(release?['owner','staff','tax']:['owner'])) {
   const user={...baseUser,app_metadata:{...baseUser.app_metadata,erp_role:role}};
@@ -64,7 +73,7 @@ try {
    }
    return route.fulfill({status:403,contentType:'application/json',body:JSON.stringify({message:'Blocked by isolated test'})});
   });
-  await page.goto('http://127.0.0.1:4197/');
+  await page.goto(appUrl);
   if(recoveryCheck) {
    await page.getByRole('status').filter({hasText:'正在验证访问权限'}).waitFor();
    await page.clock.runFor(21000);
@@ -95,6 +104,34 @@ try {
   await page.getByRole('heading',{name:heading,exact:true}).waitFor();
   const expectedProducts=auditSnapshot?auditSnapshot.items.filter(x=>x.product_no!=='__GOUKA_ERP_GLOBAL_STATE__').length:1;
   await page.waitForFunction(count=>document.body.innerText.includes('已读取云端 '+count+' 件'),expectedProducts);
+  if(yearCheck) {
+   for(const tab of ['库存管理','古物台账']) {
+    await page.getByRole('button',{name:tab,exact:true}).click();
+    await page.getByLabel('入库年度',{exact:true}).selectOption('2026');
+    await page.getByText('2026 年有效入库：2 笔 / 5 件（含已售）',{exact:true}).waitFor();
+    const productIds=async()=>await page.locator('main').innerText();
+    const newest=await productIds();
+    assert(newest.indexOf('JP-NBAA-202610-0006') < newest.indexOf('JP-AUC-202601-0002'));
+    assert(!newest.includes('JP-AUC-202512-0001'));
+    await page.getByLabel('排序',{exact:true}).selectOption('number');
+    const sorted=await productIds();
+    assert(sorted.indexOf('JP-AUC-202601-0002') < sorted.indexOf('JP-NBAA-202610-0006'));
+   }
+   const [download]=await Promise.all([page.waitForEvent('download'),page.getByRole('button',{name:'CSV导出',exact:true}).click()]);
+   const csv=fs.readFileSync(await download.path(),'utf8');
+   assert(csv.indexOf('JP-AUC-202601-0002') < csv.indexOf('JP-NBAA-202610-0006'));
+   assert(!csv.includes('JP-AUC-202512-0001'));
+   const [pdf]=await Promise.all([page.waitForEvent('popup'),page.getByRole('button',{name:'筛选结果 PDF',exact:true}).click()]);
+   await pdf.getByText('JP-AUC-202601-0002',{exact:true}).waitFor();
+   const printed=await pdf.locator('body').innerText();
+   assert(printed.indexOf('JP-AUC-202601-0002') < printed.indexOf('JP-NBAA-202610-0006'));
+   assert(!printed.includes('JP-AUC-202512-0001'));
+   await pdf.close();
+   assert.deepEqual(mutations,[]);
+   assert.deepEqual(errors,[]);
+   console.log('PASS annual quantity, sorting and filtered ledger CSV/PDF '+width+'px');
+   await context.close();continue;
+  }
   if(syncCheck) {
    const initialReads=itemReads;
    for(let cycle=0;cycle<4;cycle++) {
@@ -179,4 +216,4 @@ try {
   await context.close();
   console.log(`PASS secure ${release?'release candidate':'read-only preview'} ${role} ${width}px: verified login; role-appropriate save and seal access; logout closes access; all external APIs mocked.`);
  }
-}finally{await browser?.close();server.kill();}
+}finally{await browser?.close();server?.kill();}
