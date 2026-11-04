@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from "react";
+import { cachedLocalItems, initializeLocalItemCache, saveLocalItemCache } from "./lib/localItemCache.js";
 import { globalSnapshotSignature } from "./lib/globalSnapshotSignature.js";
 import { readItemAudit, writeItemAudit } from "./lib/itemMetadata.js";
 import { buildPortableBackup, validatePortableBackup } from "./lib/portableBackup.js";
@@ -2759,6 +2760,8 @@ const seedItems = [
 
 function loadItems() {
   try {
+    const cached = cachedLocalItems();
+    if (cached) return cached.map(normalizeItem);
     const saved = localStorage.getItem(STORAGE_KEY);
     return (saved ? JSON.parse(saved) : []).map(normalizeItem);
   } catch {
@@ -3995,7 +3998,9 @@ function App({ verifiedSession, onVerifiedLogout }) {
   }
 
   React.useEffect(() => {
-    safeLocalSet(STORAGE_KEY, stripImagesForStorage(items), "商品文字数据");
+    saveLocalItemCache(stripImagesForStorage(items)).then((saved) => {
+      if (!saved) setSyncStatusText("本机缓存未保存，请保留页面并导出备份");
+    });
   }, [items]);
 
   React.useEffect(() => {
@@ -4895,7 +4900,7 @@ function App({ verifiedSession, onVerifiedLogout }) {
     batchRevisionRef.current += 1;
     changed.forEach((item) => pendingImportIdsRef.current.add(item.id));
     const markersSaved = safeLocalSet("gouka_pending_import_item_ids_v1", [...pendingImportIdsRef.current], "商品同步状态");
-    const recordsSaved = safeLocalSet(STORAGE_KEY, stripImagesForStorage(next), "商品文字数据");
+    const recordsSaved = await saveLocalItemCache(stripImagesForStorage(next));
     setItems(next);
     if (markersSaved === false || recordsSaved === false) {
       batchWriteRunningRef.current = false;
@@ -10771,11 +10776,23 @@ class ErrorBoundary extends React.Component {
   }
 }
 
+function LocalCacheGate({ children }) {
+  const [ready, setReady] = useState(false);
+  React.useEffect(() => {
+    let active = true;
+    initializeLocalItemCache().finally(() => { if (active) setReady(true); });
+    return () => { active = false; };
+  }, []);
+  return ready ? children : <div role="status">正在载入本机资料…</div>;
+}
+
 createRoot(document.getElementById("root")).render(
   <ErrorBoundary>
+    <LocalCacheGate>
     <SecureErpAccess client={supabase}>
       {(session, { signOut }) => <App key={session.userId + ":" + session.role} verifiedSession={session} onVerifiedLogout={signOut} />}
     </SecureErpAccess>
+    </LocalCacheGate>
   </ErrorBoundary>
 );
 
