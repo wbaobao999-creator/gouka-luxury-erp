@@ -8081,6 +8081,7 @@ function CustomsBatchPanel({ batches, setBatches, items, setItems = null, downlo
     const b = normalizeImportBatch(batch);
     const linked = getImportBatchLinkedProducts(b, items);
     if (!linked.length) return alert("请先关联商品，再开始分摊。");
+    if (Number(b.goodsCount || b.itemCount || 0) > linked.length) return alert("本批次商品尚未关联完整，请核对商品清单后再确认分摊；当前仅显示暂估成本。");
     if (linked.every((item) => getDeclaredJpyForAllocation(item) <= 0) && !window.confirm("本批次所有商品均未填写申报货值，是否按商品件数平均分摊？")) return;
     const allocations = calcImportBatchAllocation(b, linked);
     const map = Object.fromEntries(allocations.map((x) => [x.item.id, x]));
