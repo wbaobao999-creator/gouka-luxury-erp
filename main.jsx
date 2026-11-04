@@ -3052,7 +3052,7 @@ function parseSalesRecordMemo(memo = "") {
     if (idx <= 0) return acc;
     const key = line.slice(0, idx).trim();
     const value = line.slice(idx + 1).trim();
-    if (["settlementVersion", "salePriceTaxIncludedJpy", "platformFeeJpy", "shippingFeeJpy", "refundJpy", "adjustmentJpy", "finalDepositJpy"].includes(key)) acc[key] = Number(value || 0);
+    if (["settlementVersion", "statementSaleTaxJpy", "statementFeeTaxJpy", "salePriceTaxIncludedJpy", "platformFeeJpy", "shippingFeeJpy", "refundJpy", "adjustmentJpy", "finalDepositJpy"].includes(key)) acc[key] = Number(value || 0);
     else acc[key] = value;
     return acc;
   }, {});
@@ -3065,6 +3065,8 @@ function stripSalesRecordMemo(memo = "") {
 function buildSalesRecordMemo(record = {}, originalMemo = "") {
   const cleanMemo = stripSalesRecordMemo(originalMemo);
   const keys = ["settlementVersion", "salesNo", "listingNumber", "saleDate", "refundDate", "cancellationDate", "stockDisposition", "returnDate", "buyerName", "buyerContact", "paymentMethod", "depositDate", "salesStatus", "platform", "salePriceTaxIncludedJpy", "platformFeeJpy", "shippingFeeJpy", "refundJpy", "adjustmentJpy", "finalDepositJpy", "memo"];
+  if (record.statementSaleTaxJpy != null) keys.push("statementSaleTaxJpy");
+  if (record.statementFeeTaxJpy != null) keys.push("statementFeeTaxJpy");
   const block = keys.map((key) => key + ": " + (record[key] ?? "")).join("\n");
   return [cleanMemo, "GOUKA_SALES_RECORD_START", block, "GOUKA_SALES_RECORD_END"].filter(Boolean).join("\n");
 }
@@ -3119,6 +3121,8 @@ function getSalesRecordFromProduct(item = {}) {
     buyerContact: saved.buyerContact || item.buyerContact || "",
     salePriceTaxIncludedJpy,
     platformFeeJpy,
+    ...(saved.statementSaleTaxJpy != null ? { statementSaleTaxJpy: saved.statementSaleTaxJpy === "" ? "" : Number(saved.statementSaleTaxJpy) } : {}),
+    ...(saved.statementFeeTaxJpy != null ? { statementFeeTaxJpy: saved.statementFeeTaxJpy === "" ? "" : Number(saved.statementFeeTaxJpy) } : {}),
     shippingFeeJpy: Number(saved.shippingFeeJpy ?? item.salesShippingFeeJpy ?? 0),
     refundJpy: Number(saved.refundJpy ?? item.refundJpy ?? item.returnJpy ?? item.refundAmountJpy ?? 0),
     adjustmentJpy: Number(saved.adjustmentJpy ?? item.adjustmentJpy ?? item.adjustJpy ?? item.adjustmentAmountJpy ?? 0),
@@ -3127,7 +3131,7 @@ function getSalesRecordFromProduct(item = {}) {
     depositDate: saved.depositDate ?? item.depositDate ?? "",
     paymentMethod: saved.paymentMethod || item.paymentMethod || "",
     salesStatus: saved.salesStatus || item.salesStatus || "",
-    memo: saved.memo || item.soldMemo || "",
+    memo: saved.memo ?? stripSalesRecordMemo(item.soldMemo || ""),
     createdAt: saved.createdAt || item.soldCreatedAt || "",
     updatedAt: saved.updatedAt || item.soldUpdatedAt || ""
   };
@@ -3153,7 +3157,7 @@ function buildSalesRecordPatch(item, draft, user = "gouka") {
   const rawRecord = {
     ...baseRecord,
     ...draft,
-    settlementVersion: 2,
+    settlementVersion: draft.statementSaleTaxJpy != null || draft.statementFeeTaxJpy != null ? 3 : 2,
     salesStatus: draft.salesStatus === "销售准备" ? "" : (draft.salesStatus || ""),
     productId: item.id,
     productCode: item.id,
@@ -3256,8 +3260,8 @@ function salesSettlementDisplayRows(record, actualDeposit = Number(record.finalD
   // Original transaction amounts; refunds and shipping remain separate adjustments.
   const gross = Number(record.salePriceTaxIncludedJpy || 0);
   const fee = Number(record.platformFeeJpy || 0);
-  const priceExTax = gross / (1 + TAX_RATE);
-  const feeExTax = fee / (1 + TAX_RATE);
+  const priceExTax = gross - (record.statementSaleTaxJpy != null ? Number(record.statementSaleTaxJpy || 0) : gross - gross / (1 + TAX_RATE));
+  const feeExTax = fee - (record.statementFeeTaxJpy != null ? Number(record.statementFeeTaxJpy || 0) : fee - fee / (1 + TAX_RATE));
   return [
     ["成交价（税前）", priceExTax],
     ["商品消费税", gross - priceExTax],
@@ -3276,21 +3280,33 @@ function SalesAmountFields({ record, onChange }) {
   const change = (key, value) => onChange({ ...record, [key]: value === "" ? "" : Math.round(Number(value) * (excluded ? 1 + TAX_RATE : 1)) });
   const settlement = calcSalesSettlement(record);
   const receipt = Number(record.finalDepositJpy || 0);
-  const canCorrectTaxBasis = isNbaa && receipt > 0 && settlement.expectedDepositJpy > 0
-    && !Number(record.shippingFeeJpy || record.refundJpy || record.adjustmentJpy || 0)
-    && Math.abs(receipt - settlement.expectedDepositJpy * (1 + TAX_RATE)) < 1;
+  const manual = isNbaa || record.statementSaleTaxJpy != null || record.statementFeeTaxJpy != null;
+  const saleTax = record.statementSaleTaxJpy ?? Math.round(Number(record.salePriceTaxIncludedJpy || 0) - Number(record.salePriceTaxIncludedJpy || 0) / (1 + TAX_RATE));
+  const feeTax = record.statementFeeTaxJpy ?? Math.round(Number(record.platformFeeJpy || 0) - Number(record.platformFeeJpy || 0) / (1 + TAX_RATE));
+  const changeStatement = (field, value) => {
+    const price = Math.round(Number(record.salePriceTaxIncludedJpy || 0) - Number(saleTax || 0));
+    const fee = Math.round(Number(record.platformFeeJpy || 0) - Number(feeTax || 0));
+    const values = { price, saleTax, fee, feeTax, [field]: value };
+    onChange({ ...record, settlementVersion: 3,
+      statementSaleTaxJpy: values.saleTax, statementFeeTaxJpy: values.feeTax,
+      salePriceTaxIncludedJpy: Number(values.price || 0) + Number(values.saleTax || 0),
+      platformFeeJpy: Number(values.fee || 0) + Number(values.feeTax || 0) });
+  };
   return <div className="sales-amount-fields full span-3">
-    {!isNbaa && <div className="sales-amount-mode" role="group" aria-label="销售金额输入方式">
+    {!manual && <div className="sales-amount-mode" role="group" aria-label="销售金额输入方式">
       <button type="button" aria-pressed={!excluded} onClick={() => setMode("included")}>含税金额</button>
       <button type="button" aria-pressed={excluded} onClick={() => setMode("excluded")}>税前金额</button>
     </div>}
-    {canCorrectTaxBasis && <div className="sales-basis-warning" role="status">
-      <span>实收 {jpy(receipt)} 与应结算 {jpy(settlement.expectedDepositJpy)} 不一致；金额可能误录为含税。</span>
-      <button type="button" onClick={() => onChange({ ...record, salePriceTaxIncludedJpy: Math.round(Number(record.salePriceTaxIncludedJpy) * (1 + TAX_RATE)), platformFeeJpy: Math.round(Number(record.platformFeeJpy) * (1 + TAX_RATE)) })}>按NBAA税前金额修正</button>
-    </div>}
     <div className="sales-amount-inputs">
-      <label>成交价 JPY（{excluded ? "税前" : "含税"}）<input type="number" min="0" step="1" value={amount("salePriceTaxIncludedJpy")} onChange={(e) => change("salePriceTaxIncludedJpy", e.target.value)} /></label>
-      <label>销售手续费 JPY（{excluded ? "税前" : "含税"}）<input type="number" min="0" step="1" value={amount("platformFeeJpy")} onChange={(e) => change("platformFeeJpy", e.target.value)} /></label>
+      {manual ? <>
+        <label>成交价 JPY（税前）<input type="number" min="0" step="1" value={Math.round(Number(record.salePriceTaxIncludedJpy || 0) - Number(saleTax || 0)) || ""} onChange={(e) => changeStatement("price", e.target.value)} /></label>
+        <label>商品消费税 JPY<input type="number" min="0" step="1" value={saleTax} onChange={(e) => changeStatement("saleTax", e.target.value)} /></label>
+        <label>销售手续费 JPY（税前）<input type="number" min="0" step="1" value={Math.round(Number(record.platformFeeJpy || 0) - Number(feeTax || 0)) || ""} onChange={(e) => changeStatement("fee", e.target.value)} /></label>
+        <label>手续费消费税 JPY<input type="number" min="0" step="1" value={feeTax} onChange={(e) => changeStatement("feeTax", e.target.value)} /></label>
+      </> : <>
+        <label>成交价 JPY（{excluded ? "税前" : "含税"}）<input type="number" min="0" step="1" value={amount("salePriceTaxIncludedJpy")} onChange={(e) => change("salePriceTaxIncludedJpy", e.target.value)} /></label>
+        <label>销售手续费 JPY（{excluded ? "税前" : "含税"}）<input type="number" min="0" step="1" value={amount("platformFeeJpy")} onChange={(e) => change("platformFeeJpy", e.target.value)} /></label>
+      </>}
     </div>
     <dl className="sales-amount-summary">
       {salesSettlementDisplayRows(record).map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{label === "实际到账金额" && !value ? "未到账" : jpy(value)}</dd></div>)}
@@ -3298,6 +3314,7 @@ function SalesAmountFields({ record, onChange }) {
       {Number(record.shippingFeeJpy) > 0 && <div><dt>发货费</dt><dd>{jpy(record.shippingFeeJpy)}</dd></div>}
       {Number(record.adjustmentJpy) !== 0 && Number.isFinite(Number(record.adjustmentJpy)) && <div><dt>调整金额</dt><dd>{jpy(record.adjustmentJpy)}</dd></div>}
     </dl>
+    {receipt > 0 && Math.abs(receipt - settlement.expectedDepositJpy) >= 1 && <p role="status" className="sales-basis-warning">到账差额待核：{jpy(receipt - settlement.expectedDepositJpy)}</p>}
   </div>;
 }
 
@@ -3312,7 +3329,7 @@ function calcSalesBreakdown(item) {
   const salesOutputTax = Number(record.outputConsumptionTaxJpy || 0);
   const expectedRevenueExTax = expectedSaleTaxIncluded > 0 ? expectedSaleTaxIncluded / (1 + TAX_RATE) : 0;
   const platformFeeTaxIncluded = Number(record.platformFeeJpy || 0);
-  const platformFeeExTax = platformFeeTaxIncluded > 0 ? platformFeeTaxIncluded / (1 + TAX_RATE) : 0;
+  const platformFeeExTax = salesAmounts(record, TAX_RATE).feeExTax;
   const platformFeeTax = Number(record.platformFeeTaxJpy || 0);
   const refundJpy = Number(record.refundJpy || 0);
   const adjustmentJpy = Number(record.adjustmentJpy || 0);
@@ -3337,8 +3354,8 @@ function buildConsumptionTaxSummary(items = [], customsBatches = [], period = {}
     const saleInPeriod = inAccountingPeriod(record.saleDate, period);
     const refundInPeriod = Number(record.refundJpy || 0) > 0 && inAccountingPeriod(record.refundDate, period);
     const amount = (saleInPeriod ? record.salePriceTaxIncludedJpy : 0) - (refundInPeriod ? record.refundJpy : 0);
-    const tax = calcSalesTaxBreakdown(Math.abs(amount));
-    const sign = amount < 0 ? -1 : 1;
+    const amounts = salesAmounts(record, TAX_RATE);
+    const outputTax = (saleInPeriod ? amounts.grossOutputTaxJpy : 0) - (refundInPeriod ? amounts.refundTaxJpy : 0);
     return {
       item,
       date: saleInPeriod ? record.saleDate : record.refundDate,
@@ -3346,8 +3363,8 @@ function buildConsumptionTaxSummary(items = [], customsBatches = [], period = {}
       sales: {
         ...calcSalesBreakdown(item),
         saleTaxIncluded: amount,
-        salesRevenueExTax: sign * tax.revenueExTax,
-        salesOutputTax: sign * tax.outputConsumptionTaxJpy,
+        salesRevenueExTax: amount - outputTax,
+        salesOutputTax: outputTax,
         platformFeeTax: saleInPeriod ? record.platformFeeTaxJpy : 0
       }
     };
@@ -4669,6 +4686,7 @@ function App({ verifiedSession, onVerifiedLogout }) {
       const sales = getSalesRecordFromProduct(safeForm);
       const draft = { ...sales, saleDate: safeForm.soldDate || "", platform: safeForm.soldPlatform || "", salePriceTaxIncludedJpy: safeForm.soldPriceJpy || 0, memo: stripSalesRecordMemo(safeForm.soldMemo || "") };
       if (Number(draft.salePriceTaxIncludedJpy) <= 0) return alert("请输入成交价。");
+      if ([draft.statementSaleTaxJpy ?? 0, draft.statementFeeTaxJpy ?? 0].some((v) => !Number.isFinite(Number(v)) || Number(v) < 0) || Number(draft.statementSaleTaxJpy || 0) > Number(draft.salePriceTaxIncludedJpy || 0) || Number(draft.statementFeeTaxJpy || 0) > Number(draft.platformFeeJpy || 0)) return alert("请核对单据消费税，税额不能为负数或大于对应含税金额。");
       if ([draft.platformFeeJpy, draft.shippingFeeJpy, draft.refundJpy, draft.finalDepositJpy].some((v) => !Number.isFinite(Number(v)) || Number(v) < 0)) return alert("销售费用和实收金额不能为负数。");
       if (draft.refundJpy > draft.salePriceTaxIncludedJpy) return alert("退款不能大于成交金额。");
       if (draft.refundJpy > 0 && !draft.refundDate) return alert("请填写退款日期。");
@@ -9202,6 +9220,8 @@ function SalesReport({ items, updateListingItem, downloadCSV }) {
       buyerContact: record.buyerContact || "",
       salePriceTaxIncludedJpy: Math.round(record.salePriceTaxIncludedJpy || 0) || "",
       platformFeeJpy: Math.round(record.platformFeeJpy || 0) || "",
+      ...(record.statementSaleTaxJpy != null ? { statementSaleTaxJpy: record.statementSaleTaxJpy } : {}),
+      ...(record.statementFeeTaxJpy != null ? { statementFeeTaxJpy: record.statementFeeTaxJpy } : {}),
       shippingFeeJpy: Math.round(record.shippingFeeJpy || 0) || "",
       refundJpy: Math.round(record.refundJpy || 0) || "",
       refundDate: record.refundDate || "",
@@ -9273,6 +9293,7 @@ function SalesReport({ items, updateListingItem, downloadCSV }) {
   const draftPreview = salesDraft ? getSalesRecordFromProduct({ ...selectedDraftItem(), salesRecord: salesDraft, soldPriceJpy: salesDraft.salePriceTaxIncludedJpy }) : null;
 
   async function saveSalesDraft() {
+    if ([salesDraft?.statementSaleTaxJpy ?? 0, salesDraft?.statementFeeTaxJpy ?? 0].some((v) => !Number.isFinite(Number(v)) || Number(v) < 0) || Number(salesDraft?.statementSaleTaxJpy || 0) > Number(salesDraft?.salePriceTaxIncludedJpy || 0) || Number(salesDraft?.statementFeeTaxJpy || 0) > Number(salesDraft?.platformFeeJpy || 0)) return alert("请核对单据消费税，税额不能为负数或大于对应含税金额。");
     if (!updateListingItem) return alert("当前账号没有销售编辑权限。");
     const product = selectedDraftItem();
     if (!product?.id) return alert("请选择商品。");
