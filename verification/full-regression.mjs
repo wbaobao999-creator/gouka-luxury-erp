@@ -10,6 +10,7 @@ const checks = [
  ['secure-preview.mjs','--release','--server-error-check'],
  ['secure-preview.mjs','--release','--sync-check'],
  ['secure-preview.mjs','--release','--year-check'],
+ ['secure-preview.mjs','--release','--delivery-check'],
  ['erp-auth.mjs'], ['secure-erp-access.mjs'], ['database-access.mjs'],
  ['private-files.mjs'], ['data-integrity.mjs'], ['sales-events.mjs'],
  ['sales-settlement.mjs'], ['financial-corrections.mjs'], ['inventory-statistics.mjs'],

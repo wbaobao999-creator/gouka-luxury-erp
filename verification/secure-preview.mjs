@@ -11,8 +11,9 @@ const recoveryCheck=process.argv.includes('--recovery-check');
 const serverErrorCheck=process.argv.includes('--server-error-check');
 const syncCheck=process.argv.includes('--sync-check');
 const yearCheck=process.argv.includes('--year-check');
+const deliveryCheck=process.argv.includes('--delivery-check');
 const production=process.argv.includes('--production');
-assert(!production||(release&&yearCheck),'Production runs only the mocked annual/export check');
+assert(!production||(release&&(yearCheck||deliveryCheck)),'Production runs only isolated read-only checks');
 const appUrl=production?'https://gouka-luxury-erp.vercel.app/':'http://127.0.0.1:4197/';
 const snapshotIndex=process.argv.indexOf('--snapshot');
 const auditSnapshot=yearCheck?{items:[
@@ -35,7 +36,7 @@ let browser;
 try {
  if(server)for(let i=0;i<60;i++){try{if((await fetch(appUrl)).ok)break;}catch{}await new Promise(r=>setTimeout(r,100));}
  browser=await chromium.launch({headless:true,channel:'msedge'});
- for(const width of [1440,390]) for(const role of auditSnapshot||scrollCheck||recoveryCheck||serverErrorCheck||syncCheck?['owner']:(release?['owner','staff','tax']:['owner'])) {
+ for(const width of [1440,390]) for(const role of auditSnapshot||scrollCheck||recoveryCheck||serverErrorCheck||syncCheck||deliveryCheck?['owner']:(release?['owner','staff','tax']:['owner'])) {
   const user={...baseUser,app_metadata:{...baseUser.app_metadata,erp_role:role}};
   const context=await browser.newContext({viewport:{width,height:950}});
   await context.addInitScript(()=>localStorage.setItem('gouka_erp_login','yes'));
@@ -104,6 +105,24 @@ try {
   await page.getByRole('heading',{name:heading,exact:true}).waitFor();
   const expectedProducts=auditSnapshot?auditSnapshot.items.filter(x=>x.product_no!=='__GOUKA_ERP_GLOBAL_STATE__').length:1;
   await page.waitForFunction(count=>document.body.innerText.includes('已读取云端 '+count+' 件'),expectedProducts);
+  if(deliveryCheck) {
+   await page.getByRole('button',{name:'商品录入',exact:true}).click();
+   await page.getByLabel(/状态 \/ Status/).selectOption('已售出');
+   const disposition=page.getByLabel('商品去向',{exact:true});
+   await disposition.waitFor();
+   assert.deepEqual(await disposition.locator('option').allTextContents(),['未确认','未发货','已发货','已签收／交付完成','待退回','已退回']);
+   for(const value of ['shipped','delivered','pending_return','returned']) {
+    await disposition.selectOption(value);assert.equal(await disposition.inputValue(),value);
+   }
+   await page.getByText('退回日期',{exact:true}).waitFor();
+   await disposition.selectOption('delivered');
+   assert.equal(await page.getByText('退回日期',{exact:true}).count(),0);
+   await disposition.scrollIntoViewIfNeeded();
+   await page.screenshot({path:'verification/screenshots/delivery-options-'+width+'.png'});
+   assert.deepEqual(mutations,[]);assert.deepEqual(errors,[]);
+   console.log('PASS delivery options and return-date controls '+width+'px; no business writes');
+   await context.close();continue;
+  }
   if(yearCheck) {
    for(const tab of ['库存管理','古物台账']) {
     await page.getByRole('button',{name:tab,exact:true}).click();

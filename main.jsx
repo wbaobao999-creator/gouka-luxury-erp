@@ -2945,7 +2945,7 @@ function inventoryStatusForSales(item, asOf = localDateString()) {
   const record = { ...item, ...saved, saleDate: saved.saleDate || item.soldDate || "" };
   const cancelled = record.salesStatus === "已取消";
   const refundCase = record.salesStatus === "已退款" || Number(record.refundJpy) > 0;
-  const explicitDisposition = ["pending_return", "returned", "not_shipped"].includes(record.stockDisposition);
+  const explicitDisposition = ["pending_return", "returned", "not_shipped", "shipped", "delivered"].includes(record.stockDisposition);
   if (!cancelled && !(refundCase && explicitDisposition)) return item.status;
   const available = saleStockDisposition(record, { asOf }).available
     && (record.stockDisposition !== "returned" || !record.saleDate || record.returnDate >= record.saleDate);
@@ -3160,7 +3160,7 @@ function buildSalesRecordPatch(item, draft, user = "gouka") {
   const refundCase = record.salesStatus === "已退款" || Number(record.refundJpy) > 0;
   const nextStatus = record.salesStatus === "已取消" || refundCase
     ? inventoryStatusForSales({ ...item, salesRecord: record })
-    : (["已发货", "已签收", "已回款", "已完成"].includes(record.salesStatus) ? "已发货" : "已售出");
+    : (["shipped", "delivered"].includes(record.stockDisposition) || ["已发货", "已签收", "已回款", "已完成"].includes(record.salesStatus) ? "已发货" : "已售出");
   return {
     status: nextStatus,
     brand: draft.brand ?? item.brand,
@@ -3219,11 +3219,15 @@ function salesDraftDateError(draft, previous = {}) {
   return "";
 }
 
+function stockDispositionLabel(value) {
+  return ({ not_shipped: "未发货", shipped: "已发货", delivered: "已签收／交付完成", pending_return: "待退回", returned: "已退回" })[value] || "未确认";
+}
+
 function SalesReturnFields({ record, onChange }) {
   return <>
     {record.salesStatus === "已取消" && <label>取消日期<input type="date" value={record.cancellationDate || ""} onChange={(e) => onChange({ ...record, cancellationDate: e.target.value })} /></label>}
-    <label>商品去向<select value={record.stockDisposition || ""} onChange={(e) => onChange({ ...record, stockDisposition: e.target.value })}>
-      <option value="">未确认</option><option value="pending_return">待退回</option><option value="returned">已退回</option><option value="not_shipped">未发货</option>
+    <label>商品去向<select aria-label="商品去向" value={record.stockDisposition || ""} onChange={(e) => onChange({ ...record, stockDisposition: e.target.value })}>
+      <option value="">未确认</option><option value="not_shipped">未发货</option><option value="shipped">已发货</option><option value="delivered">已签收／交付完成</option><option value="pending_return">待退回</option><option value="returned">已退回</option>
     </select></label>
     {record.stockDisposition === "returned" && <label>退回日期<input type="date" value={record.returnDate || ""} onChange={(e) => onChange({ ...record, returnDate: e.target.value })} /></label>}
   </>;
@@ -3264,8 +3268,8 @@ function SalesAmountFields({ record, onChange }) {
     <dl className="sales-amount-summary">
       <div><dt>{settlement.refundJpy > 0 ? "销售净额（含税，扣退款）" : "销售合计（含税）"}</dt><dd>{jpy(settlement.netSaleTaxIncludedJpy)}</dd></div>
       <div><dt>{settlement.refundJpy > 0 ? "商品消费税（扣退款）" : "商品消费税"}</dt><dd>{jpy(settlement.outputConsumptionTaxJpy)}</dd></div>
-      <div><dt>手续费（含税）</dt><dd>{jpy(settlement.feeTaxIncluded)}</dd></div>
-      <div><dt>手续费消费税</dt><dd>{jpy(settlement.feeTaxJpy)}</dd></div>
+      <div><dt>手续费合计（含税）</dt><dd>{jpy(settlement.feeTaxIncluded)}</dd></div>
+      <div><dt>其中：手续费消费税</dt><dd>{jpy(settlement.feeTaxJpy)}</dd></div>
       <div><dt>应结算金额</dt><dd>{jpy(settlement.expectedDepositJpy)}</dd></div>
     </dl>
   </div>;
@@ -9280,6 +9284,7 @@ function SalesReport({ items, updateListingItem, downloadCSV }) {
     ];
   });
 
+  csvHeaders.push("商品去向", "退回日期");
   const csvRows = filteredSalesRows.map(({ item, record }) => {
     const deposited = salesIsDeposited(item, record);
     const actualDeposit = salesActualDepositJpy(item, record);
@@ -9314,7 +9319,9 @@ function SalesReport({ items, updateListingItem, downloadCSV }) {
       quality.missing.join(" / "),
       record.salesStatus || "",
       stripSalesRecordMemo(record.memo || ""),
-      record.refundDate || ""
+      record.refundDate || "",
+      stockDispositionLabel(record.stockDisposition),
+      record.returnDate || ""
     ];
   });
 
@@ -9469,12 +9476,13 @@ function SalesReport({ items, updateListingItem, downloadCSV }) {
               <div><span>售价（含税）</span><b>{jpy(detailSales.record.salePriceTaxIncludedJpy)}</b></div>
               <div><span>销售收入（未税）</span><b>{jpy(detailSales.record.saleRevenueExTaxJpy)}</b></div>
               <div><span>销项消费税</span><b>{jpy(detailSales.record.outputConsumptionTaxJpy)}</b></div>
-              <div><span>平台手续费</span><b>{jpy(detailSales.record.platformFeeJpy)}</b></div>
+              <div><span>手续费合计（含税）</span><b>{jpy(detailSales.record.platformFeeJpy)}</b></div>
               <div><span>预计到账</span><b>{jpy(detailSales.expectedDeposit || detailSales.record.finalDepositJpy)}</b></div>
               <div><span>实际到账</span><b>{jpy(detailSales.actualDeposit || 0)}</b></div>
               <div><span>实际利润</span><b>{jpy(detailSales.record.actualProfitJpy)}</b></div>
               <div><span>利润率</span><b>{pct(detailSales.record.margin || 0)}</b></div>
               <div><span>销售状态</span><b>{detailSales.record.salesStatus}</b></div>
+              <div><span>商品去向</span><b>{stockDispositionLabel(detailSales.record.stockDisposition)}</b></div>
             </div>
             <p className="note">{stripSalesRecordMemo(detailSales.record.memo || "") || "无备注"}</p>
           </div>
