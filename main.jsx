@@ -3241,6 +3241,22 @@ function SalesProductFields({ item, listingNumber, onChange, onProductChange }) 
   </div>;
 }
 
+function salesSettlementDisplayRows(record, actualDeposit = Number(record.finalDepositJpy || 0), expectedDeposit = calcSalesSettlement(record).expectedDepositJpy) {
+  // Original transaction amounts; refunds and shipping remain separate adjustments.
+  const gross = Number(record.salePriceTaxIncludedJpy || 0);
+  const fee = Number(record.platformFeeJpy || 0);
+  const priceExTax = gross / (1 + TAX_RATE);
+  const feeExTax = fee / (1 + TAX_RATE);
+  return [
+    ["成交价（税前）", priceExTax],
+    ["商品消费税", gross - priceExTax],
+    ["手续费（税前）", feeExTax],
+    ["手续费消费税", fee - feeExTax],
+    ["应结算金额", Number(expectedDeposit || 0)],
+    ["实际到账金额", Number(actualDeposit || 0)]
+  ];
+}
+
 function SalesAmountFields({ record, onChange }) {
   const isNbaa = String(record.platform || "").toUpperCase().includes("NBAA");
   const [mode, setMode] = useState("included");
@@ -3266,11 +3282,10 @@ function SalesAmountFields({ record, onChange }) {
       <label>销售手续费 JPY（{excluded ? "税前" : "含税"}）<input type="number" min="0" step="1" value={amount("platformFeeJpy")} onChange={(e) => change("platformFeeJpy", e.target.value)} /></label>
     </div>
     <dl className="sales-amount-summary">
-      <div><dt>{settlement.refundJpy > 0 ? "销售净额（含税，扣退款）" : "销售合计（含税）"}</dt><dd>{jpy(settlement.netSaleTaxIncludedJpy)}</dd></div>
-      <div><dt>{settlement.refundJpy > 0 ? "商品消费税（扣退款）" : "商品消费税"}</dt><dd>{jpy(settlement.outputConsumptionTaxJpy)}</dd></div>
-      <div><dt>手续费合计（含税）</dt><dd>{jpy(settlement.feeTaxIncluded)}</dd></div>
-      <div><dt>其中：手续费消费税</dt><dd>{jpy(settlement.feeTaxJpy)}</dd></div>
-      <div><dt>应结算金额</dt><dd>{jpy(settlement.expectedDepositJpy)}</dd></div>
+      {salesSettlementDisplayRows(record).map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{label === "实际到账金额" && !value ? "未到账" : jpy(value)}</dd></div>)}
+      {Number(record.refundJpy) > 0 && <div><dt>退款金额（含税）</dt><dd>{jpy(record.refundJpy)}</dd></div>}
+      {Number(record.shippingFeeJpy) > 0 && <div><dt>发货费</dt><dd>{jpy(record.shippingFeeJpy)}</dd></div>}
+      {Number(record.adjustmentJpy) !== 0 && Number.isFinite(Number(record.adjustmentJpy)) && <div><dt>调整金额</dt><dd>{jpy(record.adjustmentJpy)}</dd></div>}
     </dl>
   </div>;
 }
@@ -6844,7 +6859,7 @@ function NbaaProductRecordDetail({ item, onClose, exportItemPdf, isOwner = true 
           <RecordField label="报关日期" value={customsDate} />
         </RecordCard>
 
-        <RecordCard title="④ 销售" summary={salesRecord.salePriceTaxIncludedJpy ? [salesRecord.salesNo, salesRecord.platform, jpy(salesRecord.salePriceTaxIncludedJpy)].filter(Boolean).join(" / ") : ""} defaultOpen={salesRecord.salePriceTaxIncludedJpy > 0}>
+        <RecordCard title="④ 销售" summary={salesRecord.salePriceTaxIncludedJpy ? [salesRecord.salesNo, salesRecord.platform, "成交价（税前）" + jpy(salesSettlementDisplayRows(salesRecord)[0][1])].filter(Boolean).join(" / ") : ""} defaultOpen={salesRecord.salePriceTaxIncludedJpy > 0}>
           <RecordField label="品牌名（ブランド名）" value={item.brand} />
           <RecordField label="商品名" value={item.item || item.productTitle} />
           <RecordField label="出品番号" value={salesRecord.listingNumber} />
@@ -6852,13 +6867,9 @@ function NbaaProductRecordDetail({ item, onClose, exportItemPdf, isOwner = true 
           <RecordField label="买家" value={salesRecord.buyerName || buyerName} />
           <RecordField label="平台" value={salesRecord.platform} />
           <RecordField label="销售日期" value={salesRecord.saleDate} />
-          <RecordField label="售价（含税）" value={salesRecord.salePriceTaxIncludedJpy ? jpy(salesRecord.salePriceTaxIncludedJpy) : ""} />
-          <RecordField label="销售收入（未税）" value={salesRecord.saleRevenueExTaxJpy ? jpy(salesRecord.saleRevenueExTaxJpy) : ""} />
-          <RecordField label="销项消费税" value={salesRecord.outputConsumptionTaxJpy ? jpy(salesRecord.outputConsumptionTaxJpy) : ""} />
-          <RecordField label="平台手续费" value={salesRecord.platformFeeJpy ? jpy(salesRecord.platformFeeJpy) : ""} />
-          <RecordField label="手续费消费税" value={salesRecord.platformFeeTaxJpy ? jpy(salesRecord.platformFeeTaxJpy) : ""} />
+          {salesSettlementDisplayRows(salesRecord).map(([label, value]) => <RecordField key={label} label={label} value={label === "实际到账金额" && !value ? "未到账" : jpy(value)} />)}
           <RecordField label="退款" value={salesRecord.refundJpy ? jpy(salesRecord.refundJpy) : ""} />
-          <RecordField label="最终到账" value={salesRecord.finalDepositJpy ? jpy(salesRecord.finalDepositJpy) : ""} />
+          <RecordField label="含税销售额（扣手续费前）" value={jpy(salesRecord.salePriceTaxIncludedJpy)} />
           <RecordField label="实际利润" value={salesRecord.actualProfitJpy ? jpy(salesRecord.actualProfitJpy) : ""} />
           <RecordField label="销售状态" value={salesRecord.salesStatus} />
         </RecordCard>
@@ -6894,7 +6905,7 @@ function NbaaProductRecordDetail({ item, onClose, exportItemPdf, isOwner = true 
 
         <RecordCard title="⑤ 利润分析" summary={saleJpy ? jpy(actualProfit) : (expectedSaleJpy ? jpy(expectedProfit) : "")} defaultOpen={saleJpy > 0 || expectedSaleJpy > 0}>
           <RecordField label="库存成本" value={jpy(t.costJpy)} />
-          <RecordField label="销售金额" value={saleJpy ? jpy(saleJpy) : ""} />
+          <RecordField label="含税销售净额（扣退款后）" value={saleJpy ? jpy(saleJpy) : ""} />
           <RecordField label="毛利润" value={saleJpy ? jpy(grossProfit) : ""} />
           <RecordField label="消费税" value={jpy(taxRef)} />
           <RecordField label="实际利润" value={saleJpy ? jpy(actualProfit) : ""} />
@@ -6962,7 +6973,7 @@ function InventoryMobileCards({ items, sourceGroupOf, sourceGroupBadge, stockDay
               </div>
               <div className="inventory-mobile-grid">
                 <div className="inventory-mobile-cell"><small>库存成本</small><strong>{moneyCell(t.costJpy)}</strong></div>
-                <div className="inventory-mobile-cell"><small>售价 / 成交</small><strong>{displaySale > 0 ? expectedSaleCell(displaySale) : <span className="inventory-pending">待填写</span>}</strong></div>
+                <div className="inventory-mobile-cell"><small>{sold ? "含税销售净额" : "预计售价（含税）"}</small><strong>{displaySale > 0 ? expectedSaleCell(displaySale) : <span className="inventory-pending">待填写</span>}</strong></div>
                 <div className="inventory-mobile-cell"><small>预计 / 实际利润</small><strong>{displaySale > 0 ? moneyCell(displayProfit) : <span className="inventory-pending">待填写</span>}</strong></div>
                 <div className="inventory-mobile-cell"><small>资料状态</small><strong><span className={"evidence-badge " + (evidence.status === "完整" ? "ok" : evidence.status === "需补充" ? "partial" : "missing")}>{evidence.status}</span></strong></div>
               </div>
@@ -9082,7 +9093,7 @@ function ListingManagement({ items, updateListingItem, editItem, setPreviewImage
                     <div style={{fontSize:"12px", color:"#475569", marginTop:"10px", lineHeight:1.6}}>
                       <div><b>平台：</b>{item.platform || "未设置"}</div>
                       <div><b>预计价：</b>{jpy(item.saleJpy)}</div>
-                      <div><b>成交价：</b>{jpy(item.soldPriceJpy || 0)}</div>
+                      <div><b>成交价（税前）：</b>{jpy(salesSettlementDisplayRows(getSalesRecordFromProduct(item))[0][1])}</div>
                       <div><b>销售日：</b>{item.soldDate || "—"}</div>
                       <div><b>发货：</b>{String(item.soldMemo || "").includes("発送済") ? "発送済" : "未确认"}</div>
                       <div><b>参考利润：</b>{productProfitReference(item) === null ? "未定" : jpy(productProfitReference(item))}</div>
@@ -9096,7 +9107,7 @@ function ListingManagement({ items, updateListingItem, editItem, setPreviewImage
                         </select>
                         {platformDraft.platform === "其他" && <input value={platformDraft.customPlatform} onChange={(e) => setPlatformDraft({ ...platformDraft, customPlatform: e.target.value })} placeholder="手动输入平台 / 拍卖会 / 客户" />}
                         <input type="number" value={platformDraft.saleJpy} onChange={(e) => setPlatformDraft({ ...platformDraft, saleJpy: e.target.value })} placeholder="预计出品价 JPY" />
-                        <input type="number" value={platformDraft.soldPriceJpy} onChange={(e) => setPlatformDraft({ ...platformDraft, soldPriceJpy: e.target.value })} placeholder="实际成交价 JPY" />
+                        <input aria-label="含税销售额 JPY（扣手续费前）" type="number" value={platformDraft.soldPriceJpy} onChange={(e) => setPlatformDraft({ ...platformDraft, soldPriceJpy: e.target.value })} placeholder="含税销售额 JPY（扣手续费前）" />
                         <div className="action-row">
                           <button className="primary" onClick={() => savePlatform(item)}>保存</button>
                           <button className="ghost" onClick={() => setEditingPlatformId(null)}>取消</button>
@@ -9271,8 +9282,9 @@ function SalesReport({ items, updateListingItem, downloadCSV }) {
     alert("销售记录已保存。");
   }
 
-  const headers = ["销售编号", "商品图片", "商品编号", "品牌", "商品名", "销售日期", "平台", "售价（含税）", "手续费（含税）", "应结算", "实收", "销售收入（未税）", "销项消费税", "库存成本", "实际利润", "回款状态", "资料状态", "销售状态", "操作"];
-  const csvHeaders = ["销售编号", "出品番号", "商品编号", "品牌", "商品名", "销售日期", "平台", "买家", "联系方式", "售价（含税）", "销售收入（未税）", "销项消费税", "平台手续费", "手续费消费税", "发货费", "退款", "调整金额", "应结算", "实收", "到账日期", "支付方式", "库存成本", "实际利润", "利润率", "回款状态", "资料状态", "缺失项目", "销售状态", "备注", "退款日期"];
+  const settlementHeaders = salesSettlementDisplayRows({}).map(([label]) => label);
+  const headers = ["销售编号", "商品图片", "商品编号", "品牌", "商品名", "销售日期", "平台", ...settlementHeaders, "销售净收入（未税）", "库存成本", "实际利润", "回款状态", "资料状态", "销售状态", "操作"];
+  const csvHeaders = ["销售编号", "出品番号", "商品编号", "品牌", "商品名", "销售日期", "平台", "买家", "联系方式", ...settlementHeaders, "含税销售额（扣手续费前）", "销售净收入（未税）", "销项消费税（扣退款后）", "发货费", "退款", "调整金额", "到账日期", "支付方式", "库存成本", "实际利润", "利润率", "回款状态", "资料状态", "缺失项目", "销售状态", "备注", "退款日期"];
 
   const rows = filteredSalesRows.map(({ item, record }) => {
     const deposited = salesIsDeposited(item, record);
@@ -9287,12 +9299,8 @@ function SalesReport({ items, updateListingItem, downloadCSV }) {
       productNameCell(item.item),
       record.saleDate || "—",
       record.platform || "—",
-      jpy(record.salePriceTaxIncludedJpy),
-      jpy(record.platformFeeJpy),
-      jpy(expectedDeposit),
-      actualDeposit > 0 ? jpy(actualDeposit) : "未到账",
+      ...salesSettlementDisplayRows(record, actualDeposit, expectedDeposit).map(([label, value]) => label === "实际到账金额" && !value ? "未到账" : jpy(value)),
       jpy(record.saleRevenueExTaxJpy),
-      jpy(record.outputConsumptionTaxJpy),
       jpy(record.inventoryCostJpy),
       moneyCell(record.actualProfitJpy),
       <span className={deposited ? "status ok" : "status warn"}>{receiptState(record)}</span>,
@@ -9320,16 +9328,13 @@ function SalesReport({ items, updateListingItem, downloadCSV }) {
       record.platform || "",
       record.buyerName || "",
       record.buyerContact || "",
+      ...salesSettlementDisplayRows(record, actualDeposit).map(([, value]) => Math.round(value)),
       Math.round(record.salePriceTaxIncludedJpy || 0),
       Math.round(record.saleRevenueExTaxJpy || 0),
       Math.round(record.outputConsumptionTaxJpy || 0),
-      Math.round(record.platformFeeJpy || 0),
-      Math.round(record.platformFeeTaxJpy || 0),
       Math.round(record.shippingFeeJpy || 0),
       Math.round(record.refundJpy || 0),
       Math.round(record.adjustmentJpy || 0),
-      Math.round(record.expectedDepositJpy || 0),
-      Math.round(actualDeposit || 0),
       record.depositDate || "",
       record.paymentMethod || "",
       Math.round(record.inventoryCostJpy || 0),
@@ -9477,7 +9482,7 @@ function SalesReport({ items, updateListingItem, downloadCSV }) {
           <h3>平台汇总</h3>
           <span>按当前筛选自动汇总</span>
         </div>
-        <Table headers={["平台", "件数", "售价（含税）", "销售收入（未税）", "销项消费税", "实际利润", "已回款", "待回款"]} rows={platformSummaryRows} />
+        <Table headers={["平台", "件数", "含税销售额（扣手续费前）", "销售净收入（未税）", "销项消费税", "实际利润", "已回款", "待回款"]} rows={platformSummaryRows} />
       </div>
 
       </details>
@@ -9494,12 +9499,9 @@ function SalesReport({ items, updateListingItem, downloadCSV }) {
               <div><span>出品番号</span><b>{detailSales.record.listingNumber || "—"}</b></div>
               <div><span>平台</span><b>{detailSales.record.platform || "—"}</b></div>
               <div><span>买家</span><b>{detailSales.record.buyerName || "—"}</b></div>
-              <div><span>售价（含税）</span><b>{jpy(detailSales.record.salePriceTaxIncludedJpy)}</b></div>
-              <div><span>销售收入（未税）</span><b>{jpy(detailSales.record.saleRevenueExTaxJpy)}</b></div>
-              <div><span>销项消费税</span><b>{jpy(detailSales.record.outputConsumptionTaxJpy)}</b></div>
-              <div><span>手续费合计（含税）</span><b>{jpy(detailSales.record.platformFeeJpy)}</b></div>
-              <div><span>预计到账</span><b>{jpy(detailSales.expectedDeposit || detailSales.record.finalDepositJpy)}</b></div>
-              <div><span>实际到账</span><b>{jpy(detailSales.actualDeposit || 0)}</b></div>
+              {salesSettlementDisplayRows(detailSales.record, detailSales.actualDeposit, detailSales.expectedDeposit).map(([label, value]) => <div key={label}><span>{label}</span><b>{label === "实际到账金额" && !value ? "未到账" : jpy(value)}</b></div>)}
+              <div><span>含税销售额（扣手续费前）</span><b>{jpy(detailSales.record.salePriceTaxIncludedJpy)}</b></div>
+              <div><span>退款金额（含税）</span><b>{jpy(detailSales.record.refundJpy)}</b></div>
               <div><span>实际利润</span><b>{jpy(detailSales.record.actualProfitJpy)}</b></div>
               <div><span>利润率</span><b>{pct(detailSales.record.margin || 0)}</b></div>
               <div><span>销售状态</span><b>{detailSales.record.salesStatus}</b></div>

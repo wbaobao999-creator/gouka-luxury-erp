@@ -178,6 +178,7 @@ const names = ["isSoldStatus", "savedSalesRecord", "isActualSale", "hasRestoredS
 const fixture = { id: "EVENT-1", brand: "Fixture", item: "Bag", status: "已售出", purchaseCny: 50000, purchaseCurrency: "JPY", soldDate: sale.saleDate, soldPriceJpy: sale.salePriceTaxIncludedJpy, soldPlatform: "NBAA", images: [], salesRecord: { ...sale } };
 names.push("inventoryStatusForSales");
 names.push("stockDispositionLabel");
+names.push("salesSettlementDisplayRows");
 names.push("isCurrentInventory", "summarizeCurrentInventory");
 let hookValues = [], hookIndex = 0, writes = [], alerts = [], stateChanges = [];
 const context = vm.createContext({
@@ -424,6 +425,17 @@ test("all normal delivery and return options are exposed in the shared form", ()
   }
   visit(tree);
   assert.deepEqual(options, ["", "not_shipped", "shipped", "delivered", "pending_return", "returned"]);
+});
+
+test("auction statement order separates base, taxes and receipts without changing stored amounts", () => {
+  const record = {salePriceTaxIncludedJpy:490600,platformFeeJpy:14718,finalDepositJpy:475882,salesStatus:"已成交"};
+  const before=JSON.stringify(record);
+  const rows=context.salesSettlementDisplayRows(record);
+  assert.deepEqual(Array.from(rows, row=>row[0]),["成交价（税前）","商品消费税","手续费（税前）","手续费消费税","应结算金额","实际到账金额"]);
+  Array.from(rows,row=>row[1]).forEach((value,i)=>near(value,[446000,44600,13380,1338,475882,475882][i]));
+  assert.equal(JSON.stringify(record),before);
+  const refund={...record,refundJpy:11000,shippingFeeJpy:1000,adjustmentJpy:-500};
+  near(context.salesSettlementDisplayRows(refund)[4][1],context.calcSalesSettlement(refund).expectedDepositJpy);
 });
 
 console.log(`Passed ${checks} sales event and integration checks.`);

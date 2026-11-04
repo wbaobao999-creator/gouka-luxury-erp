@@ -18,7 +18,8 @@ assert(!production||(release&&(yearCheck||deliveryCheck||salesDetailCheck)),'Pro
 const appUrl=production?'https://gouka-luxury-erp.vercel.app/':'http://127.0.0.1:4197/';
 const snapshotIndex=process.argv.indexOf('--snapshot');
 const auditSnapshot=salesDetailCheck?{items:[{product_no:'DETAIL-FIXTURE-1',purchase_date:'2026-10-01',qty:1,
- brand:'CHANEL',item:'Fixture bag',status:'已售出',sold_date:'2026-10-25',sold_platform:'NBAA',sold_price_jpy:490600}]}
+ brand:'CHANEL',item:'Fixture bag',status:'已售出',sold_date:'2026-10-25',sold_platform:'NBAA',sold_price_jpy:490600,
+ sold_memo:['GOUKA_SALES_RECORD_START','settlementVersion: 2','salePriceTaxIncludedJpy: 490600','platformFeeJpy: 14718','finalDepositJpy: 475882','salesStatus: 已成交','GOUKA_SALES_RECORD_END'].join('\n')}]}
  :yearCheck?{items:[
  {product_no:'JP-AUC-202601-0002',purchase_date:'2026-01-10',qty:2},
  {product_no:'JP-NBAA-202610-0006',purchase_date:'2026-10-23',qty:3},
@@ -110,6 +111,17 @@ try {
   await page.waitForFunction(count=>document.body.innerText.includes('已读取云端 '+count+' 件'),expectedProducts);
   if(salesDetailCheck) {
    await page.getByRole('button',{name:'销售记录',exact:true}).click();
+   await page.getByRole('columnheader',{name:'成交价（税前）',exact:true}).waitFor();
+   const expectedLabels=['成交价（税前）','商品消费税','手续费（税前）','手续费消费税','应结算金额','实际到账金额'];
+   const expectedAmounts=['¥446,000','¥44,600','¥13,380','¥1,338','¥475,882','¥475,882'];
+   const saleRow=page.getByRole('row').filter({hasText:'DETAIL-FIXTURE-1'}).first();
+   assert.deepEqual((await saleRow.getByRole('cell').allTextContents()).slice(7,13),expectedAmounts);
+   const [download]=await Promise.all([page.waitForEvent('download'),page.getByRole('button',{name:'CSV导出',exact:true}).click()]);
+   const csv=fs.readFileSync(await download.path(),'utf8').replace(/^\uFEFF/,'').trim().split(/\r?\n/);
+   const csvHeaders=csv[0].split(',').map(x=>x.replace(/^"|"$/g,''));
+   const csvValues=csv[1].split(',').map(x=>x.replace(/^"|"$/g,''));
+   assert.deepEqual(csvHeaders.slice(9,15),expectedLabels);
+   assert.deepEqual(csvValues.slice(9,15),['446000','44600','13380','1338','475882','475882']);
    const details=page.getByRole('button',{name:'详情',exact:true}).first();
    await details.click();
    const dialog=page.getByRole('dialog',{name:'销售记录详情',exact:true});
@@ -118,6 +130,10 @@ try {
    assert(box.x>=0&&box.y>=0&&box.x+box.width<=width+1&&box.y+box.height<=950+1,'Details must open inside the viewport');
    assert(await dialog.evaluate(el=>el.contains(document.activeElement)),'Modal must take keyboard focus');
    assert((await dialog.innerText()).includes('DETAIL-FIXTURE-1'));
+   for(let i=0;i<expectedLabels.length;i++) {
+    const field=dialog.locator('.sales-detail-grid > div').filter({has:page.locator('span',{hasText:expectedLabels[i]})});
+    assert.equal(await field.locator('b').innerText(),expectedAmounts[i]);
+   }
    await page.screenshot({path:'verification/screenshots/sales-detail-'+width+'.png'});
    await dialog.getByRole('button',{name:'关闭',exact:true}).click();
    await dialog.waitFor({state:'hidden'});
@@ -131,6 +147,9 @@ try {
    await page.mouse.click(3,3);
    await dialog.waitFor({state:'hidden'});
    assert.equal(await page.evaluate(()=>document.body.style.overflow),'');
+   await page.getByRole('button',{name:'编辑',exact:true}).first().click();
+   assert.deepEqual((await page.locator('.sales-amount-summary dt').allTextContents()).slice(0,6),expectedLabels);
+   assert.deepEqual((await page.locator('.sales-amount-summary dd').allTextContents()).slice(0,6),expectedAmounts);
    assert.deepEqual(mutations,[]);assert.deepEqual(errors,[]);
    console.log('PASS sales detail visible modal, close/Escape/backdrop and focus '+width+'px; no business writes');
    await context.close();continue;

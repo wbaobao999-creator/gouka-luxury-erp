@@ -1138,7 +1138,7 @@ main { min-width: 0; max-width: 100%; overflow-x: hidden; }
 .sales-amount-inputs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;}
 .sales-amount-inputs label{display:flex;flex-direction:column;gap:6px;min-width:0;}
 .sales-amount-inputs input{width:100%;min-width:0;box-sizing:border-box;}
-.sales-amount-summary{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin:14px 0;padding:12px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line);}
+.sales-amount-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:14px 0;padding:12px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line);}
 .sales-amount-summary dt{font-size:12px;color:#475569;}
 .sales-amount-summary dd{margin:6px 0 0;font-size:18px;font-weight:700;overflow-wrap:anywhere;}
 .sales-amount-summary div:last-child dd{color:#166534;}
