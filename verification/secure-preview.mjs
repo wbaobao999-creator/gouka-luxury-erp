@@ -12,11 +12,14 @@ const serverErrorCheck=process.argv.includes('--server-error-check');
 const syncCheck=process.argv.includes('--sync-check');
 const yearCheck=process.argv.includes('--year-check');
 const deliveryCheck=process.argv.includes('--delivery-check');
+const salesDetailCheck=process.argv.includes('--sales-detail-check');
 const production=process.argv.includes('--production');
-assert(!production||(release&&(yearCheck||deliveryCheck)),'Production runs only isolated read-only checks');
+assert(!production||(release&&(yearCheck||deliveryCheck||salesDetailCheck)),'Production runs only isolated read-only checks');
 const appUrl=production?'https://gouka-luxury-erp.vercel.app/':'http://127.0.0.1:4197/';
 const snapshotIndex=process.argv.indexOf('--snapshot');
-const auditSnapshot=yearCheck?{items:[
+const auditSnapshot=salesDetailCheck?{items:[{product_no:'DETAIL-FIXTURE-1',purchase_date:'2026-10-01',qty:1,
+ brand:'CHANEL',item:'Fixture bag',status:'已售出',sold_date:'2026-10-25',sold_platform:'NBAA',sold_price_jpy:490600}]}
+ :yearCheck?{items:[
  {product_no:'JP-AUC-202601-0002',purchase_date:'2026-01-10',qty:2},
  {product_no:'JP-NBAA-202610-0006',purchase_date:'2026-10-23',qty:3},
  {product_no:'JP-AUC-202512-0001',purchase_date:'2025-12-30',qty:1}
@@ -105,6 +108,33 @@ try {
   await page.getByRole('heading',{name:heading,exact:true}).waitFor();
   const expectedProducts=auditSnapshot?auditSnapshot.items.filter(x=>x.product_no!=='__GOUKA_ERP_GLOBAL_STATE__').length:1;
   await page.waitForFunction(count=>document.body.innerText.includes('已读取云端 '+count+' 件'),expectedProducts);
+  if(salesDetailCheck) {
+   await page.getByRole('button',{name:'销售记录',exact:true}).click();
+   const details=page.getByRole('button',{name:'详情',exact:true}).first();
+   await details.click();
+   const dialog=page.getByRole('dialog',{name:'销售记录详情',exact:true});
+   await dialog.waitFor();
+   const box=await dialog.boundingBox();
+   assert(box.x>=0&&box.y>=0&&box.x+box.width<=width+1&&box.y+box.height<=950+1,'Details must open inside the viewport');
+   assert(await dialog.evaluate(el=>el.contains(document.activeElement)),'Modal must take keyboard focus');
+   assert((await dialog.innerText()).includes('DETAIL-FIXTURE-1'));
+   await page.screenshot({path:'verification/screenshots/sales-detail-'+width+'.png'});
+   await dialog.getByRole('button',{name:'关闭',exact:true}).click();
+   await dialog.waitFor({state:'hidden'});
+   assert(await details.evaluate(el=>document.activeElement===el),'Closing must restore focus');
+   await details.click();
+   await dialog.waitFor();
+   await page.keyboard.press('Escape');
+   await dialog.waitFor({state:'hidden'});
+   await details.click();
+   await dialog.waitFor();
+   await page.mouse.click(3,3);
+   await dialog.waitFor({state:'hidden'});
+   assert.equal(await page.evaluate(()=>document.body.style.overflow),'');
+   assert.deepEqual(mutations,[]);assert.deepEqual(errors,[]);
+   console.log('PASS sales detail visible modal, close/Escape/backdrop and focus '+width+'px; no business writes');
+   await context.close();continue;
+  }
   if(deliveryCheck) {
    await page.getByRole('button',{name:'商品录入',exact:true}).click();
    await page.getByLabel(/状态 \/ Status/).selectOption('已售出');

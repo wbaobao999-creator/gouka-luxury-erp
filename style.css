@@ -1154,6 +1154,14 @@ main { min-width: 0; max-width: 100%; overflow-x: hidden; }
 .sales-derived span,.sales-detail-grid span{display:block;color:#64748b;font-size:12px;margin-bottom:4px;}
 .sales-derived b,.sales-detail-grid b{font-size:16px;color:#07172f;}
 .sales-detail-modal{max-width:860px;}
+.sales-detail-dialog{width:min(860px,calc(100vw - 32px));max-width:none;max-height:calc(100dvh - 32px);padding:0;border:0;border-radius:6px;background:#fff;color:inherit;overflow:auto;}
+.sales-detail-dialog::backdrop{background:rgba(15,23,42,.6);}
+.sales-detail-dialog .sales-detail-modal{width:100%;max-height:none;overflow:visible;box-sizing:border-box;}
+.sales-detail-dialog .modal-head{display:flex;align-items:center;justify-content:space-between;gap:12px;position:sticky;top:0;z-index:1;background:#fff;padding:8px 0;}
+.sales-detail-dialog .modal-head h2{font-size:20px!important;line-height:1.4;overflow-wrap:anywhere;}
+.sales-detail-dialog .modal-head button{flex-shrink:0;}
+.sales-detail-dialog .sales-detail-grid>div{min-width:0;}
+.sales-detail-dialog .sales-detail-grid b,.sales-detail-dialog .note{overflow-wrap:anywhere;}
 .sales-detail-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:12px;}
 @media (max-width:1200px){.sales-draft-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.sales-derived{grid-template-columns:repeat(3,minmax(0,1fr));}.sales-detail-grid{grid-template-columns:repeat(2,minmax(0,1fr));}}
 @media (max-width:760px){.sales-draft-grid,.sales-derived,.sales-detail-grid{grid-template-columns:1fr;}.sales-draft-grid .span-2,.sales-draft-grid .span-3{grid-column:auto;}}

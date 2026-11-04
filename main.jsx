@@ -9127,6 +9127,27 @@ function ListingManagement({ items, updateListingItem, editItem, setPreviewImage
   );
 }
 
+function SalesDetailDialog({ children, onClose }) {
+  const ref = React.useRef(null);
+  React.useEffect(() => {
+    const dialog = ref.current;
+    const previousFocus = document.activeElement;
+    const previousOverflow = document.body.style.overflow;
+    dialog.showModal();
+    document.body.style.overflow = "hidden";
+    return () => {
+      dialog.close();
+      document.body.style.overflow = previousOverflow;
+      if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true });
+    };
+  }, []);
+  return <dialog ref={ref} className="sales-detail-dialog" aria-labelledby="sales-detail-title"
+    onCancel={event => { event.preventDefault(); onClose(); }}
+    onClick={event => { if (event.target === event.currentTarget) onClose(); }}>
+    {children}
+  </dialog>;
+}
+
 function SalesReport({ items, updateListingItem, downloadCSV }) {
   const [salesQuery, setSalesQuery] = useState("");
   const [salesMonth, setSalesMonth] = useState("");
@@ -9462,9 +9483,9 @@ function SalesReport({ items, updateListingItem, downloadCSV }) {
       </details>
 
       {detailSales && (
-        <div className="modal-backdrop" onClick={() => setDetailSales(null)}>
+        <SalesDetailDialog onClose={() => setDetailSales(null)}>
           <div className="modal sales-detail-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-head"><h2>销售记录详情</h2><button onClick={() => setDetailSales(null)}>关闭</button></div>
+            <div className="modal-head"><h2 id="sales-detail-title">销售记录详情</h2><button type="button" onClick={() => setDetailSales(null)}>关闭</button></div>
             <div className="sales-detail-grid">
               <div><span>销售编号</span><b>{detailSales.record.salesNo}</b></div>
               <div><span>商品编号</span><b>{detailSales.item.id}</b></div>
@@ -9486,7 +9507,7 @@ function SalesReport({ items, updateListingItem, downloadCSV }) {
             </div>
             <p className="note">{stripSalesRecordMemo(detailSales.record.memo || "") || "无备注"}</p>
           </div>
-        </div>
+        </SalesDetailDialog>
       )}
     </div>
   );
