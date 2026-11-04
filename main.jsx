@@ -1883,7 +1883,8 @@ function applyBatchAllocations(items, batches) {
         batchAllocatedOtherCostJpy: allocation.allocatedOtherImportCostJpy,
         batchAllocatedImportTaxJpy: allocation.importTaxCreditJpy,
         batchImportConsumptionTaxJpy: Number(batch.totalImportConsumptionTaxJpy || 0),
-        batchDeclaredTotalJpy: totalDeclared
+        batchDeclaredTotalJpy: totalDeclared,
+        importAllocationWarning: allocation.warning
       };
     });
   });
@@ -1969,14 +1970,23 @@ function calcImportBatchAllocation(batch, linkedProducts = []) {
   const weights = products.map((x) => Math.max(0, getDeclaredJpyForAllocation(x)));
   const totalDeclared = weights.reduce((sum, x) => sum + x, 0);
   const count = products.length || 1;
-  const duty = allocateWholeYen(cost.dutyJpy, weights);
-  const agent = allocateWholeYen(cost.agencyFeeJpy, products.map(() => 1));
-  const shipping = allocateWholeYen(cost.internationalShippingJpy, weights);
-  const other = allocateWholeYen(cost.otherCostJpy, weights);
-  const credits = allocateWholeYen(tax.taxCreditJpy, weights);
+  const targetCount = Math.max(0, Number(b.goodsCount || b.itemCount || 0));
+  const incomplete = targetCount > products.length;
+  // Missing products retain their share; never charge a whole shipment to a partial list.
+  const missingCount = incomplete ? targetCount - products.length : 0;
+  const declaredRemainder = Math.max(0, Number(b.goodsValueJpy || b.declaredTotalJpy || 0) - totalDeclared);
+  const reserveWeight = incomplete ? (totalDeclared > 0 ? declaredRemainder || totalDeclared / count * missingCount : missingCount) : 0;
+  const allocationWeights = incomplete ? [...(totalDeclared > 0 ? weights : products.map(() => 1)), reserveWeight] : weights;
+  const agentWeights = incomplete ? [...products.map(() => 1), missingCount] : products.map(() => 1);
+  const duty = allocateWholeYen(cost.dutyJpy, allocationWeights);
+  const agent = allocateWholeYen(cost.agencyFeeJpy, agentWeights);
+  const shipping = allocateWholeYen(cost.internationalShippingJpy, allocationWeights);
+  const other = allocateWholeYen(cost.otherCostJpy, allocationWeights);
+  const credits = allocateWholeYen(tax.taxCreditJpy, allocationWeights);
   return products.map((x, index) => {
     const declaredJpy = weights[index];
-    const ratio = totalDeclared ? declaredJpy / totalDeclared : 1 / count;
+    const denominator = totalDeclared + reserveWeight;
+    const ratio = totalDeclared > 0 ? declaredJpy / denominator : 1 / (targetCount || count);
     const allocatedDutyJpy = duty[index];
     const allocatedAgentFeeJpy = agent[index];
     const allocatedInternationalShippingJpy = shipping[index];
@@ -1986,6 +1996,7 @@ function calcImportBatchAllocation(batch, linkedProducts = []) {
       item: x,
       declaredJpy,
       ratio,
+      warning: incomplete ? `报关批次 ${b.id} 应有 ${targetCount} 件，现关联 ${products.length} 件；缺失商品份额已预留，成本、利润及进项税暂估待核。` : "",
       allocatedDutyJpy,
       allocatedAgentFeeJpy,
       allocatedInternationalShippingJpy,
@@ -3007,7 +3018,7 @@ function calcTax(x) {
     : 0;
   const profitExTax = isCancelledSale(sales) ? 0 : saleExTax - recognizedCostJpy - salesCosts;
   const margin = saleJpy ? grossProfit / saleJpy * 100 : 0;
-  const warnings = [baseSmart.warning, declaredSmart.warning].filter(Boolean);
+  const warnings = [baseSmart.warning, declaredSmart.warning, x.importAllocationWarning].filter(Boolean);
   return { baseCostJpy, extraCostJpy, costJpy, declaredJpy, inputTax, saleJpy, outputTax, saleExTax, grossProfit, taxBalance, profitExTax, margin, warnings };
 }
 
@@ -5424,6 +5435,7 @@ function App({ verifiedSession, onVerifiedLogout }) {
           </div>
         </header>
         <RoleNotice role={role} />
+        {(isOwner || isTaxViewer) && [...new Set(computedItems.map((x) => x.importAllocationWarning).filter(Boolean))].map((warning) => <p className="note" role="status" key={warning}>{warning}</p>)}
 
         {tab === "dashboard" && (canAccessTab("dashboard") ? <Dashboard totals={totals} items={computedItems} setTab={goTab} openInventorySignal={openInventorySignal} exportBackup={exportBackup} customsBatches={customsBatches} onCashflowSave={requestGlobalCloudSave} /> : <RestrictedPanel message={restrictedTabMessage} />)}
         {tab === "ai" && <AiAssistant onApplyDraft={applyAiDraft} dictionaries={dictionaries} suppliers={suppliers} />}
@@ -9302,7 +9314,7 @@ function SalesReport({ items, updateListingItem, downloadCSV }) {
       ...salesSettlementDisplayRows(record, actualDeposit, expectedDeposit).map(([label, value]) => label === "实际到账金额" && !value ? "未到账" : jpy(value)),
       jpy(record.saleRevenueExTaxJpy),
       jpy(record.inventoryCostJpy),
-      moneyCell(record.actualProfitJpy),
+      <span title={item.importAllocationWarning || ""}>{moneyCell(record.actualProfitJpy)}{item.importAllocationWarning && <small> 成本待核</small>}</span>,
       <span className={deposited ? "status ok" : "status warn"}>{receiptState(record)}</span>,
       <span className={quality.ok ? "status ok" : "status warn"} title={quality.missing.join(" / ")}>{quality.label}</span>,
       <span className="status">{record.salesStatus}</span>,
@@ -9313,7 +9325,7 @@ function SalesReport({ items, updateListingItem, downloadCSV }) {
     ];
   });
 
-  csvHeaders.push("商品去向", "退回日期");
+  csvHeaders.push("商品去向", "退回日期", "成本核对提示");
   const csvRows = filteredSalesRows.map(({ item, record }) => {
     const deposited = salesIsDeposited(item, record);
     const actualDeposit = salesActualDepositJpy(item, record);
@@ -9347,7 +9359,8 @@ function SalesReport({ items, updateListingItem, downloadCSV }) {
       stripSalesRecordMemo(record.memo || ""),
       record.refundDate || "",
       stockDispositionLabel(record.stockDisposition),
-      record.returnDate || ""
+      record.returnDate || "",
+      item.importAllocationWarning || ""
     ];
   });
 
@@ -9502,11 +9515,15 @@ function SalesReport({ items, updateListingItem, downloadCSV }) {
               {salesSettlementDisplayRows(detailSales.record, detailSales.actualDeposit, detailSales.expectedDeposit).map(([label, value]) => <div key={label}><span>{label}</span><b>{label === "实际到账金额" && !value ? "未到账" : jpy(value)}</b></div>)}
               <div><span>含税销售额（扣手续费前）</span><b>{jpy(detailSales.record.salePriceTaxIncludedJpy)}</b></div>
               <div><span>退款金额（含税）</span><b>{jpy(detailSales.record.refundJpy)}</b></div>
+              <div><span>采购成本（日元换算）</span><b>{jpy(calcTax(detailSales.item).baseCostJpy)}</b></div>
+              <div><span>附加成本（含报关分摊）</span><b>{jpy(calcTax(detailSales.item).extraCostJpy)}</b></div>
+              <div><span>库存成本合计</span><b>{jpy(detailSales.record.inventoryCostJpy)}</b></div>
               <div><span>实际利润</span><b>{jpy(detailSales.record.actualProfitJpy)}</b></div>
               <div><span>利润率</span><b>{pct(detailSales.record.margin || 0)}</b></div>
               <div><span>销售状态</span><b>{detailSales.record.salesStatus}</b></div>
               <div><span>商品去向</span><b>{stockDispositionLabel(detailSales.record.stockDisposition)}</b></div>
             </div>
+            {detailSales.item.importAllocationWarning && <p className="note" role="status">{detailSales.item.importAllocationWarning}</p>}
             <p className="note">{stripSalesRecordMemo(detailSales.record.memo || "") || "无备注"}</p>
           </div>
         </SalesDetailDialog>
