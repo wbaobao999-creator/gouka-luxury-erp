@@ -2184,6 +2184,7 @@ function currentMonth() {
 }
 
 const IMAGE_MAX_WIDTH = 1200;
+const PRODUCT_PHOTO_LIMIT = 6;
 const IMAGE_MAX_HEIGHT = 1200;
 const IMAGE_TARGET_BYTES = 180 * 1024;
 const IMAGE_MIN_QUALITY = 0.42;
@@ -2381,12 +2382,21 @@ async function compressImageFile(file) {
   return result;
 }
 
-async function compressImageFiles(files, maxCount = 3) {
-  const selected = Array.from(files || []).filter((f) => f.type.startsWith("image/")).slice(0, maxCount);
+async function compressImageFiles(files, currentCount) {
+  const candidates = Array.from(files || []);
+  const images = candidates.filter((file) => file.type.startsWith("image/"));
+  const remaining = Math.max(0, PRODUCT_PHOTO_LIMIT - currentCount);
+  const selected = images.slice(0, remaining);
+  const excess = images.slice(remaining);
+  const invalid = candidates.filter((file) => !file.type.startsWith("image/"));
+  const notices = [];
+  if (excess.length) notices.push(`每件最多 ${PRODUCT_PHOTO_LIMIT} 张，以下照片未添加：\n${excess.map(file => file.name).join("、")}`);
+  if (invalid.length) notices.push(`不支持的图片格式：${invalid.map(file => file.name).join("、")}`);
+  if (notices.length) alert(notices.join("\n\n"));
   const imgs = [];
   for (const file of selected) {
     try {
-      imgs.push(await compressImageFile(file));
+      imgs.push({ name: file.name, src: await compressImageFile(file) });
     } catch (err) {
       console.error("图片压缩失败", file?.name, err);
       alert(`图片处理失败：${file?.name || "未知图片"}\n请换成 JPG/PNG 后再上传。`);
@@ -3975,6 +3985,9 @@ function App({ verifiedSession, onVerifiedLogout }) {
   const [taxPeriod, setTaxPeriod] = useState({ from: "", to: "" });
   const [inventoryQuickSignal, setInventoryQuickSignal] = useState({ signal: "全部", nonce: 0 });
   const [form, setForm] = useState(emptyForm);
+  const photoInputBusy = React.useRef(false);
+  const currentPhotoForm = React.useRef(form);
+  currentPhotoForm.current = form;
   const [editingId, setEditingId] = useState(null);
   const [previewImage, setPreviewImage] = useState(null);
   const [previewScale, setPreviewScale] = useState(1);
@@ -4680,6 +4693,7 @@ function App({ verifiedSession, onVerifiedLogout }) {
   }
 
   async function saveItem() {
+    if (photoInputBusy.current) return alert("照片正在处理，请稍后保存。");
     const safeForm = {
       ...form,
       brand: form.brand || "未识别品牌",
@@ -4925,11 +4939,14 @@ function App({ verifiedSession, onVerifiedLogout }) {
   }
 
   async function handleImages(files) {
-    const remain = Math.max(0, 3 - ((form.images || []).length));
-    if (remain <= 0) return alert("每件商品最多保存3张图片。请先删除旧图片。");
-    const imgs = await compressImageFiles(files, remain);
-    if (!imgs.length) return;
-    setForm((prev) => ({ ...prev, images: [...(prev.images || []), ...imgs].slice(0, 3) }));
+    if (photoInputBusy.current) return alert("上一批照片正在处理，请稍后再选。");
+    photoInputBusy.current = true;
+    try {
+      const imgs = await compressImageFiles(files, (form.images || []).length);
+      if (!imgs.length) return;
+      if (currentPhotoForm.current.id !== form.id || currentPhotoForm.current.images !== form.images) return alert("商品或照片列表已变更，请重新选择本批照片。");
+      setForm((prev) => ({ ...prev, images: [...(prev.images || []), ...imgs.map(img => img.src)] }));
+    } finally { photoInputBusy.current = false; }
   }
 
   function removeImage(index) {
@@ -6413,8 +6430,8 @@ function AddForm({ form, setForm, saveItem, resetForm, editingId, handleImages, 
           onDrop={onDropImages}
           style={{ border: "1px dashed #94a3b8", borderRadius: "14px", padding: "14px", background: "#f8fafc" }}
         >
-          商品图片（最多3张，自动压缩保存，可拖拽图片到这里）
-          <input type="file" accept="image/*" multiple onChange={(e) => handleImages(e.target.files)} />
+          商品图片（已选 {(form.images || []).length} 张，还可添加 {Math.max(0, PRODUCT_PHOTO_LIMIT - (form.images || []).length)} 张）
+          <input type="file" accept="image/*" multiple onChange={(e) => { const files = Array.from(e.target.files || []); e.target.value = ""; handleImages(files); }} />
         </label>
 
         <div className="image-row full">
@@ -9895,16 +9912,20 @@ function AiAssistant({ onApplyDraft, dictionaries, suppliers }) {
   const [rawText, setRawText] = useState("");
   const [draft, setDraft] = useState(null);
   const [uploadedImages, setUploadedImages] = useState([]);
+  const photoInputBusy = React.useRef(false);
+  const currentUploadedImages = React.useRef(uploadedImages);
+  currentUploadedImages.current = uploadedImages;
   const [fileNotes, setFileNotes] = useState("");
 
   async function readImages(files) {
-    const remain = Math.max(0, 3 - ((uploadedImages || []).length));
-    if (remain <= 0) return alert("最多上传3张图片。请先删除旧图片。");
-    const selected = Array.from(files || []).filter((f) => f.type.startsWith("image/")).slice(0, remain);
-    if (!selected.length) return;
-    const compressed = await compressImageFiles(selected, remain);
-    const imgs = compressed.map((src, i) => ({ name: selected[i]?.name || `image-${i + 1}`, src }));
-    setUploadedImages([...(uploadedImages || []), ...imgs].slice(0, 3));
+    if (photoInputBusy.current) return alert("上一批照片正在处理，请稍后再选。");
+    photoInputBusy.current = true;
+    try {
+      const imgs = await compressImageFiles(files, uploadedImages.length);
+      if (!imgs.length) return;
+      if (currentUploadedImages.current !== uploadedImages) return alert("照片列表已变更，请重新选择本批照片。");
+      setUploadedImages(prev => [...prev, ...imgs]);
+    } finally { photoInputBusy.current = false; }
   }
 
   function removeUploadedImage(index) {
@@ -9967,8 +9988,8 @@ function AiAssistant({ onApplyDraft, dictionaries, suppliers }) {
         onDrop={(e) => { e.preventDefault(); readImages(e.dataTransfer.files); }}
         style={{ display:"block", marginTop:"16px", border:"1px dashed #94a3b8", borderRadius:"14px", padding:"16px", background:"#f8fafc" }}
       >
-        上传图片（最多3张，自动压缩，可拖拽商品图/发票图/拍卖截图到这里）
-        <input type="file" accept="image/*" multiple onChange={(e) => readImages(e.target.files)} />
+        上传图片（已选 {uploadedImages.length} 张，还可添加 {Math.max(0, PRODUCT_PHOTO_LIMIT - uploadedImages.length)} 张）
+        <input type="file" accept="image/*" multiple onChange={(e) => { const files = Array.from(e.target.files || []); e.target.value = ""; readImages(files); }} />
       </label>
 
       {!!uploadedImages.length && (
